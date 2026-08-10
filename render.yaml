@@ -2,7 +2,7 @@ services:
   - type: web
     name: gold-options-hedge
     runtime: docker
-    plan: starter
+    plan: free
     region: singapore
     autoDeployTrigger: commit
     healthCheckPath: /healthz
@@ -13,11 +13,3 @@ services:
         value: xauwhale
       - key: APP_PASSWORD
         sync: false
-      - key: MARKETDATA_TOKEN
-        sync: false
-      - key: TRADIER_API_TOKEN
-        sync: false
-    disk:
-      name: portfolio-data
-      mountPath: /app/data
-      sizeGB: 1

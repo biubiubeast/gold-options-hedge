@@ -78,17 +78,17 @@ docker compose -f docker-compose.public.yml down
 
 如果要让自己的域名保持不变，应在 Cloudflare 账户中创建 named tunnel，把域名映射到 `http://gold-options-hedge:3000`，并用 tunnel token 替换临时 tunnel。不要把 token 写入仓库。
 
-### 方案 B：Render Docker 托管（推荐长期使用）
+### 方案 B：Render Docker 托管
 
-仓库已包含 `render.yaml`。它会在新加坡区用现有 Dockerfile 构建网站，并把 `/app/data` 挂载到 1 GB 持久磁盘。操作流程：
+仓库已包含 `render.yaml`。当前默认使用无需银行卡的 Render 免费实例，在新加坡区用现有 Dockerfile 构建网站。操作流程：
 
 1. 把代码放到你自己的 GitHub 私有仓库；确认 `.env` 和 `data/portfolio.json` 没有被提交。
 2. 在 Render 选择 **New → Blueprint**，连接仓库并确认识别到 `render.yaml`。
-3. 部署时填写 `APP_PASSWORD`；`APP_USERNAME` 已设为 `xauwhale`。推荐填写 `MARKETDATA_TOKEN` 以启用 GLD 低延迟现价和 OPRA 实时期权 Greeks；`TRADIER_API_TOKEN` 是兼容备用源。
+3. 部署时填写 `APP_PASSWORD`；`APP_USERNAME` 已设为 `xauwhale`。服务创建后可在 **Environment** 中添加 `MARKETDATA_TOKEN`，以启用 GLD 低延迟现价和 OPRA 实时期权 Greeks；`TRADIER_API_TOKEN` 是兼容备用源。
 4. 部署完成后使用 Render 分配的 `https://...onrender.com` 地址访问，也可绑定自己的域名。
-5. 在 Render 为持久磁盘开启/确认备份策略，并定期从网站导出 JSON 备份。
+5. 免费实例会休眠、重启，且没有持久磁盘；仓位录入后请立即从网站导出 JSON 备份。
 
-Render 的持久磁盘需要付费实例，而且单块磁盘限制为单实例运行；这与当前单用户 JSON 架构匹配。若以后需要多人同时使用或多实例高可用，请先把数据层迁移到 PostgreSQL。
+免费 Render 适合当前先取得稳定公网地址并测试功能，但重启或重新部署后仓位 JSON 可能丢失。长期正式使用建议添加付款方式，把 `render.yaml` 的 `plan` 改为 `starter` 并恢复 1 GB 持久磁盘；或把数据层迁移到托管 PostgreSQL。单块 Render 磁盘限制为单实例运行，这与当前单用户 JSON 架构匹配。
 
 ### 安全边界
 

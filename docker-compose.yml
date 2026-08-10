@@ -8,6 +8,7 @@ services:
       DATA_FILE: /app/data/portfolio.json
       APP_USERNAME: ${APP_USERNAME:-admin}
       APP_PASSWORD: ${APP_PASSWORD:?请先在 .env 设置 APP_PASSWORD}
+      MARKETDATA_TOKEN: ${MARKETDATA_TOKEN:-}
       TRADIER_API_TOKEN: ${TRADIER_API_TOKEN:-}
     volumes:
       - ./data:/app/data
