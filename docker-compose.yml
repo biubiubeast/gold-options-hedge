@@ -1,0 +1,14 @@
+services:
+  gold-options-hedge:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATA_FILE: /app/data/portfolio.json
+      APP_USERNAME: ${APP_USERNAME:-admin}
+      APP_PASSWORD: ${APP_PASSWORD:?请先在 .env 设置 APP_PASSWORD}
+      TRADIER_API_TOKEN: ${TRADIER_API_TOKEN:-}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
