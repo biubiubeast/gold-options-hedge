@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
+import type { ImportedPosition, ImportMode } from "@shared/positionExcel";
 
 export type LocalUser = {
   id: number;
@@ -25,6 +26,35 @@ export type PositionRecord = {
   quantity: string;
   fee: string;
   entryDelta: string;
+  sourceAccount?: string | null;
+  venue?: string | null;
+  instrument?: string | null;
+  product?: string | null;
+  currency?: "USD" | "USDT" | null;
+  qtyLong?: string | null;
+  qtyShort?: string | null;
+  multiplierXau?: string | null;
+  xauEqNetQty?: string | null;
+  referenceDate?: string | null;
+  importedMarkPrice?: string | null;
+  importedMarketValue?: string | null;
+  entryValue?: string | null;
+  importedEntryCost?: string | null;
+  importedUnrealizedPnl?: string | null;
+  importedUnrealizedPnlPct?: string | null;
+  importedTotalDeltaXau?: string | null;
+  importedTotalGammaXau?: string | null;
+  importedTotalThetaUsdDay?: string | null;
+  importedTotalVegaUsdVol?: string | null;
+  unitGamma?: string | null;
+  unitTheta?: string | null;
+  unitVega?: string | null;
+  contractMultiplier?: string | null;
+  rawMarginMode?: string | null;
+  rawMarginType?: string | null;
+  importSource?: string | null;
+  importRow?: number | null;
+  dataStatus?: "LIVE" | "STALE" | "WARN" | "MISSING" | "FAIL";
   createdAt: Date;
   updatedAt: Date;
 };
@@ -250,6 +280,48 @@ export async function deletePosition(id: number, userId: number) {
     if (next.length === store.positions.length) throw new Error("仓位不存在");
     store.positions = next;
     await saveStore(store);
+  });
+}
+
+function positionIdentity(position: Pick<PositionRecord, "underlying" | "expiry" | "strike" | "optionType" | "instrument" | "sourceAccount">) {
+  return position.instrument?.trim().toUpperCase()
+    || [position.sourceAccount ?? "", position.underlying, position.expiry, Number(position.strike).toString(), position.optionType].join("|");
+}
+
+export async function importPositions(userId: number, positions: ImportedPosition[], mode: ImportMode) {
+  return serialize(async () => {
+    const store = await loadStore();
+    const before = store.positions.filter(position => position.userId === userId);
+    const now = new Date().toISOString();
+    const backupDirectory = path.join(path.dirname(dataFile), "backups");
+    await mkdir(backupDirectory, { recursive: true });
+    const backupName = `portfolio-before-import-${now.replace(/[:.]/g, "-")}.json`;
+    await writeFile(path.join(backupDirectory, backupName), `${JSON.stringify({ exportedAt: now, positions: before }, null, 2)}\n`, "utf8");
+
+    const incoming = positions.map(position => ({ ...position, userId }));
+    let created = 0;
+    let updated = 0;
+    if (mode === "replace") {
+      store.positions = store.positions.filter(position => position.userId !== userId);
+      for (const position of incoming) {
+        store.positions.push({ ...position, id: store.nextPositionId++, createdAt: now, updatedAt: now });
+        created += 1;
+      }
+    } else {
+      for (const position of incoming) {
+        const identity = positionIdentity(position);
+        const existing = store.positions.find(item => item.userId === userId && positionIdentity(item) === identity);
+        if (existing) {
+          Object.assign(existing, position, { updatedAt: now });
+          updated += 1;
+        } else {
+          store.positions.push({ ...position, id: store.nextPositionId++, createdAt: now, updatedAt: now });
+          created += 1;
+        }
+      }
+    }
+    await saveStore(store);
+    return { created, updated, removed: mode === "replace" ? before.length : 0, backupName };
   });
 }
 

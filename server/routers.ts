@@ -12,6 +12,7 @@ import {
 } from "./marketData";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
 import { validateFormula } from "@shared/formulaEngine";
+import { createPositionWorkbook, parsePositionWorkbook } from "./positionExcel";
 
 const numericString = z.string().trim().refine(value => {
   const parsed = Number(value);
@@ -28,6 +29,72 @@ const positionFields = {
   fee: numericString.refine(value => Number(value) >= 0, "手续费不能小于 0").default("0"),
   entryDelta: numericString.refine(value => Number(value) >= -1 && Number(value) <= 1, "Delta 必须在 -1 到 1 之间"),
 };
+
+const nullableText = z.string().trim().max(500).nullable();
+const nullableNumericText = z.string().trim().refine(value => value === "" || Number.isFinite(Number(value)), "必须是有效数字").nullable();
+const optionalPositionFields = {
+  sourceAccount: nullableText.optional(),
+  venue: nullableText.optional(),
+  instrument: nullableText.optional(),
+  product: nullableText.optional(),
+  currency: z.enum(["USD", "USDT"]).nullable().optional(),
+  qtyLong: nullableNumericText.optional(),
+  qtyShort: nullableNumericText.optional(),
+  multiplierXau: nullableNumericText.optional(),
+  xauEqNetQty: nullableNumericText.optional(),
+  referenceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  importedMarkPrice: nullableNumericText.optional(),
+  importedMarketValue: nullableNumericText.optional(),
+  entryValue: nullableNumericText.optional(),
+  importedEntryCost: nullableNumericText.optional(),
+  importedUnrealizedPnl: nullableNumericText.optional(),
+  importedUnrealizedPnlPct: nullableNumericText.optional(),
+  importedTotalDeltaXau: nullableNumericText.optional(),
+  importedTotalGammaXau: nullableNumericText.optional(),
+  importedTotalThetaUsdDay: nullableNumericText.optional(),
+  importedTotalVegaUsdVol: nullableNumericText.optional(),
+  unitGamma: nullableNumericText.optional(),
+  unitTheta: nullableNumericText.optional(),
+  unitVega: nullableNumericText.optional(),
+  contractMultiplier: nullableNumericText.optional(),
+  rawMarginMode: nullableText.optional(),
+  rawMarginType: nullableText.optional(),
+  importSource: nullableText.optional(),
+  importRow: z.number().int().positive().nullable().optional(),
+  dataStatus: z.enum(["LIVE", "STALE", "WARN", "MISSING", "FAIL"]).optional(),
+};
+const importedPositionSchema = z.object({
+  ...positionFields,
+  sourceAccount: nullableText,
+  venue: nullableText,
+  instrument: z.string().trim().min(1).max(500),
+  product: nullableText,
+  currency: z.enum(["USD", "USDT"]),
+  qtyLong: nullableNumericText,
+  qtyShort: nullableNumericText,
+  multiplierXau: nullableNumericText,
+  xauEqNetQty: nullableNumericText,
+  referenceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  importedMarkPrice: nullableNumericText,
+  importedMarketValue: nullableNumericText,
+  entryValue: nullableNumericText,
+  importedEntryCost: nullableNumericText,
+  importedUnrealizedPnl: nullableNumericText,
+  importedUnrealizedPnlPct: nullableNumericText,
+  importedTotalDeltaXau: nullableNumericText,
+  importedTotalGammaXau: nullableNumericText,
+  importedTotalThetaUsdDay: nullableNumericText,
+  importedTotalVegaUsdVol: nullableNumericText,
+  unitGamma: nullableNumericText,
+  unitTheta: nullableNumericText,
+  unitVega: nullableNumericText,
+  contractMultiplier: nullableNumericText,
+  rawMarginMode: nullableText,
+  rawMarginType: nullableText,
+  importSource: nullableText,
+  importRow: z.number().int().positive().nullable(),
+  dataStatus: z.enum(["LIVE", "STALE", "WARN", "MISSING", "FAIL"]),
+});
 
 const formulaInput = z.object({
   name: z.string().trim().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "公式名只能使用字母、数字和下划线，且不能以数字开头"),
@@ -48,7 +115,7 @@ export const appRouter = router({
     get: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(({ ctx, input }) =>
       db.getPositionById(input.id, ctx.user.id),
     ),
-    create: protectedProcedure.input(z.object(positionFields)).mutation(async ({ ctx, input }) => ({
+    create: protectedProcedure.input(z.object({ ...positionFields, ...optionalPositionFields })).mutation(async ({ ctx, input }) => ({
       id: await db.createPosition({ userId: ctx.user.id, ...input }),
     })),
     update: protectedProcedure.input(z.object({
@@ -61,6 +128,7 @@ export const appRouter = router({
       quantity: positionFields.quantity.optional(),
       fee: positionFields.fee.optional(),
       entryDelta: positionFields.entryDelta.optional(),
+      ...optionalPositionFields,
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       await db.updatePosition(id, ctx.user.id, data);
@@ -71,6 +139,27 @@ export const appRouter = router({
       return { success: true } as const;
     }),
     export: protectedProcedure.query(({ ctx }) => db.exportPortfolio(ctx.user.id)),
+    previewExcel: protectedProcedure.input(z.object({
+      fileName: z.string().trim().min(1).max(255).refine(value => /\.xlsx$/i.test(value), "只支持 .xlsx 文件"),
+      base64: z.string().min(1).max(18_000_000),
+    })).mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.base64, "base64");
+      if (buffer.byteLength > 12_000_000) throw new Error("Excel 文件不能超过 12 MB");
+      return parsePositionWorkbook(buffer, input.fileName);
+    }),
+    importExcel: protectedProcedure.input(z.object({
+      mode: z.enum(["replace", "upsert"]),
+      positions: z.array(importedPositionSchema).min(1).max(2_000),
+    })).mutation(({ ctx, input }) => db.importPositions(ctx.user.id, input.positions, input.mode)),
+    exportExcel: protectedProcedure.query(async ({ ctx }) => {
+      const positions = await db.getPositionsByUser(ctx.user.id);
+      const workbook = await createPositionWorkbook(positions);
+      return {
+        fileName: `DinoSignal持仓_${new Date().toISOString().slice(0, 10).replaceAll("-", "")}.xlsx`,
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        base64: workbook.toString("base64"),
+      };
+    }),
   }),
 
   market: router({

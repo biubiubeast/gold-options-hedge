@@ -1,6 +1,7 @@
 import { DecisionCards, type DecisionCardModel } from "@/components/risk-heatmap/DecisionCards";
 import { ExpiryPanel, ScenarioStrip } from "@/components/risk-heatmap/ExpiryScenario";
-import { HeatmapGrid, type HeatmapCellModel } from "@/components/risk-heatmap/HeatmapGrid";
+import { HeatmapGrid, type CellLabelMode, type HeatmapCellModel, type HoverDataPreset } from "@/components/risk-heatmap/HeatmapGrid";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { getPositionMarketData, type MarketSnapshot, type PortfolioPosition } from "@/lib/portfolio";
 import { buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
@@ -14,9 +15,9 @@ import {
   formatCompact,
   formatPrice,
   generateMockPositions,
-  metricValue,
   percentile,
   positionLabel,
+  spotRangeState,
   type CallPut,
   type ColorScaleMode,
   type DataStatus,
@@ -122,6 +123,23 @@ function expiryBucketMatches(position: EnrichedRiskPosition, bucket: ExpiryBucke
   return position.dte >= 31;
 }
 
+function PositionDetailDialog({ position, onClose }: { position: EnrichedRiskPosition | null; onClose: () => void }) {
+  if (!position) return null;
+  const fields: Array<[string, unknown]> = [
+    ["Instrument", position.instrument], ["Underlying / CallPut", `${position.underlying} / ${position.callPut.toUpperCase()}`],
+    ["Expiry / DTE", `${position.expiry} / ${position.dte}d`], ["Strike", formatPrice(position.strike)],
+    ["Venue / Broker / Account", `${position.venue} / ${position.broker} / ${position.account}`], ["Net Qty", position.netQty],
+    ["Contract Multiplier", position.contractMultiplier], ["XAU per unit", position.underlying === "GLD" ? position.gldOzPerShare : position.underlyingOzPerUnit],
+    ["Mark / Bid / Ask", `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)}`], ["Mark IV", formatCompact(position.markIV, "markIV")],
+    ["Unit Delta", position.unitDelta], ["Unit Gamma", position.unitGamma], ["Unit Theta", position.unitTheta], ["Unit Vega", position.unitVega],
+    ["Total Delta XAU", position.totalDeltaXAU], ["Total Gamma XAU", position.totalGammaXAU], ["Total Theta USD/day", position.totalThetaUSD], ["Total Vega USD/vol", position.totalVegaUSD],
+    ["Market Value", position.MV], ["Entry Cost", position.entryCost], ["UPL", position.UPL],
+    ["Source", position.source], ["Quote As-of", position.quoteTime], ["Position As-of", position.positionTime], ["Data Status", position.dataStatus],
+    ["Deliverable Source", position.deliverableSource], ["Adjusted Contract", position.contractAdjusted ? "YES" : "NO"],
+  ];
+  return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>{positionLabel(position)} · 完整仓位详情</DialogTitle><DialogDescription>完整合约、Greeks、估值、数据质量以及可展开解释的 Roll Priority。</DialogDescription></DialogHeader><div className="grid grid-cols-2 gap-px border border-border/60 bg-border/60 md:grid-cols-4">{fields.map(([label, value]) => <div key={label} className="min-w-0 bg-background p-2"><p className="text-[9px] uppercase text-muted-foreground">{label}</p><p className="mt-1 break-words font-mono text-xs">{value === null || value === undefined ? "MISSING" : String(value)}</p></div>)}</div><div className="border border-border/60 p-3"><div className="flex items-center justify-between"><strong className="text-sm">Roll Priority</strong><span className="font-mono text-lg">{position.rollPriority.total.toFixed(0)} / 100</span></div>{position.rollPriority.factors.map(factor => <div key={factor.key} className="mt-2 grid grid-cols-[90px_1fr_auto] gap-2 text-xs"><span>{factor.label}</span><span className="text-muted-foreground">{factor.reason}</span><span className="font-mono">{factor.contribution.toFixed(1)} / {(factor.weight * 100).toFixed(0)}</span></div>)}</div></DialogContent></Dialog>;
+}
+
 export default function Matrix() {
   const { data: positions, isLoading } = trpc.positions.list.useQuery();
   const { data: formulas } = trpc.formulas.list.useQuery();
@@ -140,6 +158,8 @@ export default function Matrix() {
   const [metric, setMetric] = useState<HeatmapMetric>("totalDelta");
   const [scaleMode, setScaleMode] = useState<ColorScaleMode>("quantile");
   const [transpose, setTranspose] = useState(false);
+  const [labelMode, setLabelMode] = useState<CellLabelMode>("none");
+  const [hoverPreset, setHoverPreset] = useState<HoverDataPreset>("risk");
   const [spotUnderlying, setSpotUnderlying] = useState<RiskUnderlying | "XAU">("GLD");
   const [highlightCellKey, setHighlightCellKey] = useState<string | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<EnrichedRiskPosition | null>(null);
@@ -223,7 +243,12 @@ export default function Matrix() {
       strikes: [...new Set(filtered.map(position => position.strike))].sort((a, b) => a - b),
     };
   }, [filtered, metric]);
-  const scale = useMemo(() => buildHeatScale(cells.map(cell => cell.value), scaleMode, CENTERED_METRICS.has(metric)), [cells, metric, scaleMode]);
+  const sequentialMagnitude = metric === "unitDelta" || metric === "totalDelta";
+  const scale = useMemo(() => buildHeatScale(
+    cells.map(cell => cell.value === null ? null : sequentialMagnitude ? Math.abs(cell.value) : cell.value),
+    scaleMode,
+    !sequentialMagnitude && CENTERED_METRICS.has(metric),
+  ), [cells, metric, scaleMode, sequentialMagnitude]);
   const importanceCutoff = useMemo(() => percentile(cells.map(cell => Math.abs(cell.value ?? 0)).filter(value => value > 0), 0.85), [cells]);
   const cards = useMemo(() => buildDecisionCards(filtered), [filtered]);
   const spot = displaySpots[spotUnderlying];
@@ -274,21 +299,14 @@ export default function Matrix() {
         <NativeSelect label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))]} />
       </div>
 
-      <div className="grid min-h-8 shrink-0 grid-cols-[170px_128px_104px_auto_1fr] items-center gap-2 border border-border/60 bg-card/35 px-1">
+      <div className="grid min-h-8 shrink-0 grid-cols-[160px_112px_96px_100px_112px_auto_1fr] items-center gap-1 border border-border/60 bg-card/35 px-1">
         <NativeSelect label="METRIC" value={metric} onChange={value => setMetric(value as HeatmapMetric)} options={metricOptions.map(([value, label]) => ({ value, label }))} />
         <NativeSelect label="SCALE" value={scaleMode} onChange={value => setScaleMode(value as ColorScaleMode)} options={[{ value: "quantile", label: "QUANTILE" }, { value: "log", label: "LOG" }, { value: "symmetric", label: "ZERO-CENTER" }]} />
         <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "XAU", label: "XAU" }]} />
+        <NativeSelect label="LABEL" value={labelMode} onChange={value => setLabelMode(value as CellLabelMode)} options={[{ value: "none", label: "NONE" }, { value: "top", label: "TOP 15%" }, { value: "all", label: "ALL" }]} />
+        <NativeSelect label="HOVER" value={hoverPreset} onChange={value => setHoverPreset(value as HoverDataPreset)} options={[{ value: "risk", label: "RISK" }, { value: "market", label: "MARKET" }, { value: "pnl", label: "PNL" }, { value: "all", label: "ALL" }]} />
         <button type="button" onClick={() => setTranspose(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${transpose ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowLeftRight className="h-3 w-3" />Transpose</button>
-        <div className="flex min-w-0 items-center gap-1 overflow-hidden" aria-label="heatmap legend">
-          <span className="shrink-0 text-[8px] text-muted-foreground">P99 CLIP</span>
-          {scale.bins.length ? scale.bins.map((bin, index) => (
-            <div key={`${bin.from}-${bin.to}-${index}`} className="min-w-0 flex-1" title={bin.label}>
-              <div className="h-2 border border-white/5" style={{ backgroundColor: CENTERED_METRICS.has(metric) ? bin.normalized < 0 ? `rgba(224,70,78,${0.18 + Math.abs(bin.normalized) * 0.75})` : `rgba(40,160,205,${0.18 + Math.abs(bin.normalized) * 0.75})` : `rgba(222,164,48,${0.15 + Math.abs(bin.normalized) * 0.8})` }} />
-              <span className="block truncate text-center font-mono text-[7px] text-muted-foreground">{formatCompact(bin.from, metric)}…{formatCompact(bin.to, metric)}</span>
-            </div>
-          )) : <span className="text-[9px] text-muted-foreground">MISSING DATA</span>}
-          <span className="flex shrink-0 items-center gap-1 text-[8px] text-muted-foreground"><LocateFixed className="h-3 w-3" />{formatPrice(spot)}</span>
-        </div>
+        <span className="flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />{spotUnderlying} SPOT {formatPrice(spot)} · nearest {formatPrice(spotRangeState(strikes, spot).nearestStrike)}</span>
       </div>
 
       {filtered.length === 0 ? (
@@ -308,12 +326,16 @@ export default function Matrix() {
           spot={spot}
           callPut={callPut}
           highlightCellKey={highlightCellKey}
+          labelMode={labelMode}
+          hoverPreset={hoverPreset}
+          sequentialMagnitude={sequentialMagnitude}
           onSelectPosition={setSelectedPosition}
         />
       )}
 
       <ExpiryPanel positions={filtered} gldSpot={displaySpots.GLD} />
       <ScenarioStrip positions={filtered} spots={displaySpots} />
+      <PositionDetailDialog position={selectedPosition} onClose={() => setSelectedPosition(null)} />
     </div>
   );
 }

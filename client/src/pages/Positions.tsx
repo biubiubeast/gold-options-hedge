@@ -1,15 +1,16 @@
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Loader2, Download } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Info, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import type { PositionExcelPreview } from "@shared/positionExcel";
 
 interface PositionForm {
   underlying: "XAUT" | "GLD";
@@ -20,233 +21,287 @@ interface PositionForm {
   quantity: string;
   fee: string;
   entryDelta: string;
+  sourceAccount: string;
+  venue: string;
+  instrument: string;
+  currency: "USD" | "USDT";
+  referenceDate: string;
+  importedMarkPrice: string;
+  multiplierXau: string;
+  contractMultiplier: string;
+  unitGamma: string;
+  unitTheta: string;
+  unitVega: string;
 }
 
 const defaultForm: PositionForm = {
-  underlying: "XAUT",
-  expiry: "",
-  strike: "",
-  optionType: "call",
-  entryPrice: "",
-  quantity: "",
-  fee: "0",
-  entryDelta: "",
+  underlying: "XAUT", expiry: "", strike: "", optionType: "call", entryPrice: "", quantity: "", fee: "0", entryDelta: "",
+  sourceAccount: "", venue: "", instrument: "", currency: "USDT", referenceDate: "", importedMarkPrice: "",
+  multiplierXau: "1", contractMultiplier: "1", unitGamma: "", unitTheta: "", unitVega: "",
 };
+
+const nullable = (value: string) => value.trim() || null;
+const numeric = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const money = (value: unknown) => {
+  const parsed = numeric(value);
+  return parsed === null ? "—" : parsed.toLocaleString("en-US", { maximumFractionDigits: 2 });
+};
+
+function bufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 32_768) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+  }
+  return btoa(binary);
+}
+
+function downloadBase64(base64: string, mimeType: string, fileName: string) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function Positions() {
   const utils = trpc.useUtils();
   const { data: positions, isLoading } = trpc.positions.list.useQuery();
-  const exportQuery = trpc.positions.export.useQuery(undefined, { enabled: false });
+  const exportExcelQuery = trpc.positions.exportExcel.useQuery(undefined, { enabled: false });
+  const previewMutation = trpc.positions.previewExcel.useMutation({ onError: error => toast.error(error.message) });
+  const importMutation = trpc.positions.importExcel.useMutation({
+    onSuccess: result => {
+      utils.positions.list.invalidate();
+      setImportOpen(false);
+      setPreview(null);
+      toast.success(`已导入：新增 ${result.created}、更新 ${result.updated}、移除 ${result.removed}；导入前备份 ${result.backupName}`);
+    },
+    onError: error => toast.error(error.message),
+  });
   const createMutation = trpc.positions.create.useMutation({
     onSuccess: () => { utils.positions.list.invalidate(); toast.success("仓位已添加"); setOpen(false); },
-    onError: (e) => toast.error(e.message),
+    onError: error => toast.error(error.message),
   });
   const updateMutation = trpc.positions.update.useMutation({
     onSuccess: () => { utils.positions.list.invalidate(); toast.success("仓位已更新"); setOpen(false); },
-    onError: (e) => toast.error(e.message),
+    onError: error => toast.error(error.message),
   });
   const deleteMutation = trpc.positions.delete.useMutation({
     onSuccess: () => { utils.positions.list.invalidate(); toast.success("仓位已删除"); },
-    onError: (e) => toast.error(e.message),
+    onError: error => toast.error(error.message),
   });
 
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<PositionForm>(defaultForm);
+  const [importOpen, setImportOpen] = useState(false);
+  const [preview, setPreview] = useState<PositionExcelPreview | null>(null);
+  const [importMode, setImportMode] = useState<"replace" | "upsert">("replace");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const summary = useMemo(() => {
+    const all = positions ?? [];
+    const forUnderlying = (value: "XAUT" | "GLD") => all.filter(position => position.underlying === value);
+    return {
+      count: all.length,
+      xaut: forUnderlying("XAUT").length,
+      gld: forUnderlying("GLD").length,
+      xautQty: forUnderlying("XAUT").reduce((sum, position) => sum + Number(position.quantity), 0),
+      gldQty: forUnderlying("GLD").reduce((sum, position) => sum + Number(position.quantity), 0),
+      referenceDate: all.map(position => position.referenceDate).filter(Boolean).sort().at(-1) ?? "—",
+    };
+  }, [positions]);
+
+  const formPayload = () => ({
+    underlying: form.underlying,
+    expiry: form.expiry,
+    strike: form.strike,
+    optionType: form.optionType,
+    entryPrice: form.entryPrice,
+    quantity: form.quantity,
+    fee: form.fee,
+    entryDelta: form.entryDelta,
+    sourceAccount: nullable(form.sourceAccount),
+    venue: nullable(form.venue),
+    instrument: nullable(form.instrument),
+    currency: form.currency,
+    referenceDate: nullable(form.referenceDate),
+    importedMarkPrice: nullable(form.importedMarkPrice),
+    multiplierXau: nullable(form.multiplierXau),
+    contractMultiplier: nullable(form.contractMultiplier),
+    unitGamma: nullable(form.unitGamma),
+    unitTheta: nullable(form.unitTheta),
+    unitVega: nullable(form.unitVega),
+    dataStatus: form.importedMarkPrice ? "STALE" as const : "WARN" as const,
+  });
 
   const handleSubmit = () => {
     if (!form.expiry || !form.strike || !form.entryPrice || !form.quantity || !form.entryDelta) {
       toast.error("请填写所有必填字段");
       return;
     }
-    if (editId) {
-      updateMutation.mutate({ id: editId, ...form });
-    } else {
-      createMutation.mutate(form);
-    }
+    const payload = formPayload();
+    if (editId) updateMutation.mutate({ id: editId, ...payload });
+    else createMutation.mutate(payload);
   };
 
-  const handleEdit = (pos: any) => {
-    setEditId(pos.id);
+  const handleEdit = (position: any) => {
+    setEditId(position.id);
     setForm({
-      underlying: pos.underlying,
-      expiry: pos.expiry,
-      strike: pos.strike,
-      optionType: pos.optionType,
-      entryPrice: pos.entryPrice,
-      quantity: pos.quantity,
-      fee: pos.fee,
-      entryDelta: pos.entryDelta,
+      underlying: position.underlying, expiry: position.expiry, strike: position.strike, optionType: position.optionType,
+      entryPrice: position.entryPrice, quantity: position.quantity, fee: position.fee, entryDelta: position.entryDelta,
+      sourceAccount: position.sourceAccount ?? "", venue: position.venue ?? "", instrument: position.instrument ?? "",
+      currency: position.currency ?? (position.underlying === "XAUT" ? "USDT" : "USD"), referenceDate: position.referenceDate ?? "",
+      importedMarkPrice: position.importedMarkPrice ?? "", multiplierXau: position.multiplierXau ?? (position.underlying === "XAUT" ? "1" : ""),
+      contractMultiplier: position.contractMultiplier ?? (position.underlying === "GLD" ? "100" : "1"), unitGamma: position.unitGamma ?? "",
+      unitTheta: position.unitTheta ?? "", unitVega: position.unitVega ?? "",
     });
     setOpen(true);
   };
 
-  const handleNew = () => {
-    setEditId(null);
-    setForm(defaultForm);
-    setOpen(true);
+  const handleNew = () => { setEditId(null); setForm(defaultForm); setOpen(true); };
+
+  const handleFile = async (file?: File) => {
+    if (!file) return;
+    if (!/\.xlsx$/i.test(file.name)) return toast.error("请选择 .xlsx 文件");
+    if (file.size > 12_000_000) return toast.error("Excel 文件不能超过 12 MB");
+    setPreview(null);
+    const base64 = bufferToBase64(await file.arrayBuffer());
+    const result = await previewMutation.mutateAsync({ fileName: file.name, base64 });
+    setPreview(result);
   };
 
-  const handleExport = async () => {
-    const result = await exportQuery.refetch();
-    if (!result.data) return toast.error("导出失败，请稍后再试");
-    const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `gold-options-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    toast.success("备份文件已导出");
+  const confirmImport = () => {
+    if (!preview || preview.errors.length || preview.positions.length === 0) return;
+    importMutation.mutate({ mode: importMode, positions: preview.positions });
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  const handleExportExcel = async () => {
+    const result = await exportExcelQuery.refetch();
+    if (!result.data) return toast.error("Excel 导出失败");
+    downloadBase64(result.data.base64, result.data.mimeType, result.data.fileName);
+    toast.success("已按 期权持仓_XAUT_GLD 模板导出");
+  };
+
+  if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gold-gradient">期权仓位管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">管理您的 XAUT 和 GLD 期权持仓</p>
+          <p className="mt-1 text-sm text-muted-foreground">Excel 快照是主导入流程；手工录入用于临时修正或单腿补录。</p>
         </div>
-        <div className="flex gap-2">
-        <Button variant="outline" onClick={handleExport} className="gap-2" disabled={exportQuery.isFetching}>
-          <Download className="w-4 h-4" /> 导出备份
-        </Button>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={handleNew} className="gap-2">
-              <Plus className="w-4 h-4" /> 添加仓位
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-lg bg-card border-border">
-            <DialogHeader>
-              <DialogTitle>{editId ? "编辑仓位" : "添加新仓位"}</DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-2 gap-4 mt-4">
-              <div>
-                <Label>Underlying</Label>
-                <Select value={form.underlying} onValueChange={(v: "XAUT" | "GLD") => setForm({ ...form, underlying: v })}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="XAUT">XAUT</SelectItem>
-                    <SelectItem value="GLD">GLD</SelectItem>
-                  </SelectContent>
-                </Select>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={handleExportExcel} className="gap-2" disabled={exportExcelQuery.isFetching || !positions?.length}>
+            {exportExcelQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} 导出 Excel
+          </Button>
+          <Dialog open={importOpen} onOpenChange={value => { setImportOpen(value); if (!value) setPreview(null); }}>
+            <DialogTrigger asChild><Button variant="outline" className="gap-2"><Upload className="h-4 w-4" /> 上传持仓 Excel</Button></DialogTrigger>
+            <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-5xl">
+              <DialogHeader><DialogTitle>上传、校验并更新仓位</DialogTitle><DialogDescription>校验 期权持仓_XAUT_GLD 的 29 列结构、Total 汇总和明细，再选择替换或更新。</DialogDescription></DialogHeader>
+              <input ref={fileInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={event => handleFile(event.target.files?.[0])} />
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="flex min-h-28 w-full flex-col items-center justify-center gap-2 border border-dashed border-primary/50 bg-primary/5 text-sm hover:bg-primary/10">
+                {previewMutation.isPending ? <Loader2 className="h-7 w-7 animate-spin text-primary" /> : <FileSpreadsheet className="h-7 w-7 text-primary" />}
+                <span>{previewMutation.isPending ? "正在读取并核对公式/汇总…" : "选择 期权持仓_XAUT_GLD 格式的 .xlsx 文件"}</span>
+                <span className="text-xs text-muted-foreground">上限 12 MB；先预览，不会立即覆盖数据</span>
+              </button>
+              {preview && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
+                    {[
+                      ["文件", preview.fileName], ["工作表", preview.sheetName], ["Reference", preview.referenceDate ?? "MISSING"],
+                      ["明细", preview.summary.detailRows], ["XAUT", `${preview.summary.xautRows} / Qty ${preview.summary.xautNetQty}`], ["GLD", `${preview.summary.gldRows} / Qty ${preview.summary.gldNetQty}`],
+                    ].map(([label, value]) => <div key={String(label)} className="border border-border/60 bg-secondary/20 p-2"><p className="text-[10px] uppercase text-muted-foreground">{label}</p><p className="truncate font-mono text-xs" title={String(value)}>{value}</p></div>)}
+                  </div>
+                  <div className={`flex items-center gap-2 border p-2 text-xs ${preview.exactHeaderMatch ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-amber-500/40 bg-amber-500/10 text-amber-200"}`}>
+                    {preview.exactHeaderMatch ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                    {preview.exactHeaderMatch ? "29 列名称及顺序与标准模板完全一致。" : "列可识别但并非完全同序；请检查预览警告。"}
+                  </div>
+                  {(preview.errors.length > 0 || preview.warnings.length > 0) && <div className="grid gap-2 md:grid-cols-2">
+                    <div className="border border-red-500/30 bg-red-500/5 p-2 text-xs"><strong>Errors ({preview.errors.length})</strong>{preview.errors.length ? preview.errors.map(message => <p key={message} className="mt-1 text-red-300">{message}</p>) : <p className="mt-1 text-muted-foreground">无阻断错误</p>}</div>
+                    <div className="border border-amber-500/30 bg-amber-500/5 p-2 text-xs"><strong>Warnings ({preview.warnings.length})</strong>{preview.warnings.length ? preview.warnings.slice(0, 10).map(message => <p key={message} className="mt-1 text-amber-200">{message}</p>) : <p className="mt-1 text-muted-foreground">无警告</p>}</div>
+                  </div>}
+                  <div className="max-h-64 overflow-auto border border-border/60">
+                    <Table><TableHeader><TableRow><TableHead>Instrument</TableHead><TableHead>U</TableHead><TableHead>Expiry</TableHead><TableHead>Strike</TableHead><TableHead>Qty</TableHead><TableHead>Mark</TableHead><TableHead>Total Δ XAU</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                      <TableBody>{preview.positions.slice(0, 15).map(position => <TableRow key={`${position.importRow}-${position.instrument}`}><TableCell className="max-w-56 truncate font-mono text-[11px]">{position.instrument}</TableCell><TableCell>{position.underlying}</TableCell><TableCell className="font-mono text-xs">{position.expiry}</TableCell><TableCell className="font-mono">{position.strike}</TableCell><TableCell className="font-mono">{position.quantity}</TableCell><TableCell className="font-mono">{position.importedMarkPrice ?? "MISSING"}</TableCell><TableCell className="font-mono">{position.importedTotalDeltaXau ?? "MISSING"}</TableCell><TableCell><Badge variant="outline">{position.dataStatus}</Badge></TableCell></TableRow>)}</TableBody>
+                    </Table>
+                  </div>
+                  <div className="flex flex-wrap items-end justify-between gap-3 border-t border-border pt-3">
+                    <div className="w-72"><Label>更新模式</Label><Select value={importMode} onValueChange={value => setImportMode(value as typeof importMode)}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="replace">替换快照（推荐）</SelectItem><SelectItem value="upsert">按 Instrument 更新/新增</SelectItem></SelectContent></Select><p className="mt-1 text-[11px] text-muted-foreground">替换只影响当前登录用户；写入前自动备份。</p></div>
+                    <Button onClick={confirmImport} disabled={Boolean(preview.errors.length) || !preview.positions.length || importMutation.isPending} className="gap-2">{importMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}确认导入 {preview.positions.length} 条明细</Button>
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild><Button onClick={handleNew} className="gap-2"><Plus className="h-4 w-4" /> 添加仓位</Button></DialogTrigger>
+            <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
+              <DialogHeader><DialogTitle>{editId ? "编辑仓位" : "添加新仓位"}</DialogTitle><DialogDescription>核心合约信息为必填；账户、快照和 Unit Greeks 可展开补充。</DialogDescription></DialogHeader>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div><Label>Underlying *</Label><Select value={form.underlying} onValueChange={(value: "XAUT" | "GLD") => setForm({ ...form, underlying: value, currency: value === "XAUT" ? "USDT" : "USD", contractMultiplier: value === "XAUT" ? "1" : "100" })}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="XAUT">XAUT</SelectItem><SelectItem value="GLD">GLD</SelectItem></SelectContent></Select></div>
+                <div><Label>Call / Put *</Label><Select value={form.optionType} onValueChange={(value: "call" | "put") => setForm({ ...form, optionType: value })}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="call">Call</SelectItem><SelectItem value="put">Put</SelectItem></SelectContent></Select></div>
+                <div><Label>Expiry *</Label><Input type="date" value={form.expiry} onChange={event => setForm({ ...form, expiry: event.target.value })} className="mt-1" /></div>
+                <div><Label>Strike *</Label><Input type="number" step="0.01" value={form.strike} onChange={event => setForm({ ...form, strike: event.target.value })} className="mt-1" /></div>
+                <div><Label>Entry Price *</Label><Input type="number" step="any" value={form.entryPrice} onChange={event => setForm({ ...form, entryPrice: event.target.value })} className="mt-1" /></div>
+                <div><Label>Net Qty *</Label><Input type="number" step="any" value={form.quantity} onChange={event => setForm({ ...form, quantity: event.target.value })} className="mt-1" /></div>
+                <div><Label>Fee</Label><Input type="number" step="any" value={form.fee} onChange={event => setForm({ ...form, fee: event.target.value })} className="mt-1" /></div>
+                <div><Label>Unit Delta *</Label><Input type="number" step="any" value={form.entryDelta} onChange={event => setForm({ ...form, entryDelta: event.target.value })} className="mt-1" /></div>
               </div>
-              <div>
-                <Label>Type</Label>
-                <Select value={form.optionType} onValueChange={(v: "call" | "put") => setForm({ ...form, optionType: v })}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="call">Call</SelectItem>
-                    <SelectItem value="put">Put</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Expiry (到期日)</Label>
-                <Input type="date" value={form.expiry} onChange={e => setForm({ ...form, expiry: e.target.value })} className="mt-1" />
-              </div>
-              <div>
-                <Label>Strike (行权价)</Label>
-                <Input type="number" step="0.01" placeholder="4200" value={form.strike} onChange={e => setForm({ ...form, strike: e.target.value })} className="mt-1" />
-              </div>
-              <div>
-                <Label>Entry Price (买入价格)</Label>
-                <Input type="number" step="0.000001" placeholder="150.5" value={form.entryPrice} onChange={e => setForm({ ...form, entryPrice: e.target.value })} className="mt-1" />
-              </div>
-              <div>
-                <Label>Quantity (数量)</Label>
-                <Input type="number" step="0.0001" placeholder="1" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} className="mt-1" />
-              </div>
-              <div>
-                <Label>Fee (手续费)</Label>
-                <Input type="number" step="0.000001" placeholder="0" value={form.fee} onChange={e => setForm({ ...form, fee: e.target.value })} className="mt-1" />
-              </div>
-              <div>
-                <Label>Delta</Label>
-                <Input type="number" step="0.000001" placeholder="0.55" value={form.entryDelta} onChange={e => setForm({ ...form, entryDelta: e.target.value })} className="mt-1" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-6">
-              <Button variant="outline" onClick={() => setOpen(false)}>取消</Button>
-              <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
-                {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                {editId ? "更新" : "添加"}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+              <details className="border border-border/60 p-3" open>
+                <summary className="cursor-pointer text-sm font-medium">账户、市场快照与 Unit Greeks</summary>
+                <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                  {[
+                    ["Source Account", "sourceAccount", "text"], ["Venue", "venue", "text"], ["Instrument", "instrument", "text"], ["Reference Date", "referenceDate", "date"],
+                    ["Mark Price", "importedMarkPrice", "number"], ["Multiplier XAU", "multiplierXau", "number"], ["Contract Multiplier", "contractMultiplier", "number"], ["Unit Gamma", "unitGamma", "number"],
+                    ["Unit Theta", "unitTheta", "number"], ["Unit Vega", "unitVega", "number"],
+                  ].map(([label, key, type]) => <div key={key}><Label>{label}</Label><Input type={type} step="any" value={form[key as keyof PositionForm]} onChange={event => setForm({ ...form, [key]: event.target.value })} className="mt-1" /></div>)}
+                  <div><Label>Currency</Label><Select value={form.currency} onValueChange={(value: "USD" | "USDT") => setForm({ ...form, currency: value })}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="USD">USD</SelectItem><SelectItem value="USDT">USDT</SelectItem></SelectContent></Select></div>
+                </div>
+              </details>
+              <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setOpen(false)}>取消</Button><Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>{(createMutation.isPending || updateMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editId ? "更新" : "添加"}</Button></div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
-      {/* Positions Table */}
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+        {[["Positions", summary.count], ["XAUT", `${summary.xaut} / Qty ${summary.xautQty}`], ["GLD", `${summary.gld} / Qty ${summary.gldQty}`], ["Reference Date", summary.referenceDate], ["Import Status", positions?.some(position => position.importSource) ? "EXCEL SNAPSHOT" : "MANUAL"]].map(([label, value]) => <Card key={String(label)} className="glass-card"><CardContent className="p-3"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-sm font-semibold">{value}</p></CardContent></Card>)}
+      </div>
+
       <Card className="glass-card">
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border/50">
-                <TableHead>Underlying</TableHead>
-                <TableHead>Expiry</TableHead>
-                <TableHead>Strike</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Entry Price</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Fee</TableHead>
-                <TableHead>Delta</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {positions && positions.length > 0 ? positions.map((pos) => (
-                <TableRow key={pos.id} className="border-border/30 hover:bg-secondary/30 transition-colors">
-                  <TableCell>
-                    <Badge variant={pos.underlying === "XAUT" ? "default" : "secondary"} className="font-mono">
-                      {pos.underlying}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">{pos.expiry}</TableCell>
-                  <TableCell className="font-mono">{pos.strike}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={pos.optionType === "call" ? "text-green-400 border-green-400/30" : "text-red-400 border-red-400/30"}>
-                      {pos.optionType.toUpperCase()}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono">{pos.entryPrice}</TableCell>
-                  <TableCell className="font-mono">{pos.quantity}</TableCell>
-                  <TableCell className="font-mono text-muted-foreground">{pos.fee}</TableCell>
-                  <TableCell className="font-mono">{pos.entryDelta}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(pos)}>
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => {
-                        if (window.confirm(`确认删除 ${pos.underlying} ${pos.strike} ${pos.optionType.toUpperCase()} 仓位？`)) {
-                          deleteMutation.mutate({ id: pos.id });
-                        }
-                      }}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table className="min-w-[1500px]">
+              <TableHeader><TableRow><TableHead>Source / Venue</TableHead><TableHead>Instrument</TableHead><TableHead>U</TableHead><TableHead>Expiry</TableHead><TableHead>Strike</TableHead><TableHead>C/P</TableHead><TableHead>Qty</TableHead><TableHead>Multiplier</TableHead><TableHead>Mark</TableHead><TableHead>Entry</TableHead><TableHead>MV</TableHead><TableHead>Entry Cost</TableHead><TableHead>UPL</TableHead><TableHead>Unit Δ</TableHead><TableHead>Total Δ XAU</TableHead><TableHead>Γ XAU</TableHead><TableHead>Θ USD/d</TableHead><TableHead>Vega USD/v</TableHead><TableHead>Status</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
+              <TableBody>{positions?.length ? positions.map(position => (
+                <TableRow key={position.id} className="hover:bg-secondary/30">
+                  <TableCell className="max-w-48"><p className="truncate text-xs" title={position.sourceAccount ?? ""}>{position.sourceAccount ?? "LOCAL-HEDGE"}</p><p className="truncate text-[10px] text-muted-foreground">{position.venue ?? "MANUAL"}</p></TableCell>
+                  <TableCell className="max-w-64 truncate font-mono text-[11px]" title={position.instrument ?? ""}>{position.instrument ?? `${position.underlying}-${position.expiry}-${position.strike}`}</TableCell>
+                  <TableCell><Badge variant={position.underlying === "XAUT" ? "default" : "secondary"}>{position.underlying}</Badge></TableCell>
+                  <TableCell className="font-mono text-xs">{position.expiry}</TableCell><TableCell className="font-mono">{position.strike}</TableCell>
+                  <TableCell><Badge variant="outline" className={position.optionType === "call" ? "text-green-400" : "text-red-400"}>{position.optionType.toUpperCase()}</Badge></TableCell>
+                  <TableCell className="font-mono">{position.quantity}</TableCell><TableCell className="font-mono text-xs">{position.contractMultiplier ?? (position.underlying === "GLD" ? "100" : "1")} × {position.multiplierXau ?? "—"} XAU</TableCell>
+                  <TableCell className="font-mono">{position.importedMarkPrice ?? "—"}</TableCell><TableCell className="font-mono">{position.entryPrice}</TableCell>
+                  <TableCell className="font-mono">{money(position.importedMarketValue)}</TableCell><TableCell className="font-mono">{money(position.importedEntryCost)}</TableCell>
+                  <TableCell className={`font-mono ${Number(position.importedUnrealizedPnl) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{money(position.importedUnrealizedPnl)}</TableCell>
+                  <TableCell className="font-mono">{money(position.entryDelta)}</TableCell><TableCell className="font-mono">{money(position.importedTotalDeltaXau)}</TableCell>
+                  <TableCell className="font-mono">{money(position.importedTotalGammaXau)}</TableCell><TableCell className="font-mono">{money(position.importedTotalThetaUsdDay)}</TableCell><TableCell className="font-mono">{money(position.importedTotalVegaUsdVol)}</TableCell>
+                  <TableCell><Badge variant="outline" className={position.dataStatus === "STALE" ? "border-amber-500/40 text-amber-300" : ""}>{position.dataStatus ?? (position.importSource ? "STALE" : "WARN")}</Badge></TableCell>
+                  <TableCell className="text-right"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(position)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { if (window.confirm(`确认删除 ${position.underlying} ${position.strike} ${position.optionType.toUpperCase()}？`)) deleteMutation.mutate({ id: position.id }); }}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell>
                 </TableRow>
-              )) : (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
-                    暂无仓位数据，点击"添加仓位"开始录入
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              )) : <TableRow><TableCell colSpan={20} className="py-12 text-center text-muted-foreground"><FileSpreadsheet className="mx-auto mb-2 h-8 w-8 opacity-50" />上传持仓 Excel，或添加第一条仓位</TableCell></TableRow>}</TableBody>
+            </Table>
+          </div>
+          <div className="flex items-center gap-2 border-t border-border/50 px-3 py-2 text-[11px] text-muted-foreground"><Info className="h-3.5 w-3.5" />导入的 Mark 与 Greeks 保留 Reference Date 并标记 STALE；若实时 API 有同一合约报价，分析页会优先使用实时值。</div>
         </CardContent>
       </Card>
     </div>

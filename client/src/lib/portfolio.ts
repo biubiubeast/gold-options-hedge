@@ -13,6 +13,35 @@ export type PortfolioPosition = {
   quantity: string;
   fee: string;
   entryDelta: string;
+  sourceAccount?: string | null;
+  venue?: string | null;
+  instrument?: string | null;
+  product?: string | null;
+  currency?: "USD" | "USDT" | null;
+  qtyLong?: string | null;
+  qtyShort?: string | null;
+  multiplierXau?: string | null;
+  xauEqNetQty?: string | null;
+  referenceDate?: string | null;
+  importedMarkPrice?: string | null;
+  importedMarketValue?: string | null;
+  entryValue?: string | null;
+  importedEntryCost?: string | null;
+  importedUnrealizedPnl?: string | null;
+  importedUnrealizedPnlPct?: string | null;
+  importedTotalDeltaXau?: string | null;
+  importedTotalGammaXau?: string | null;
+  importedTotalThetaUsdDay?: string | null;
+  importedTotalVegaUsdVol?: string | null;
+  unitGamma?: string | null;
+  unitTheta?: string | null;
+  unitVega?: string | null;
+  contractMultiplier?: string | null;
+  rawMarginMode?: string | null;
+  rawMarginType?: string | null;
+  importSource?: string | null;
+  importRow?: number | null;
+  dataStatus?: DataStatus;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 };
@@ -96,6 +125,38 @@ const numberOf = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const finiteImported = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+function importedSnapshot(position: PortfolioPosition): MarketSnapshot | null {
+  const markPrice = finiteImported(position.importedMarkPrice);
+  const delta = finiteImported(position.entryDelta);
+  const gamma = finiteImported(position.unitGamma);
+  const theta = finiteImported(position.unitTheta);
+  const vega = finiteImported(position.unitVega);
+  if ([markPrice, delta, gamma, theta, vega].some(value => value === null)) return null;
+  const quoteTime = position.referenceDate ? `${position.referenceDate}T23:59:59.000Z` : null;
+  const age = quoteTime ? Date.now() - Date.parse(quoteTime) : Number.POSITIVE_INFINITY;
+  return {
+    markPrice: markPrice!,
+    markIv: 0,
+    bid1: 0,
+    ask1: 0,
+    delta: delta!,
+    gamma: gamma!,
+    theta: theta!,
+    vega: vega!,
+    source: `Excel · ${position.importSource ?? "position snapshot"}${position.importRow ? ` · row ${position.importRow}` : ""}`,
+    estimated: false,
+    available: true,
+    quoteTime,
+    dataStatus: !quoteTime ? "WARN" : age > 15 * 60_000 ? "STALE" : "LIVE",
+  };
+}
+
 export function bybitExpiry(expiry: string): string {
   const [year, month, day] = expiry.split("-").map(Number);
   const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -145,6 +206,8 @@ export function getPositionMarketData(args: {
         dataStatus: quoteStatus(ticker.timestamp),
       };
     }
+    const imported = importedSnapshot(position);
+    if (imported) return imported;
   }
 
   if (position.underlying === "GLD") {
@@ -170,6 +233,8 @@ export function getPositionMarketData(args: {
         dataStatus: quoteStatus(quote.timestamp),
       };
     }
+    const imported = importedSnapshot(position);
+    if (imported) return imported;
     if (gldSpot > 0) {
       const result = blackScholes({
         S: gldSpot,
@@ -241,15 +306,17 @@ export function calculatePosition(args: {
   const quantity = numberOf(position.quantity);
   const entryPrice = numberOf(position.entryPrice);
   const fee = numberOf(position.fee);
-  const contractMultiplier = position.underlying === "GLD"
-    ? settings.gldContractMultiplier
-    : settings.xautContractMultiplier;
+  const importedContractMultiplier = finiteImported(position.contractMultiplier);
+  const contractMultiplier = importedContractMultiplier && importedContractMultiplier > 0
+    ? importedContractMultiplier
+    : position.underlying === "GLD" ? settings.gldContractMultiplier : settings.xautContractMultiplier;
   const underlyingPrice = position.underlying === "GLD" ? args.gldSpot : args.xautSpot;
   const automaticScale = args.xauSpot > 0 && underlyingPrice > 0 ? underlyingPrice / args.xauSpot : 1;
   const override = position.underlying === "GLD"
     ? settings.gldSpotScaleOverride
     : settings.xautSpotScaleOverride;
-  const spotScale = override ?? calculate("spot_scale", {
+  const importedSpotScale = finiteImported(position.multiplierXau);
+  const spotScale = importedSpotScale ?? override ?? calculate("spot_scale", {
     underlyingPrice,
     xauUsdPrice: args.xauSpot || underlyingPrice || 1,
   }, formulas, automaticScale);
