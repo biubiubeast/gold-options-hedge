@@ -6,8 +6,8 @@
 
 ## 主要功能
 
-1. 仓位录入、编辑和删除：Underlying、Expiry、Strike、Call/Put、Entry Price、Quantity、Fee、Entry Delta。
-2. Expiry × Strike 矩阵：Mark、IV、Bid/Ask、数量、Delta；可切换为只显示 Delta、Mark Price、Mark IV 或数量；同一格按 Delta 从高到低排列，并用深浅颜色形成热力图。
+1. 仓位录入、编辑和删除；支持预览并导入 DinoSignal 的 29 列 XAUT/GLD 持仓 Excel，导入前自动备份，也可按相同排版导出 Excel。
+2. Expiry × Strike 矩阵：支持 Unit/Total Delta、Gamma、Theta、Vega、Mark IV、MV、UPL 等指标；紧凑无文字模式可容纳 100–200 条仓位，右侧 P99 色标与实时 Spot marker 用于快速识别集中风险。
 3. 期权详情：单位 Greeks、持仓 Total Greeks、Entry Cost、Current Value、P&L、数据来源和“实时/估算”标识。
 4. 组合 Dashboard：按 Underlying / Expiry / Strike 筛选；显示 XAUT、GLD 和 XAU 代理现价；统一汇总估值与 XAU 风险量纲。
 5. 可执行公式：编辑会直接影响 Black-Scholes、估值和汇总；支持新增公式并在其他公式中按名称引用；可逐项或全部恢复默认。
@@ -30,6 +30,8 @@
 7. Scenario 支持 XAU Shock -20% 至 +20%、IV Shock -10/-5/0/+5/+10 vol、Day 0/1/3/7，并叠加 Van naked delta，统一输出 USD PnL、XAU delta、Residual PnL 和 Stress Coverage。
 
 完整的架构、schema、计算定义、颜色算法和验收记录见 [`docs/risk-heatmap-spec.md`](docs/risk-heatmap-spec.md)。
+
+Excel 29 列格式、单位 Greeks 反推公式、导入/恢复、导出和紧凑热力图操作见 [`docs/excel-position-guide.md`](docs/excel-position-guide.md)。
 
 ## 快速启动
 

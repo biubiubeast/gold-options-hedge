@@ -107,6 +107,8 @@ temp/
 *.sqlite3
 data/portfolio.json
 data/portfolio.json.tmp
+data/
+outputs/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
