@@ -29,6 +29,7 @@ export interface BybitTickerOption {
   vega: string;
   volume24h: string;
   openInterest: string;
+  timestamp: number;
 }
 
 export interface BybitInstrument {
@@ -140,7 +141,8 @@ export async function getXautOptionTickers(): Promise<BybitTickerOption[]> {
     if (data.retCode !== 0 || !Array.isArray(data.result?.list)) {
       throw new Error(data.retMsg || "Bybit returned no XAUT option tickers");
     }
-    return data.result.list;
+    const timestamp = timestampSeconds(data.time);
+    return data.result.list.map((ticker: Record<string, unknown>) => ({ ...ticker, timestamp })) as BybitTickerOption[];
   }).catch(error => {
     console.error("[MarketData] Failed to fetch XAUT option tickers:", error);
     return [];

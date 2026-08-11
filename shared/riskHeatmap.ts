@@ -1,0 +1,655 @@
+import { blackScholes } from "./blackScholes";
+
+export type RiskUnderlying = "GLD" | "XAUT";
+export type CallPut = "call" | "put";
+export type DataStatus = "LIVE" | "STALE" | "WARN" | "MISSING" | "FAIL";
+export type PlannedAction = "HOLD" | "CLOSE" | "ROLL" | "EXERCISE ALLOWED" | "DNE";
+export type HeatmapMetric =
+  | "unitDelta"
+  | "totalDelta"
+  | "gamma"
+  | "theta"
+  | "vega"
+  | "markIV"
+  | "MV"
+  | "UPL"
+  | "DTE"
+  | "distanceToStrike"
+  | "rollPriority";
+export type ColorScaleMode = "quantile" | "log" | "symmetric";
+
+export interface RiskPosition {
+  id: string;
+  venue: string;
+  broker: string;
+  account: string;
+  underlying: RiskUnderlying;
+  instrument: string;
+  callPut: CallPut;
+  expiry: string;
+  strike: number;
+  netQty: number;
+  contractMultiplier: number | null;
+  deliverableSource: string | null;
+  contractAdjusted: boolean;
+  gldOzPerShare: number | null;
+  underlyingOzPerUnit: number | null;
+  markPrice: number | null;
+  bid: number | null;
+  ask: number | null;
+  markIV: number | null;
+  unitDelta: number | null;
+  unitGamma: number | null;
+  unitTheta: number | null;
+  unitVega: number | null;
+  totalDeltaXAU: number | null;
+  totalGammaXAU: number | null;
+  totalThetaUSD: number | null;
+  totalVegaUSD: number | null;
+  MV: number | null;
+  entryCost: number | null;
+  UPL: number | null;
+  quoteTime: string | null;
+  positionTime: string | null;
+  source: string | null;
+  dataStatus: DataStatus;
+  availableUSD?: number | null;
+  buyingPower?: number | null;
+  officialClose?: number | null;
+  brokerCutoff?: string | null;
+  plannedAction?: PlannedAction | null;
+  owner?: string | null;
+  reviewer?: string | null;
+  confirmationId?: string | null;
+}
+
+export interface RollFactor {
+  key: string;
+  label: string;
+  weight: number;
+  score: number;
+  contribution: number;
+  reason: string;
+}
+
+export interface RollPriority {
+  total: number;
+  factors: RollFactor[];
+}
+
+export interface EnrichedRiskPosition extends RiskPosition {
+  dte: number;
+  distanceToStrike: number | null;
+  spreadPct: number | null;
+  intrinsicValue: number | null;
+  timeValue: number | null;
+  quoteAgeSeconds: number | null;
+  rollPriority: RollPriority;
+}
+
+export interface HeatLegendBin {
+  from: number;
+  to: number;
+  label: string;
+  normalized: number;
+}
+
+export interface HeatScale {
+  mode: ColorScaleMode;
+  centered: boolean;
+  clipLow: number;
+  clipHigh: number;
+  p99Abs: number;
+  bins: HeatLegendBin[];
+  normalize: (value: number) => number;
+}
+
+export interface ScenarioInput {
+  xauShockPct: number;
+  ivShockPoints: number;
+  day: 0 | 1 | 3 | 7;
+  vanNakedDeltaXau: number;
+  spots: Record<RiskUnderlying, number> & { XAU: number };
+}
+
+export interface ScenarioResult {
+  optionPnlUSD: number;
+  gldPnlUSD: number;
+  xautPnlUSD: number;
+  vanNakedPnlUSD: number;
+  residualPnlUSD: number;
+  stressedDeltaXAU: number;
+  stressCoveragePct: number | null;
+  missingCount: number;
+}
+
+export interface ExerciseControl {
+  positionId: string;
+  label: string;
+  dte: number;
+  spotDistancePct: number | null;
+  estimatedFundingUSD: number | null;
+  availableFundingUSD: number | null;
+  fundingCoveragePct: number | null;
+  likelyITM: boolean | null;
+  brokerCutoff: string | null;
+  plannedAction: PlannedAction;
+  owner: string | null;
+  reviewer: string | null;
+  confirmationId: string | null;
+  status: DataStatus;
+}
+
+export type SpotRangeState = {
+  state: "within" | "above" | "below" | "missing";
+  nearestStrike: number | null;
+};
+
+const DAY_MS = 86_400_000;
+
+export const METRIC_LABELS: Record<HeatmapMetric, string> = {
+  unitDelta: "Unit Delta",
+  totalDelta: "Total Delta XAU",
+  gamma: "Gamma XAU",
+  theta: "Theta USD/day",
+  vega: "Vega USD/vol",
+  markIV: "Mark IV",
+  MV: "Market Value",
+  UPL: "UPL",
+  DTE: "DTE",
+  distanceToStrike: "Distance to Strike",
+  rollPriority: "Roll Priority",
+};
+
+export const CENTERED_METRICS = new Set<HeatmapMetric>([
+  "unitDelta",
+  "totalDelta",
+  "gamma",
+  "theta",
+  "vega",
+  "MV",
+  "UPL",
+  "distanceToStrike",
+]);
+
+export function finiteOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.max(0, Math.min(sorted.length - 1, (sorted.length - 1) * p));
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+}
+
+export function daysToExpiry(expiry: string, asOf: Date = new Date()): number {
+  const [year, month, day] = expiry.split("-").map(Number);
+  if (![year, month, day].every(Number.isFinite)) return Number.NaN;
+  const expiryDay = Date.UTC(year, month - 1, day);
+  const asOfDay = Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate());
+  return Math.round((expiryDay - asOfDay) / DAY_MS);
+}
+
+export function positionLabel(position: Pick<RiskPosition, "underlying" | "expiry" | "strike" | "callPut">): string {
+  return `${position.underlying} ${position.expiry.slice(5)} ${formatPrice(position.strike)}${position.callPut === "call" ? "C" : "P"}`;
+}
+
+export function metricValue(position: EnrichedRiskPosition, metric: HeatmapMetric): number | null {
+  switch (metric) {
+    case "unitDelta": return position.unitDelta;
+    case "totalDelta": return position.totalDeltaXAU;
+    case "gamma": return position.totalGammaXAU;
+    case "theta": return position.totalThetaUSD;
+    case "vega": return position.totalVegaUSD;
+    case "markIV": return position.markIV;
+    case "MV": return position.MV;
+    case "UPL": return position.UPL;
+    case "DTE": return Number.isFinite(position.dte) ? position.dte : null;
+    case "distanceToStrike": return position.distanceToStrike;
+    case "rollPriority": return position.rollPriority.total;
+  }
+}
+
+export function aggregateMetric(positions: EnrichedRiskPosition[], metric: HeatmapMetric): number | null {
+  const values = positions
+    .map(position => metricValue(position, metric))
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  if (values.length === 0) return null;
+  if (metric === "unitDelta" || metric === "distanceToStrike") {
+    return values.reduce((selected, value) => Math.abs(value) > Math.abs(selected) ? value : selected, values[0]);
+  }
+  if (metric === "markIV" || metric === "rollPriority") return Math.max(...values);
+  if (metric === "DTE") return Math.min(...values);
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
+export function quoteAgeSeconds(position: RiskPosition, asOf: Date = new Date()): number | null {
+  if (!position.quoteTime) return null;
+  const timestamp = Date.parse(position.quoteTime);
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.max(0, Math.round((asOf.getTime() - timestamp) / 1000));
+}
+
+export function spotRangeState(strikes: number[], spot: number): SpotRangeState {
+  const valid = strikes.filter(Number.isFinite).sort((a, b) => a - b);
+  if (valid.length === 0 || !Number.isFinite(spot) || spot <= 0) return { state: "missing", nearestStrike: null };
+  if (spot < valid[0]) return { state: "below", nearestStrike: valid[0] };
+  if (spot > valid[valid.length - 1]) return { state: "above", nearestStrike: valid[valid.length - 1] };
+  return {
+    state: "within",
+    nearestStrike: valid.reduce((nearest, strike) => Math.abs(strike - spot) < Math.abs(nearest - spot) ? strike : nearest, valid[0]),
+  };
+}
+
+function statusSeverity(status: DataStatus): number {
+  return ({ LIVE: 0, WARN: 1, STALE: 2, MISSING: 3, FAIL: 4 })[status];
+}
+
+export function worstStatus(positions: Pick<RiskPosition, "dataStatus">[]): DataStatus {
+  return positions.reduce<DataStatus>((worst, position) =>
+    statusSeverity(position.dataStatus) > statusSeverity(worst) ? position.dataStatus : worst,
+  "LIVE");
+}
+
+export function deriveDataStatus(position: RiskPosition, asOf: Date = new Date()): DataStatus {
+  if (position.dataStatus === "FAIL") return "FAIL";
+  if (!position.source || position.markPrice === null || position.contractMultiplier === null) return "MISSING";
+  if ([position.unitDelta, position.unitGamma, position.unitTheta, position.unitVega].some(value => value === null)) return "MISSING";
+  const age = quoteAgeSeconds(position, asOf);
+  if (age === null) return position.dataStatus === "WARN" ? "WARN" : "MISSING";
+  if (age > 900) return "STALE";
+  if (position.contractAdjusted || position.deliverableSource?.includes("fallback")) return "WARN";
+  return position.dataStatus === "WARN" ? "WARN" : "LIVE";
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+function riskOunces(position: RiskPosition): number | null {
+  return position.underlying === "GLD" ? position.gldOzPerShare : position.underlyingOzPerUnit;
+}
+
+export function deriveTotals(position: RiskPosition): RiskPosition {
+  const multiplier = finiteOrNull(position.contractMultiplier);
+  const ounces = finiteOrNull(riskOunces(position));
+  const mark = finiteOrNull(position.markPrice);
+  const qty = finiteOrNull(position.netQty);
+  const entryCost = finiteOrNull(position.entryCost);
+  const canScale = multiplier !== null && ounces !== null && qty !== null;
+  const marketValue = mark !== null && multiplier !== null && qty !== null ? mark * qty * multiplier : null;
+  const totalDelta = canScale && position.unitDelta !== null
+    ? position.unitDelta * qty * multiplier * ounces
+    : null;
+  const totalGamma = canScale && position.unitGamma !== null
+    ? position.unitGamma * qty * multiplier * ounces ** 2
+    : null;
+  const totalTheta = multiplier !== null && qty !== null && position.unitTheta !== null
+    ? position.unitTheta * qty * multiplier
+    : null;
+  const totalVega = multiplier !== null && qty !== null && position.unitVega !== null
+    ? position.unitVega * qty * multiplier
+    : null;
+  return {
+    ...position,
+    totalDeltaXAU: totalDelta,
+    totalGammaXAU: totalGamma,
+    totalThetaUSD: totalTheta,
+    totalVegaUSD: totalVega,
+    MV: marketValue,
+    UPL: marketValue !== null && entryCost !== null ? marketValue - entryCost : null,
+  };
+}
+
+function rollFactors(position: RiskPosition, spot: number, context: { portfolioAbsDelta: number; portfolioAbsMV: number }, asOf: Date): RollPriority {
+  const dte = daysToExpiry(position.expiry, asOf);
+  const distance = spot > 0 ? (spot - position.strike) / spot : null;
+  const mv = Math.abs(position.MV ?? 0);
+  const thetaRatio = position.totalThetaUSD === null ? null : Math.abs(position.totalThetaUSD) / Math.max(mv, 1);
+  const spread = position.bid !== null && position.ask !== null && position.markPrice && position.markPrice > 0
+    ? Math.max(0, position.ask - position.bid) / position.markPrice
+    : null;
+  const intrinsic = spot > 0
+    ? Math.max(position.callPut === "call" ? spot - position.strike : position.strike - spot, 0)
+    : null;
+  const timeValueRatio = position.markPrice !== null && position.markPrice > 0 && intrinsic !== null
+    ? clamp01(Math.max(position.markPrice - intrinsic, 0) / position.markPrice)
+    : null;
+  const absDelta = Math.abs(position.totalDeltaXAU ?? 0);
+  const deltaScore = Math.max(Math.abs(position.unitDelta ?? 0), clamp01(absDelta / 100));
+  const residualScale = context.portfolioAbsMV > 0 && spot > 0
+    ? clamp01((absDelta * spot * 0.1) / context.portfolioAbsMV / 0.2)
+    : 0;
+  const factorInputs = [
+    { key: "dte", label: "DTE", weight: 0.20, value: Number.isFinite(dte) ? clamp01(1 - Math.max(dte, 0) / 45) : null, reason: Number.isFinite(dte) ? `${dte} DTE` : "expiry missing" },
+    { key: "thetaMv", label: "Theta / MV", weight: 0.15, value: thetaRatio === null ? null : clamp01(thetaRatio / 0.05), reason: thetaRatio === null ? "theta or MV missing" : `${(thetaRatio * 100).toFixed(2)}% / day` },
+    { key: "distance", label: "Distance to strike", weight: 0.15, value: distance === null ? null : clamp01(1 - Math.abs(distance) / 0.15), reason: distance === null ? "spot missing" : `${(distance * 100).toFixed(2)}% from strike` },
+    { key: "delta", label: "Unit / Total Delta", weight: 0.10, value: position.unitDelta === null && position.totalDeltaXAU === null ? null : clamp01(deltaScore), reason: position.totalDeltaXAU === null ? "delta missing" : `${formatCompact(position.totalDeltaXAU)} XAU delta` },
+    { key: "spread", label: "Liquidity spread", weight: 0.10, value: spread === null ? null : clamp01(spread / 0.20), reason: spread === null ? "bid/ask missing" : `${(spread * 100).toFixed(2)}% spread` },
+    { key: "timeValue", label: "Remaining time value", weight: 0.10, value: timeValueRatio === null ? null : 1 - timeValueRatio, reason: timeValueRatio === null ? "time value missing" : `${(timeValueRatio * 100).toFixed(1)}% time value` },
+    { key: "hedge", label: "Hedge contribution", weight: 0.10, value: context.portfolioAbsDelta > 0 ? clamp01(absDelta / context.portfolioAbsDelta / 0.25) : 0, reason: `${formatCompact(absDelta)} / ${formatCompact(context.portfolioAbsDelta)} abs XAU delta` },
+    { key: "residual", label: "Van residual improvement", weight: 0.10, value: residualScale, reason: `${(residualScale * 100).toFixed(0)}% residual-improvement proxy` },
+  ];
+  const factors = factorInputs.map(input => {
+    const score = input.value === null ? 0 : input.value * 100;
+    return {
+      key: input.key,
+      label: input.label,
+      weight: input.weight,
+      score,
+      contribution: score * input.weight,
+      reason: input.value === null ? `MISSING · ${input.reason}` : input.reason,
+    };
+  });
+  return { total: factors.reduce((sum, factor) => sum + factor.contribution, 0), factors };
+}
+
+export function enrichRiskPositions(positions: RiskPosition[], spots: Record<RiskUnderlying, number>, asOf: Date = new Date()): EnrichedRiskPosition[] {
+  const totaled = positions.map(deriveTotals);
+  const context = {
+    portfolioAbsDelta: totaled.reduce((sum, position) => sum + Math.abs(position.totalDeltaXAU ?? 0), 0),
+    portfolioAbsMV: totaled.reduce((sum, position) => sum + Math.abs(position.MV ?? 0), 0),
+  };
+  return totaled.map(position => {
+    const spot = spots[position.underlying] || 0;
+    const dte = daysToExpiry(position.expiry, asOf);
+    const intrinsicValue = spot > 0
+      ? Math.max(position.callPut === "call" ? spot - position.strike : position.strike - spot, 0)
+      : null;
+    const spreadPct = position.bid !== null && position.ask !== null && position.markPrice && position.markPrice > 0
+      ? Math.max(0, position.ask - position.bid) / position.markPrice
+      : null;
+    const enrichedBase: RiskPosition = { ...position, dataStatus: deriveDataStatus(position, asOf) };
+    return {
+      ...enrichedBase,
+      dte,
+      distanceToStrike: spot > 0 ? (spot - position.strike) / spot : null,
+      spreadPct,
+      intrinsicValue,
+      timeValue: position.markPrice !== null && intrinsicValue !== null ? Math.max(position.markPrice - intrinsicValue, 0) : null,
+      quoteAgeSeconds: quoteAgeSeconds(position, asOf),
+      rollPriority: rollFactors(enrichedBase, spot, context, asOf),
+    };
+  });
+}
+
+export function buildHeatScale(values: Array<number | null>, mode: ColorScaleMode, centered: boolean): HeatScale {
+  const valid = values.filter((value): value is number => value !== null && Number.isFinite(value));
+  if (valid.length === 0) {
+    return { mode, centered, clipLow: 0, clipHigh: 0, p99Abs: 0, bins: [], normalize: () => 0 };
+  }
+  const clipLow = percentile(valid, 0.01);
+  const clipHigh = percentile(valid, 0.99);
+  const p99Abs = Math.max(percentile(valid.map(Math.abs), 0.99), Number.EPSILON);
+  const nonZeroAbs = valid.map(Math.abs).filter(value => value > 0);
+  const logScale = Math.max(percentile(nonZeroAbs, 0.5), Number.EPSILON);
+  const quantiles = [0.01, 0.20, 0.40, 0.60, 0.80, 0.95, 0.99].map(p => percentile(valid, p));
+
+  const normalize = (input: number): number => {
+    if (!Number.isFinite(input)) return 0;
+    if (mode === "symmetric") return Math.max(-1, Math.min(1, input / p99Abs));
+    if (mode === "log") {
+      const magnitude = Math.log1p(Math.abs(input) / logScale) / Math.log1p(p99Abs / logScale);
+      if (centered) return Math.sign(input) * Math.min(1, magnitude);
+      return Math.min(1, magnitude);
+    }
+    const clipped = Math.max(clipLow, Math.min(clipHigh, input));
+    let bin = 0;
+    while (bin < quantiles.length - 1 && clipped > quantiles[bin + 1]) bin += 1;
+    const ratio = quantiles.length === 1 ? 0.5 : bin / (quantiles.length - 1);
+    return centered ? ratio * 2 - 1 : ratio;
+  };
+
+  const boundaries = mode === "symmetric"
+    ? [-p99Abs, -p99Abs * 0.66, -p99Abs * 0.33, 0, p99Abs * 0.33, p99Abs * 0.66, p99Abs]
+    : mode === "log"
+      ? centered
+        ? [-p99Abs, -p99Abs * 0.1, -p99Abs * 0.01, 0, p99Abs * 0.01, p99Abs * 0.1, p99Abs]
+        : [0, p99Abs * 0.001, p99Abs * 0.01, p99Abs * 0.05, p99Abs * 0.2, p99Abs * 0.5, p99Abs]
+      : quantiles;
+  const bins = boundaries.slice(0, -1).map((from, index) => {
+    const to = boundaries[index + 1];
+    const midpoint = (from + to) / 2;
+    return { from, to, label: `${formatCompact(from)}…${formatCompact(to)}`, normalized: normalize(midpoint) };
+  });
+  return { mode, centered, clipLow, clipHigh, p99Abs, bins, normalize };
+}
+
+export function formatCompact(value: number | null, metric?: HeatmapMetric): string {
+  if (value === null || !Number.isFinite(value)) return "MISSING";
+  if (metric === "markIV" || metric === "distanceToStrike") return `${(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0)}%`;
+  if (metric === "DTE") return `${Math.round(value)}d`;
+  if (metric === "rollPriority") return `${value.toFixed(0)}`;
+  const absolute = Math.abs(value);
+  const sign = value < 0 ? "−" : value > 0 ? "+" : "";
+  if (absolute >= 1_000_000) return `${sign}${(absolute / 1_000_000).toFixed(1)}m`;
+  if (absolute >= 1_000) return `${sign}${(absolute / 1_000).toFixed(1)}k`;
+  if (absolute >= 100) return `${sign}${absolute.toFixed(0)}`;
+  if (absolute >= 10) return `${sign}${absolute.toFixed(1)}`;
+  return `${sign}${absolute.toFixed(2)}`;
+}
+
+export function formatPrice(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "MISSING";
+  return value.toLocaleString("en-US", { maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0 });
+}
+
+export function heatColor(normalized: number, centered: boolean): string {
+  if (centered) {
+    const magnitude = Math.min(1, Math.abs(normalized));
+    const alpha = 0.10 + magnitude * 0.78;
+    return normalized < 0
+      ? `rgba(224, 70, 78, ${alpha.toFixed(3)})`
+      : `rgba(40, 160, 205, ${alpha.toFixed(3)})`;
+  }
+  const alpha = 0.09 + Math.min(1, Math.max(0, normalized)) * 0.82;
+  return `rgba(222, 164, 48, ${alpha.toFixed(3)})`;
+}
+
+export function exerciseControl(position: EnrichedRiskPosition, spot: number): ExerciseControl {
+  const multiplier = position.contractMultiplier;
+  const funding = multiplier !== null ? position.strike * multiplier * Math.abs(position.netQty) : null;
+  const available = position.buyingPower ?? position.availableUSD ?? null;
+  const coverage = funding !== null && funding > 0 && available !== null ? available / funding * 100 : null;
+  const likelyITM = spot > 0
+    ? position.callPut === "call" ? spot >= position.strike : spot <= position.strike
+    : null;
+  const status: DataStatus = likelyITM && coverage !== null && coverage < 100
+    ? "FAIL"
+    : funding === null || available === null || !position.brokerCutoff
+      ? "MISSING"
+      : position.dte <= 2 ? "WARN" : "LIVE";
+  const plannedAction = position.plannedAction
+    ?? (position.dte < 0 ? "CLOSE" : likelyITM && coverage !== null && coverage >= 100 ? "EXERCISE ALLOWED" : likelyITM ? "ROLL" : "DNE");
+  return {
+    positionId: position.id,
+    label: positionLabel(position),
+    dte: position.dte,
+    spotDistancePct: spot > 0 ? (spot - position.strike) / spot * 100 : null,
+    estimatedFundingUSD: funding,
+    availableFundingUSD: available,
+    fundingCoveragePct: coverage,
+    likelyITM,
+    brokerCutoff: position.brokerCutoff ?? null,
+    plannedAction,
+    owner: position.owner ?? null,
+    reviewer: position.reviewer ?? null,
+    confirmationId: position.confirmationId ?? null,
+    status,
+  };
+}
+
+export function calculateScenario(positions: EnrichedRiskPosition[], input: ScenarioInput): ScenarioResult {
+  const shockFactor = 1 + input.xauShockPct / 100;
+  let gldPnlUSD = 0;
+  let xautPnlUSD = 0;
+  let stressedDeltaXAU = 0;
+  let missingCount = 0;
+  for (const position of positions) {
+    const spot = input.spots[position.underlying];
+    const multiplier = position.contractMultiplier;
+    const ounces = riskOunces(position);
+    if (!spot || multiplier === null || ounces === null || position.markPrice === null || position.markIV === null) {
+      missingCount += 1;
+      continue;
+    }
+    const shockedSpot = spot * shockFactor;
+    const remainingDays = Math.max(0, position.dte - input.day);
+    const sigma = Math.max(0.0001, position.markIV + input.ivShockPoints / 100);
+    const theoretical = remainingDays <= 0
+      ? {
+          price: Math.max(position.callPut === "call" ? shockedSpot - position.strike : position.strike - shockedSpot, 0),
+          delta: position.callPut === "call" ? (shockedSpot > position.strike ? 1 : 0) : (shockedSpot < position.strike ? -1 : 0),
+        }
+      : blackScholes({
+          S: shockedSpot,
+          K: position.strike,
+          T: Math.max(remainingDays / 365, 1 / 365 / 24),
+          r: 0.045,
+          sigma,
+          type: position.callPut,
+        });
+    const pnl = (theoretical.price - position.markPrice) * position.netQty * multiplier;
+    if (position.underlying === "GLD") gldPnlUSD += pnl;
+    else xautPnlUSD += pnl;
+    stressedDeltaXAU += theoretical.delta * position.netQty * multiplier * ounces;
+  }
+  const optionPnlUSD = gldPnlUSD + xautPnlUSD;
+  const vanNakedPnlUSD = input.vanNakedDeltaXau * input.spots.XAU * input.xauShockPct / 100;
+  const residualPnlUSD = optionPnlUSD + vanNakedPnlUSD;
+  const stressCoveragePct = vanNakedPnlUSD < 0 && optionPnlUSD > 0
+    ? optionPnlUSD / Math.abs(vanNakedPnlUSD) * 100
+    : null;
+  return { optionPnlUSD, gldPnlUSD, xautPnlUSD, vanNakedPnlUSD, residualPnlUSD, stressedDeltaXAU, stressCoveragePct, missingCount };
+}
+
+function mulberry32(seed: number) {
+  let value = seed >>> 0;
+  return () => {
+    value += 0x6D2B79F5;
+    let result = value;
+    result = Math.imul(result ^ result >>> 15, result | 1);
+    result ^= result + Math.imul(result ^ result >>> 7, result | 61);
+    return ((result ^ result >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function isoDateOffset(asOf: Date, days: number): string {
+  const date = new Date(asOf.getTime() + days * DAY_MS);
+  return date.toISOString().slice(0, 10);
+}
+
+function makeInstrument(underlying: RiskUnderlying, expiry: string, strike: number, callPut: CallPut): string {
+  return `${underlying}-${expiry.replaceAll("-", "")}-${strike}-${callPut === "call" ? "C" : "P"}`;
+}
+
+export function generateMockPositions(count: 100 | 200, seed = 20260811, asOf: Date = new Date()): RiskPosition[] {
+  const random = mulberry32(seed + count);
+  const expiryOffsets = [-1, 0, 1, 2, 5, 14, 30, 60, 120];
+  const brokers = ["IBKR", "KGI", "Futu"];
+  const accounts = ["HEDGE-A", "HEDGE-B", "TAIL-RISK"];
+  const positions: RiskPosition[] = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const underlying: RiskUnderlying = index % 2 === 0 ? "GLD" : "XAUT";
+    const spot = underlying === "GLD" ? 247.3 : 3358;
+    const strikeStep = underlying === "GLD" ? 5 : 100;
+    const strikeIndex = Math.floor(random() * 17) - 8;
+    const strike = Math.round((spot + strikeIndex * strikeStep) / strikeStep) * strikeStep;
+    const callPut: CallPut = random() > 0.5 ? "call" : "put";
+    const expiryOffset = expiryOffsets[index % expiryOffsets.length];
+    const expiry = isoDateOffset(asOf, expiryOffset);
+    const dte = Math.max(expiryOffset, 0);
+    const markIV = (underlying === "GLD" ? 0.18 : 0.42) + random() * (underlying === "GLD" ? 0.18 : 0.35);
+    const theoretical = dte === 0
+      ? {
+          price: Math.max(callPut === "call" ? spot - strike : strike - spot, 0) + Math.max(0.05, spot * 0.002),
+          delta: callPut === "call" ? (spot >= strike ? 0.8 : 0.2) : (spot <= strike ? -0.8 : -0.2),
+          gamma: 0.01,
+          theta: -0.08,
+          vega: 0.04,
+        }
+      : blackScholes({ S: spot, K: strike, T: Math.max(dte / 365, 1 / 365), r: 0.045, sigma: markIV, type: callPut });
+    const adjusted = index === 4 || index % 83 === 0;
+    const multiplier = underlying === "GLD" ? adjusted ? 150 : 100 : 1;
+    const ounces = underlying === "GLD" ? 0.0934 : 1;
+    const netQty = (random() > 0.22 ? 1 : -1) * (1 + Math.floor(random() * (underlying === "GLD" ? 25 : 80)));
+    const spreadPct = 0.01 + random() * 0.12;
+    const markPrice = Math.max(theoretical.price, underlying === "GLD" ? 0.03 : 1);
+    const bid = Math.max(0.001, markPrice * (1 - spreadPct / 2));
+    const ask = markPrice * (1 + spreadPct / 2);
+    const entryPrice = markPrice * (0.72 + random() * 0.56);
+    const quoteMinutesAgo = index % 29 === 0 ? 38 : index % 17 === 0 ? 7 : random() * 1.5;
+    const missing = index % 37 === 0;
+    const fail = index % 71 === 0 && index !== 0;
+    const source = missing ? null : underlying === "GLD" ? "MarketData.app / OPRA mock" : "Bybit V5 mock";
+    const dataStatus: DataStatus = fail ? "FAIL" : missing ? "MISSING" : quoteMinutesAgo > 15 ? "STALE" : adjusted ? "WARN" : "LIVE";
+    const available = 120_000 + Math.floor(random() * 500_000);
+    const base: RiskPosition = {
+      id: `mock-${count}-${index + 1}`,
+      venue: underlying === "GLD" ? "OPRA" : "Bybit",
+      broker: underlying === "GLD" ? brokers[index % brokers.length] : "SignalPlus",
+      account: accounts[index % accounts.length],
+      underlying,
+      instrument: makeInstrument(underlying, expiry, strike, callPut),
+      callPut,
+      expiry,
+      strike,
+      netQty,
+      contractMultiplier: fail ? null : multiplier,
+      deliverableSource: fail ? null : adjusted ? "contract-master adjusted mock" : "contract-master live mock",
+      contractAdjusted: adjusted,
+      gldOzPerShare: underlying === "GLD" ? ounces : null,
+      underlyingOzPerUnit: underlying === "XAUT" ? ounces : null,
+      markPrice: fail ? null : markPrice,
+      bid: missing ? null : bid,
+      ask: missing ? null : ask,
+      markIV: missing ? null : markIV,
+      unitDelta: missing ? null : Math.max(-0.75, Math.min(0.75, theoretical.delta)),
+      unitGamma: missing ? null : theoretical.gamma,
+      unitTheta: missing ? null : theoretical.theta,
+      unitVega: missing ? null : theoretical.vega,
+      totalDeltaXAU: null,
+      totalGammaXAU: null,
+      totalThetaUSD: null,
+      totalVegaUSD: null,
+      MV: null,
+      entryCost: fail ? null : entryPrice * netQty * multiplier + Math.abs(netQty) * 0.65,
+      UPL: null,
+      quoteTime: missing ? null : new Date(asOf.getTime() - quoteMinutesAgo * 60_000).toISOString(),
+      positionTime: new Date(asOf.getTime() - (1 + random() * 60) * DAY_MS).toISOString(),
+      source,
+      dataStatus,
+      availableUSD: available,
+      buyingPower: available * (0.8 + random() * 0.5),
+      officialClose: underlying === "GLD" ? spot - 0.4 : null,
+      brokerCutoff: underlying === "GLD" ? `${expiry} 15:30 ET` : `${expiry} 08:00 UTC`,
+      plannedAction: expiryOffset <= 2 ? random() > 0.5 ? "ROLL" : "CLOSE" : "HOLD",
+      owner: index % 11 === 0 ? null : ["JY", "AL", "MK"][index % 3],
+      reviewer: index % 13 === 0 ? null : ["RW", "SK"][index % 2],
+      confirmationId: index % 9 === 0 ? null : `CF-${seed}-${index + 1}`,
+    };
+    positions.push(deriveTotals(base));
+  }
+
+  const explicit = positions
+    .filter(position => position.underlying === "GLD" && position.dataStatus !== "MISSING" && position.dataStatus !== "FAIL")
+    .slice(0, 2);
+  if (explicit.length === 2) {
+    explicit[0].id = "mock-unit-small-total-large";
+    explicit[0].netQty = 1_000;
+    explicit[0].unitDelta = 0.05;
+    Object.assign(explicit[0], deriveTotals(explicit[0]));
+    explicit[1].id = "mock-unit-large-total-small";
+    explicit[1].netQty = 1;
+    explicit[1].unitDelta = 0.8;
+    Object.assign(explicit[1], deriveTotals(explicit[1]));
+  }
+  return positions;
+}

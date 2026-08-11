@@ -1,6 +1,7 @@
 import { blackScholes, timeToExpiry } from "@shared/blackScholes";
 import { evaluateNamedFormula } from "@shared/formulaEngine";
 import { DEFAULT_FORMULAS, type FormulaLike } from "@shared/marketTypes";
+import type { DataStatus } from "@shared/riskHeatmap";
 
 export type PortfolioPosition = {
   id: number;
@@ -12,6 +13,8 @@ export type PortfolioPosition = {
   quantity: string;
   fee: string;
   entryDelta: string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 };
 
 export type PortfolioSettings = {
@@ -44,6 +47,8 @@ export type MarketSnapshot = {
   source: string;
   estimated: boolean;
   available: boolean;
+  quoteTime: string | null;
+  dataStatus: DataStatus;
 };
 
 type XautTicker = {
@@ -56,6 +61,7 @@ type XautTicker = {
   gamma: string;
   theta: string;
   vega: string;
+  timestamp?: number;
 };
 type GldQuote = {
   expiry: string;
@@ -70,6 +76,19 @@ type GldQuote = {
   theta: number;
   vega: number;
   source: string;
+  timestamp?: number;
+};
+
+const quoteIso = (value: unknown): string | null => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return new Date(parsed > 10_000_000_000 ? parsed : parsed * 1000).toISOString();
+};
+
+const quoteStatus = (value: unknown): DataStatus => {
+  const iso = quoteIso(value);
+  if (!iso) return "MISSING";
+  return Date.now() - Date.parse(iso) > 15 * 60_000 ? "STALE" : "LIVE";
 };
 
 const numberOf = (value: unknown): number => {
@@ -122,6 +141,8 @@ export function getPositionMarketData(args: {
         source: "Bybit V5",
         estimated: false,
         available: true,
+        quoteTime: quoteIso(ticker.timestamp),
+        dataStatus: quoteStatus(ticker.timestamp),
       };
     }
   }
@@ -145,6 +166,8 @@ export function getPositionMarketData(args: {
         source: quote.source,
         estimated: false,
         available: true,
+        quoteTime: quoteIso(quote.timestamp),
+        dataStatus: quoteStatus(quote.timestamp),
       };
     }
     if (gldSpot > 0) {
@@ -168,6 +191,8 @@ export function getPositionMarketData(args: {
         source: "Black-Scholes 估算",
         estimated: true,
         available: true,
+        quoteTime: null,
+        dataStatus: "WARN",
       };
     }
   }
@@ -184,6 +209,8 @@ export function getPositionMarketData(args: {
     source: "行情不可用",
     estimated: true,
     available: false,
+    quoteTime: null,
+    dataStatus: "MISSING",
   };
 }
 

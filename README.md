@@ -15,6 +15,21 @@
 7. 所有页面支持 20%–140% 缩放；矩阵另有 20%–150% 独立缩放、默认自动适配完整热力图和全屏查看。
 8. 本地 JSON 持久化与一键导出备份；生产模式带密码保护。
 9. 每个页面顶部固定显示 XAUT/USDT 与 GLD/USD 现价、实时/延迟状态，并每 10 秒自动刷新。
+10. 机构版 Position Risk Heatmap：200 条仓位压力数据、P99 Quantile/Log/零中心颜色尺度、固定风险决策卡、Spot range marker、到期资金控制及 XAU/IV/Day 情景分析。
+
+## 机构版 Position Risk Heatmap 使用教程
+
+进入“矩阵视图”即可使用。生产仓位选择 `LIVE`；验收或培训可选择 `MOCK 100` / `MOCK 200`，也可直接打开 `/matrix?mock=200`。Mock 使用固定 seed，每次刷新都可复现，不会写入真实仓位。
+
+1. 默认是 **Expiry 列 × Strike 行**；`Transpose` 可转置。先用 Underlying、Venue、Broker、Account、Call/Put、DTE bucket、Status 缩小决策范围。
+2. Metric 可切换 Unit Delta、Total Delta、Gamma、Theta、Vega、Mark IV、MV、UPL、DTE、Distance-to-Strike、Roll Priority。Unit 是单份合约敏感度，Total 已乘数量、实际 multiplier 和黄金量纲，两者不可混用。
+3. 默认 `Quantile + P99 clip` 适合快速找集中风险；`Log` 用于同时保留 50 和 1000 级别的差异；`Symmetric Zero` 把 0 固定为中性色，适合有正负方向的 Delta、Theta、UPL。
+4. 只有最高重要度 cell 常显数值，其余 hover 查看仓位、source、as-of、状态和 Roll Priority 分项，避免 100+ 仓位文字拥挤。点击顶部决策卡只会定位并高亮相应 cell。
+5. Spot 可选 GLD、XAUT 或 XAU。Spot 超出当前 Strike range 时页面明确显示 Above/Below Range；点击 `Center Spot` 把 spot marker 纳入矩阵。
+6. GLD DTE<=2 时自动出现 Expiry panel。资金覆盖低于 100% 且可能 ITM 时显示 `FAIL`；adjusted contract 使用仓位的实际 deliverable，不使用硬编码 100。
+7. Scenario 支持 XAU Shock -20% 至 +20%、IV Shock -10/-5/0/+5/+10 vol、Day 0/1/3/7，并叠加 Van naked delta，统一输出 USD PnL、XAU delta、Residual PnL 和 Stress Coverage。
+
+完整的架构、schema、计算定义、颜色算法和验收记录见 [`docs/risk-heatmap-spec.md`](docs/risk-heatmap-spec.md)。
 
 ## 快速启动
 
