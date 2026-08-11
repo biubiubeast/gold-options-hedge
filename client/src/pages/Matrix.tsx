@@ -1,48 +1,125 @@
+import { DecisionCards, type DecisionCardModel } from "@/components/risk-heatmap/DecisionCards";
+import { ExpiryPanel, ScenarioStrip } from "@/components/risk-heatmap/ExpiryScenario";
+import { HeatmapGrid, type HeatmapCellModel } from "@/components/risk-heatmap/HeatmapGrid";
 import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Maximize2, Minimize2, Scan, ZoomIn, ZoomOut } from "lucide-react";
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "wouter";
 import { getPositionMarketData, type MarketSnapshot, type PortfolioPosition } from "@/lib/portfolio";
+import { buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import {
+  CENTERED_METRICS,
+  METRIC_LABELS,
+  aggregateMetric,
+  buildHeatScale,
+  enrichRiskPositions,
+  formatCompact,
+  formatPrice,
+  generateMockPositions,
+  metricValue,
+  percentile,
+  positionLabel,
+  type CallPut,
+  type ColorScaleMode,
+  type DataStatus,
+  type EnrichedRiskPosition,
+  type HeatmapMetric,
+  type RiskUnderlying,
+} from "@shared/riskHeatmap";
+import { ArrowLeftRight, Loader2, LocateFixed } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-type MatrixMetric = "all" | "delta" | "markPrice" | "markIv" | "quantity";
-type HeatmapMode = "delta" | "absDelta" | "off";
-type PositionView = { position: PortfolioPosition; market: MarketSnapshot };
+type DatasetMode = "live" | "mock100" | "mock200";
+type ExpiryBucket = "all" | "expired" | "0-2" | "3-7" | "8-30" | "31+";
+type SelectOption = { value: string; label: string };
 
-const MATRIX_ZOOM_KEY = "matrix-zoom";
-const MATRIX_METRIC_KEY = "matrix-metric";
-const HEATMAP_MODE_KEY = "matrix-heatmap-mode";
-const MATRIX_AUTO_FIT_KEY = "matrix-auto-fit";
-const MIN_MATRIX_ZOOM = 0.2;
-const MAX_MATRIX_ZOOM = 1.5;
+const metricOptions = Object.entries(METRIC_LABELS) as Array<[HeatmapMetric, string]>;
+const statusSeverity: Record<DataStatus, number> = { LIVE: 0, WARN: 1, STALE: 2, MISSING: 3, FAIL: 4 };
 
-const clampMatrixZoom = (value: number) => Math.min(MAX_MATRIX_ZOOM, Math.max(MIN_MATRIX_ZOOM, value));
-
-const metricLabels: Record<MatrixMetric, string> = {
-  all: "全部数据",
-  delta: "Delta",
-  markPrice: "Mark Price",
-  markIv: "Mark IV",
-  quantity: "持仓数量",
-};
-
-function loadChoice<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-  const saved = localStorage.getItem(key) as T | null;
-  return saved && allowed.includes(saved) ? saved : fallback;
+function initialDataset(): DatasetMode {
+  const requested = new URLSearchParams(window.location.search).get("mock");
+  return requested === "200" ? "mock200" : requested === "100" ? "mock100" : "live";
 }
 
-function metricValue(view: PositionView, metric: MatrixMetric) {
-  switch (metric) {
-    case "delta": return { label: "Delta", value: view.market.delta.toFixed(4) };
-    case "markPrice": return { label: "Mark Price", value: view.market.available ? view.market.markPrice.toFixed(4) : "—" };
-    case "markIv": return { label: "Mark IV", value: view.market.markIv > 0 ? `${(view.market.markIv * 100).toFixed(2)}%` : "—" };
-    case "quantity": return { label: "Quantity", value: view.position.quantity };
-    default: return { label: "", value: "" };
-  }
+function NativeSelect({ label, value, options, onChange, className = "" }: {
+  label: string;
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <label className={`grid min-w-0 grid-cols-[auto_1fr] items-center gap-1 text-[9px] text-muted-foreground ${className}`}>
+      <span className="whitespace-nowrap">{label}</span>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        className="h-6 min-w-0 border border-border/70 bg-background px-1 font-mono text-[9px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+      >
+        {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function cellKey(position: Pick<EnrichedRiskPosition, "expiry" | "strike">) {
+  return `${position.expiry}|${position.strike}`;
+}
+
+function bestBy(positions: EnrichedRiskPosition[], value: (position: EnrichedRiskPosition) => number | null, absolute = true) {
+  return positions.reduce<EnrichedRiskPosition | null>((best, position) => {
+    const candidate = value(position);
+    if (candidate === null || !Number.isFinite(candidate)) return best;
+    if (!best) return position;
+    const current = value(best);
+    if (current === null) return position;
+    return (absolute ? Math.abs(candidate) > Math.abs(current) : candidate > current) ? position : best;
+  }, null);
+}
+
+function buildDecisionCards(positions: EnrichedRiskPosition[]): DecisionCardModel[] {
+  const maxUnit = bestBy(positions, position => position.unitDelta);
+  const maxTotal = bestBy(positions, position => position.totalDeltaXAU);
+  const maxThetaBurn = positions.reduce<EnrichedRiskPosition | null>((best, position) => {
+    if (position.totalThetaUSD === null) return best;
+    if (!best || best.totalThetaUSD === null || position.totalThetaUSD < best.totalThetaUSD) return position;
+    return best;
+  }, null);
+  const maxVega = bestBy(positions, position => position.totalVegaUSD);
+  const nearest = positions.reduce<EnrichedRiskPosition | null>((best, position) => !best || position.dte < best.dte ? position : best, null);
+  const roll = bestBy(positions, position => position.rollPriority.total, false);
+  const dataError = positions.reduce<EnrichedRiskPosition | null>((worst, position) => {
+    if (!worst) return position;
+    const severityDiff = statusSeverity[position.dataStatus] - statusSeverity[worst.dataStatus];
+    if (severityDiff > 0) return position;
+    if (severityDiff === 0 && (position.quoteAgeSeconds ?? -1) > (worst.quoteAgeSeconds ?? -1)) return position;
+    return worst;
+  }, null);
+  const card = (key: string, label: string, position: EnrichedRiskPosition | null, value: string, detail?: string): DecisionCardModel => ({
+    key,
+    label,
+    value,
+    detail: detail ?? (position ? positionLabel(position) : "No valid position"),
+    status: position?.dataStatus ?? "MISSING",
+    targetCellKey: position ? cellKey(position) : null,
+  });
+  return [
+    card("unit", "Max Unit Delta", maxUnit, formatCompact(maxUnit?.unitDelta ?? null), maxUnit ? positionLabel(maxUnit) : undefined),
+    card("total", "Max Total Delta", maxTotal, `${formatCompact(maxTotal?.totalDeltaXAU ?? null)} oz`, maxTotal ? positionLabel(maxTotal) : undefined),
+    card("theta", "Max Theta Burn", maxThetaBurn, `$${formatCompact(maxThetaBurn?.totalThetaUSD ?? null)}/d`, maxThetaBurn ? positionLabel(maxThetaBurn) : undefined),
+    card("vega", "Max Vega", maxVega, `$${formatCompact(maxVega?.totalVegaUSD ?? null)}/v`, maxVega ? positionLabel(maxVega) : undefined),
+    card("expiry", "Nearest Expiry", nearest, nearest ? `${nearest.dte} DTE` : "MISSING", nearest ? positionLabel(nearest) : undefined),
+    card("roll", "Highest Roll Priority", roll, roll ? `${roll.rollPriority.total.toFixed(0)} / 100` : "MISSING", roll ? positionLabel(roll) : undefined),
+    card("data", "Largest Data Error", dataError, dataError ? `${dataError.dataStatus}${dataError.quoteAgeSeconds !== null ? ` ${Math.round(dataError.quoteAgeSeconds / 60)}m` : ""}` : "MISSING", dataError ? `${positionLabel(dataError)} · ${dataError.source ?? "NO SOURCE"}` : undefined),
+  ];
+}
+
+function expiryBucketMatches(position: EnrichedRiskPosition, bucket: ExpiryBucket) {
+  if (bucket === "all") return true;
+  if (bucket === "expired") return position.dte < 0;
+  if (bucket === "0-2") return position.dte >= 0 && position.dte <= 2;
+  if (bucket === "3-7") return position.dte >= 3 && position.dte <= 7;
+  if (bucket === "8-30") return position.dte >= 8 && position.dte <= 30;
+  return position.dte >= 31;
 }
 
 export default function Matrix() {
@@ -50,256 +127,193 @@ export default function Matrix() {
   const { data: formulas } = trpc.formulas.list.useQuery();
   const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
   const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
-  const gldExpiries = useMemo(() => [...new Set((positions || [])
-    .filter(position => position.underlying === "GLD")
-    .map(position => position.expiry))], [positions]);
+  const { settings } = usePortfolioSettings();
+
+  const [dataset, setDataset] = useState<DatasetMode>(initialDataset);
+  const [underlying, setUnderlying] = useState<"all" | RiskUnderlying>("GLD");
+  const [venue, setVenue] = useState("all");
+  const [broker, setBroker] = useState("all");
+  const [account, setAccount] = useState("all");
+  const [callPut, setCallPut] = useState<"combined" | CallPut>("combined");
+  const [expiryBucket, setExpiryBucket] = useState<ExpiryBucket>("all");
+  const [status, setStatus] = useState<"all" | DataStatus>("all");
+  const [metric, setMetric] = useState<HeatmapMetric>("totalDelta");
+  const [scaleMode, setScaleMode] = useState<ColorScaleMode>("quantile");
+  const [transpose, setTranspose] = useState(false);
+  const [spotUnderlying, setSpotUnderlying] = useState<RiskUnderlying | "XAU">("GLD");
+  const [highlightCellKey, setHighlightCellKey] = useState<string | null>(null);
+  const [selectedPosition, setSelectedPosition] = useState<EnrichedRiskPosition | null>(null);
+
+  const gldExpiries = useMemo(() => [...new Set((positions || []).filter(position => position.underlying === "GLD").map(position => position.expiry))], [positions]);
   const gldContracts = useMemo(() => (positions || [])
     .filter(position => position.underlying === "GLD")
-    .map(position => ({
-      expiry: position.expiry,
-      strike: Number(position.strike),
-      optionType: position.optionType,
-    })), [positions]);
+    .slice(0, 100)
+    .map(position => ({ expiry: position.expiry, strike: Number(position.strike), optionType: position.optionType })), [positions]);
   const { data: gldQuotes } = trpc.market.gldOptionQuotes.useQuery(
-    { expiries: gldExpiries, contracts: gldContracts },
-    { enabled: gldExpiries.length > 0, refetchInterval: 10_000 },
+    { expiries: gldExpiries.slice(0, 24), contracts: gldContracts },
+    { enabled: dataset === "live" && gldExpiries.length > 0, refetchInterval: 10_000 },
   );
-  const { settings } = usePortfolioSettings();
-  const [, navigate] = useLocation();
-  const matrixViewportRef = useRef<HTMLDivElement>(null);
 
-  const [underlying, setUnderlying] = useState<"all" | "XAUT" | "GLD">("all");
-  const [metric, setMetric] = useState<MatrixMetric>(() => loadChoice(MATRIX_METRIC_KEY, ["all", "delta", "markPrice", "markIv", "quantity"] as const, "all"));
-  const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>(() => loadChoice(HEATMAP_MODE_KEY, ["delta", "absDelta", "off"] as const, "delta"));
-  const [matrixZoom, setMatrixZoom] = useState(() => {
-    const saved = Number(localStorage.getItem(MATRIX_ZOOM_KEY));
-    return Number.isFinite(saved) && saved > 0 ? clampMatrixZoom(saved) : 1;
-  });
-  const [autoFit, setAutoFit] = useState(() => localStorage.getItem(MATRIX_AUTO_FIT_KEY) !== "false");
-  const [fallbackFullscreen, setFallbackFullscreen] = useState(false);
-
-  useEffect(() => localStorage.setItem(MATRIX_ZOOM_KEY, String(matrixZoom)), [matrixZoom]);
-  useEffect(() => localStorage.setItem(MATRIX_METRIC_KEY, metric), [metric]);
-  useEffect(() => localStorage.setItem(HEATMAP_MODE_KEY, heatmapMode), [heatmapMode]);
-  useEffect(() => localStorage.setItem(MATRIX_AUTO_FIT_KEY, String(autoFit)), [autoFit]);
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setFallbackFullscreen(false);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
-
-  const filtered = useMemo(() => (positions || []).filter(position =>
-    underlying === "all" || position.underlying === underlying,
-  ), [positions, underlying]);
-
-  const positionViews = useMemo<PositionView[]>(() => filtered.map(position => ({
-    position,
+  const liveViews = useMemo(() => (positions || []).map(position => ({
+    position: position as PortfolioPosition,
     market: getPositionMarketData({
-      position,
+      position: position as PortfolioPosition,
       xautTickers,
       gldQuotes,
       gldSpot: spotPrices?.gld?.price ?? 0,
       formulas,
       settings,
-    }),
-  })), [filtered, xautTickers, gldQuotes, spotPrices?.gld?.price, formulas, settings]);
+    }) as MarketSnapshot,
+  })), [formulas, gldQuotes, positions, settings, spotPrices?.gld?.price, xautTickers]);
 
-  const { expiries, strikes, matrix } = useMemo(() => {
-    const expirySet = new Set<string>();
-    const strikeSet = new Set<string>();
-    const cells: Record<string, PositionView[]> = {};
-    for (const view of positionViews) {
-      expirySet.add(view.position.expiry);
-      strikeSet.add(view.position.strike);
-      const key = `${view.position.expiry}|${view.position.strike}`;
-      (cells[key] ||= []).push(view);
+  const liveSpots = useMemo(() => ({
+    xaut: spotPrices?.xaut?.price ?? 0,
+    gld: spotPrices?.gld?.price ?? 0,
+    xau: spotPrices?.gold?.price ?? spotPrices?.xaut?.price ?? 0,
+  }), [spotPrices]);
+  const displaySpots = useMemo(() => dataset === "live"
+    ? { GLD: liveSpots.gld, XAUT: liveSpots.xaut, XAU: liveSpots.xau }
+    : { GLD: 247.3, XAUT: 3358, XAU: 3358 }, [dataset, liveSpots]);
+  const asOf = useMemo(() => new Date(), [dataset, gldQuotes, positions, spotPrices, xautTickers]);
+  const riskPositions = useMemo(() => {
+    if (dataset === "mock100") return generateMockPositions(100, 20260811, asOf);
+    if (dataset === "mock200") return generateMockPositions(200, 20260811, asOf);
+    return buildLiveRiskPositions({ views: liveViews, spots: liveSpots, settings, formulas });
+  }, [asOf, dataset, formulas, liveSpots, liveViews, settings]);
+  const enriched = useMemo(() => enrichRiskPositions(riskPositions, displaySpots, asOf), [asOf, displaySpots, riskPositions]);
+
+  const filterOptions = useMemo(() => ({
+    venue: [...new Set(enriched.map(position => position.venue))].sort(),
+    broker: [...new Set(enriched.map(position => position.broker))].sort(),
+    account: [...new Set(enriched.map(position => position.account))].sort(),
+  }), [enriched]);
+  useEffect(() => {
+    if (underlying === "GLD") setSpotUnderlying("GLD");
+    else if (underlying === "XAUT") setSpotUnderlying("XAUT");
+  }, [underlying]);
+
+  const filtered = useMemo(() => enriched.filter(position =>
+    (underlying === "all" || position.underlying === underlying)
+    && (venue === "all" || position.venue === venue)
+    && (broker === "all" || position.broker === broker)
+    && (account === "all" || position.account === account)
+    && (callPut === "combined" || position.callPut === callPut)
+    && expiryBucketMatches(position, expiryBucket)
+    && (status === "all" || position.dataStatus === status),
+  ), [account, broker, callPut, enriched, expiryBucket, status, underlying, venue]);
+
+  const { cells, expiries, strikes } = useMemo(() => {
+    const grouped = new Map<string, EnrichedRiskPosition[]>();
+    for (const position of filtered) {
+      const key = cellKey(position);
+      const list = grouped.get(key) ?? [];
+      list.push(position);
+      grouped.set(key, list);
     }
-    for (const views of Object.values(cells)) {
-      views.sort((a, b) => b.market.delta - a.market.delta);
-    }
+    const cellModels: HeatmapCellModel[] = [...grouped.entries()].map(([key, cellPositions]) => ({
+      key,
+      expiry: cellPositions[0].expiry,
+      strike: cellPositions[0].strike,
+      positions: cellPositions,
+      value: aggregateMetric(cellPositions, metric),
+    }));
     return {
-      expiries: [...expirySet].sort(),
-      strikes: [...strikeSet].sort((a, b) => Number(a) - Number(b)),
-      matrix: cells,
+      cells: cellModels,
+      expiries: [...new Set(filtered.map(position => position.expiry))].sort(),
+      strikes: [...new Set(filtered.map(position => position.strike))].sort((a, b) => a - b),
     };
-  }, [positionViews]);
-
-  const heatRange = useMemo(() => {
-    if (positionViews.length === 0 || heatmapMode === "off") return { min: 0, max: 0 };
-    const values = positionViews.map(view => heatmapMode === "absDelta" ? Math.abs(view.market.delta) : view.market.delta);
-    return { min: Math.min(...values), max: Math.max(...values) };
-  }, [positionViews, heatmapMode]);
-
-  const heatStyle = (view: PositionView): CSSProperties | undefined => {
-    if (heatmapMode === "off") return undefined;
-    const value = heatmapMode === "absDelta" ? Math.abs(view.market.delta) : view.market.delta;
-    const normalized = heatRange.max === heatRange.min ? 0.6 : (value - heatRange.min) / (heatRange.max - heatRange.min);
-    const backgroundAlpha = 0.08 + normalized * 0.62;
-    const borderAlpha = 0.22 + normalized * 0.62;
-    return {
-      background: `linear-gradient(145deg, rgba(217, 168, 58, ${backgroundAlpha.toFixed(3)}), rgba(94, 61, 17, ${(backgroundAlpha * 0.72).toFixed(3)}))`,
-      borderColor: `rgba(236, 190, 82, ${borderAlpha.toFixed(3)})`,
-    };
-  };
-
-  const fitMatrix = useCallback((smooth = false) => {
-    const viewport = matrixViewportRef.current;
-    const viewportWidth = viewport?.clientWidth ?? window.innerWidth;
-    const viewportHeight = Math.max(240, Math.min(viewport?.clientHeight || window.innerHeight, window.innerHeight - 220));
-    const estimatedMatrixWidth = 112 + expiries.length * 264;
-    const estimatedMatrixHeight = 52 + strikes.reduce((total, strike) => {
-      const maxTiles = Math.max(1, ...expiries.map(expiry => matrix[`${expiry}|${strike}`]?.length || 0));
-      return total + Math.max(160, 16 + maxTiles * 136 + Math.max(0, maxTiles - 1) * 8) + 8;
-    }, 0);
-    const nextZoom = clampMatrixZoom(Number(Math.min(
-      1,
-      viewportWidth / Math.max(estimatedMatrixWidth, 1),
-      viewportHeight / Math.max(estimatedMatrixHeight, 1),
-    ).toFixed(2)));
-    setMatrixZoom(current => current === nextZoom ? current : nextZoom);
-    viewport?.scrollTo({ left: 0, top: 0, behavior: smooth ? "smooth" : "auto" });
-  }, [expiries, strikes, matrix]);
+  }, [filtered, metric]);
+  const scale = useMemo(() => buildHeatScale(cells.map(cell => cell.value), scaleMode, CENTERED_METRICS.has(metric)), [cells, metric, scaleMode]);
+  const importanceCutoff = useMemo(() => percentile(cells.map(cell => Math.abs(cell.value ?? 0)).filter(value => value > 0), 0.85), [cells]);
+  const cards = useMemo(() => buildDecisionCards(filtered), [filtered]);
+  const spot = displaySpots[spotUnderlying];
 
   useEffect(() => {
-    if (!autoFit || positionViews.length === 0) return;
-    const frame = requestAnimationFrame(() => fitMatrix());
-    const viewport = matrixViewportRef.current;
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fitMatrix());
-    if (viewport && observer) observer.observe(viewport);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer?.disconnect();
-    };
-  }, [autoFit, fallbackFullscreen, fitMatrix, positionViews.length]);
+    if (!highlightCellKey) return;
+    const timeout = window.setTimeout(() => setHighlightCellKey(null), 3500);
+    return () => window.clearTimeout(timeout);
+  }, [highlightCellKey]);
 
-  const openFullscreen = () => setFallbackFullscreen(current => !current);
+  const locateCell = (key: string) => {
+    setHighlightCellKey(key);
+    requestAnimationFrame(() => {
+      const target = [...document.querySelectorAll<HTMLElement>("[data-cell-key]")].find(element => element.dataset.cellKey === key);
+      target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    });
+  };
 
-  if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  if (isLoading && dataset === "live") return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-end 2xl:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gold-gradient">期权矩阵与 Delta 热力图</h1>
-          <p className="text-sm text-muted-foreground mt-1">列为 Expiry，行为 Strike；同一方格内按 Delta 从高到低排列</p>
+    <div className="flex h-[calc(100vh-5.5rem)] min-h-[560px] flex-col gap-1 overflow-hidden" data-testid="institutional-risk-heatmap">
+      <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-1">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">GLD + XAUT POSITION RISK HEATMAP</h1>
+          <span className="font-mono text-[9px] text-muted-foreground">{filtered.length}/{enriched.length} positions · {cells.length} cells</span>
         </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-36">
-            <span className="block text-[11px] text-muted-foreground mb-1">方块显示字段</span>
-            <Select value={metric} onValueChange={(value: MatrixMetric) => setMetric(value)}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {(Object.keys(metricLabels) as MatrixMetric[]).map(value => <SelectItem key={value} value={value}>{metricLabels[value]}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="min-w-44">
-            <span className="block text-[11px] text-muted-foreground mb-1">热力颜色</span>
-            <Select value={heatmapMode} onValueChange={(value: HeatmapMode) => setHeatmapMode(value)}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="delta">Delta 高 → 低</SelectItem>
-                <SelectItem value="absDelta">|Delta| 风险强度</SelectItem>
-                <SelectItem value="off">关闭热力颜色</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex gap-1">
-            {(["all", "XAUT", "GLD"] as const).map(value => (
-              <Button key={value} size="sm" className="h-9" variant={underlying === value ? "default" : "outline"} onClick={() => setUnderlying(value)}>
-                {value === "all" ? "全部" : value}
-              </Button>
-            ))}
-          </div>
+        <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
+          <span>As-of {asOf.toLocaleTimeString("zh-CN", { hour12: false })}</span>
+          {selectedPosition && <span className="max-w-64 truncate text-foreground">Selected: {positionLabel(selectedPosition)} · Roll {selectedPosition.rollPriority.total.toFixed(0)}</span>}
         </div>
       </div>
 
-      <div className={`matrix-fullscreen-shell space-y-4 rounded-lg bg-background p-1 sm:p-2 ${fallbackFullscreen ? "matrix-pseudo-fullscreen" : ""}`}>
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/50 p-3">
-          <div className="flex items-center gap-3">
-            {heatmapMode !== "off" ? (
-              <>
-                <span className="text-xs text-muted-foreground">{heatmapMode === "absDelta" ? "|Delta|" : "Delta"} 低</span>
-                <div className="h-3 w-36 sm:w-52 rounded-full border border-primary/20 bg-[linear-gradient(90deg,rgba(217,168,58,0.08),rgba(217,168,58,0.7))]" aria-hidden="true" />
-                <span className="text-xs text-muted-foreground">高</span>
-                <span className="hidden sm:inline text-[11px] font-mono text-muted-foreground">{heatRange.min.toFixed(3)} → {heatRange.max.toFixed(3)}</span>
-              </>
-            ) : <span className="text-xs text-muted-foreground">热力颜色已关闭</span>}
-          </div>
-          <div className="flex items-center gap-1" role="group" aria-label="矩阵缩放">
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => { setAutoFit(false); setMatrixZoom(current => clampMatrixZoom(Number((current - 0.1).toFixed(2)))); }} disabled={matrixZoom <= MIN_MATRIX_ZOOM} title="缩小矩阵，最低 20%" aria-label="缩小矩阵"><ZoomOut className="w-4 h-4" /></Button>
-            <button type="button" onClick={() => { setAutoFit(false); setMatrixZoom(1); }} className="h-8 min-w-14 rounded-md px-2 text-xs font-mono hover:bg-accent" title="恢复矩阵 100%">{Math.round(matrixZoom * 100)}%</button>
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => { setAutoFit(false); setMatrixZoom(current => clampMatrixZoom(Number((current + 0.1).toFixed(2)))); }} disabled={matrixZoom >= MAX_MATRIX_ZOOM} title="放大矩阵" aria-label="放大矩阵"><ZoomIn className="w-4 h-4" /></Button>
-            <Button variant={autoFit ? "default" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => { setAutoFit(true); fitMatrix(true); }} title="自动缩放到一次看到完整热力图"><Scan className="w-3.5 h-3.5" />自动全图</Button>
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={openFullscreen} title={fallbackFullscreen ? "退出全屏热力图" : "全屏查看热力图"} aria-label={fallbackFullscreen ? "退出全屏热力图" : "全屏查看热力图"}>{fallbackFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}</Button>
-          </div>
-        </div>
-        {positionViews.length === 0 ? (
-          <Card className="glass-card"><CardContent className="p-12 text-center text-muted-foreground">暂无仓位数据。请先在“仓位管理”页面添加期权持仓。</CardContent></Card>
-        ) : (
-          <div ref={matrixViewportRef} className="matrix-viewport max-h-[calc(100vh-13rem)] overflow-auto overscroll-contain pb-3">
-            <div className="min-w-fit origin-top-left" style={{ zoom: matrixZoom } as CSSProperties}>
-              <div className="sticky top-0 z-20 flex gap-2 mb-2 bg-background/95 py-2 backdrop-blur">
-                <div className="sticky left-0 z-30 w-28 shrink-0 flex items-end bg-background/95 pb-1"><span className="text-xs text-muted-foreground font-medium">Strike ↓ / Expiry →</span></div>
-                {expiries.map(expiry => <div key={expiry} className="w-64 shrink-0 text-center"><Badge variant="outline" className="text-xs font-mono bg-background/90">{expiry}</Badge></div>)}
-              </div>
-              {strikes.map(strike => (
-                <div key={strike} className="flex gap-2 mb-2 items-stretch">
-                  <div className="sticky left-0 z-10 w-28 shrink-0 flex items-start bg-background/95 pt-4"><span className="text-sm font-mono font-medium text-primary">{strike}</span></div>
-                  {expiries.map(expiry => {
-                    const key = `${expiry}|${strike}`;
-                    const cellViews = matrix[key] || [];
-                    return (
-                      <div key={key} className="w-64 shrink-0 min-h-40 rounded-lg border border-border/30 bg-secondary/10 p-2 space-y-2">
-                        {cellViews.length === 0 ? <div className="h-full min-h-36 flex items-center justify-center text-muted-foreground/50">—</div> : cellViews.map(view => {
-                          const { position, market } = view;
-                          const selectedMetric = metricValue(view, metric);
-                          return (
-                            <button
-                              type="button"
-                              key={position.id}
-                              className="matrix-option-tile w-full min-h-32 rounded-md border border-border/50 bg-card/90 p-3 text-left hover:border-primary hover:brightness-110 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                              style={heatStyle(view)}
-                              onClick={() => navigate(`/option/${position.id}`)}
-                              title={`${position.underlying} ${position.strike} ${position.optionType.toUpperCase()} · Delta ${market.delta.toFixed(4)}`}
-                            >
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-1.5">
-                                  <Badge variant={position.underlying === "XAUT" ? "default" : "secondary"} className="text-[10px] px-1.5 py-0">{position.underlying}</Badge>
-                                  {market.estimated && <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-300 border-amber-300/40 bg-background/30">估算</Badge>}
-                                </div>
-                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 bg-background/30 ${position.optionType === "call" ? "text-green-300" : "text-red-300"}`}>{position.optionType.toUpperCase()}</Badge>
-                              </div>
-                              {metric === "all" ? (
-                                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                                  <span className="text-foreground/65">Mark</span><span className="font-mono text-right">{market.available ? market.markPrice.toFixed(3) : "—"}</span>
-                                  <span className="text-foreground/65">IV</span><span className="font-mono text-right">{market.markIv > 0 ? `${(market.markIv * 100).toFixed(1)}%` : "—"}</span>
-                                  <span className="text-foreground/65">Bid / Ask</span><span className="font-mono text-right">{market.bid1 > 0 || market.ask1 > 0 ? `${market.bid1.toFixed(2)} / ${market.ask1.toFixed(2)}` : "—"}</span>
-                                  <span className="text-foreground/65">Qty</span><span className="font-mono text-right">{position.quantity}</span>
-                                  <span className="text-foreground/65">Delta</span><span className="font-mono text-right">{market.delta.toFixed(4)}</span>
-                                </div>
-                              ) : (
-                                <div className="flex min-h-20 flex-col items-center justify-center text-center">
-                                  <span className="text-[11px] uppercase tracking-wider text-foreground/65">{selectedMetric.label}</span>
-                                  <strong className="mt-1 font-mono text-2xl font-semibold text-foreground">{selectedMetric.value}</strong>
-                                </div>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+      <DecisionCards cards={cards} onLocate={locateCell} />
+
+      <div className="grid h-7 shrink-0 grid-cols-[1.15fr_repeat(7,minmax(80px,1fr))] items-center gap-1 border border-border/60 bg-card/35 px-1">
+        <NativeSelect label="DATA" value={dataset} onChange={value => setDataset(value as DatasetMode)} options={[
+          { value: "live", label: "LIVE / IMPORTED" },
+          { value: "mock100", label: "MOCK 100" },
+          { value: "mock200", label: "MOCK 200" },
+        ]} />
+        <NativeSelect label="U" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "all", label: "ALL" }]} />
+        <NativeSelect label="VENUE" value={venue} onChange={setVenue} options={[{ value: "all", label: "ALL" }, ...filterOptions.venue.map(value => ({ value, label: value }))]} />
+        <NativeSelect label="BROKER" value={broker} onChange={setBroker} options={[{ value: "all", label: "ALL" }, ...filterOptions.broker.map(value => ({ value, label: value }))]} />
+        <NativeSelect label="ACCOUNT" value={account} onChange={setAccount} options={[{ value: "all", label: "ALL" }, ...filterOptions.account.map(value => ({ value, label: value }))]} />
+        <NativeSelect label="C/P" value={callPut} onChange={value => setCallPut(value as typeof callPut)} options={[{ value: "combined", label: "COMBINED" }, { value: "call", label: "CALL" }, { value: "put", label: "PUT" }]} />
+        <NativeSelect label="DTE" value={expiryBucket} onChange={value => setExpiryBucket(value as ExpiryBucket)} options={[{ value: "all", label: "ALL" }, { value: "expired", label: "EXP" }, { value: "0-2", label: "0–2" }, { value: "3-7", label: "3–7" }, { value: "8-30", label: "8–30" }, { value: "31+", label: "31+" }]} />
+        <NativeSelect label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))]} />
       </div>
+
+      <div className="grid min-h-8 shrink-0 grid-cols-[170px_128px_104px_auto_1fr] items-center gap-2 border border-border/60 bg-card/35 px-1">
+        <NativeSelect label="METRIC" value={metric} onChange={value => setMetric(value as HeatmapMetric)} options={metricOptions.map(([value, label]) => ({ value, label }))} />
+        <NativeSelect label="SCALE" value={scaleMode} onChange={value => setScaleMode(value as ColorScaleMode)} options={[{ value: "quantile", label: "QUANTILE" }, { value: "log", label: "LOG" }, { value: "symmetric", label: "ZERO-CENTER" }]} />
+        <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "XAU", label: "XAU" }]} />
+        <button type="button" onClick={() => setTranspose(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${transpose ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowLeftRight className="h-3 w-3" />Transpose</button>
+        <div className="flex min-w-0 items-center gap-1 overflow-hidden" aria-label="heatmap legend">
+          <span className="shrink-0 text-[8px] text-muted-foreground">P99 CLIP</span>
+          {scale.bins.length ? scale.bins.map((bin, index) => (
+            <div key={`${bin.from}-${bin.to}-${index}`} className="min-w-0 flex-1" title={bin.label}>
+              <div className="h-2 border border-white/5" style={{ backgroundColor: CENTERED_METRICS.has(metric) ? bin.normalized < 0 ? `rgba(224,70,78,${0.18 + Math.abs(bin.normalized) * 0.75})` : `rgba(40,160,205,${0.18 + Math.abs(bin.normalized) * 0.75})` : `rgba(222,164,48,${0.15 + Math.abs(bin.normalized) * 0.8})` }} />
+              <span className="block truncate text-center font-mono text-[7px] text-muted-foreground">{formatCompact(bin.from, metric)}…{formatCompact(bin.to, metric)}</span>
+            </div>
+          )) : <span className="text-[9px] text-muted-foreground">MISSING DATA</span>}
+          <span className="flex shrink-0 items-center gap-1 text-[8px] text-muted-foreground"><LocateFixed className="h-3 w-3" />{formatPrice(spot)}</span>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center border border-dashed border-border text-sm text-muted-foreground">
+          <p>当前筛选没有有效 position。</p>
+          {dataset === "live" && <button type="button" className="mt-2 border border-primary/50 px-3 py-1 text-xs text-primary" onClick={() => setDataset("mock200")}>打开 MOCK 200 压力数据</button>}
+        </div>
+      ) : (
+        <HeatmapGrid
+          cells={cells}
+          expiries={expiries}
+          strikes={strikes}
+          metric={metric}
+          scale={scale}
+          importanceCutoff={importanceCutoff}
+          transpose={transpose}
+          spot={spot}
+          callPut={callPut}
+          highlightCellKey={highlightCellKey}
+          onSelectPosition={setSelectedPosition}
+        />
+      )}
+
+      <ExpiryPanel positions={filtered} gldSpot={displaySpots.GLD} />
+      <ScenarioStrip positions={filtered} spots={displaySpots} />
     </div>
   );
 }
