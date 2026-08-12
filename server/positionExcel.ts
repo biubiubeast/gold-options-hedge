@@ -262,7 +262,8 @@ export async function createPositionWorkbook(positions: PositionRecord[]): Promi
   sheet.properties.defaultRowHeight = 18;
   sheet.mergeCells("A1:B1");
   sheet.getCell("A1").value = "期权持仓明细（XAUT + GLD，统一口径）";
-  const latestDate = positions.map(position => position.referenceDate).filter(Boolean).sort().at(-1) ?? new Date().toISOString().slice(0, 10);
+  const latestMarketDate = positions.map(position => position.marketQuoteTime?.slice(0, 10)).filter(Boolean).sort().at(-1);
+  const latestDate = latestMarketDate ?? positions.map(position => position.referenceDate).filter(Boolean).sort().at(-1) ?? new Date().toISOString().slice(0, 10);
   sheet.getCell("C1").value = isoToDate(latestDate);
   sheet.getCell("C1").numFmt = "yyyy/mm/dd";
   sheet.getRow(2).values = [...POSITION_EXCEL_HEADERS];
@@ -306,7 +307,7 @@ export async function createPositionWorkbook(positions: PositionRecord[]): Promi
       netQty,
       multiplierXau,
       xauEq,
-      isoToDate(position.referenceDate ?? null),
+      isoToDate(position.marketQuoteTime?.slice(0, 10) ?? position.referenceDate ?? null),
       markPrice,
       entryPrice,
       marketValue,
@@ -404,5 +405,33 @@ export async function createPositionWorkbook(positions: PositionRecord[]): Promi
   widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
   sheet.getRow(1).height = 22;
   sheet.getRow(2).height = 34;
+
+  const audit = workbook.addWorksheet("Market_Data_实时明细", { views: [{ state: "frozen", ySplit: 1 }] });
+  audit.columns = [
+    ["Instrument", 38], ["Underlying", 12], ["Expiry", 13], ["Strike", 11], ["Call/Put", 10],
+    ["Mark Price", 13], ["Mark IV", 12], ["Bid1", 12], ["Ask1", 12], ["Unit Delta", 13],
+    ["Unit Gamma", 13], ["Unit Theta", 13], ["Unit Vega", 13], ["Open Interest", 14], ["Volume", 12],
+    ["Total Delta XAU", 17], ["Total Gamma XAU", 17], ["Theta USD/day", 16], ["Vega USD/vol", 16],
+    ["Market Value", 15], ["UPL", 15], ["Source", 30], ["Quote As-of", 23], ["Refresh At", 23], ["Status", 11],
+  ].map(([header, width]) => ({ header: String(header), key: String(header), width: Number(width) }));
+  for (const position of ordered) audit.addRow({
+    Instrument: position.instrument ?? `${position.underlying}-${position.expiry}-${position.strike}-${position.optionType}`,
+    Underlying: position.underlying, Expiry: isoToDate(position.expiry), Strike: Number(position.strike), "Call/Put": position.optionType === "call" ? "Call" : "Put",
+    "Mark Price": value(position, "importedMarkPrice"), "Mark IV": value(position, "markIv"), Bid1: value(position, "bid1Price"), Ask1: value(position, "ask1Price"),
+    "Unit Delta": Number(position.entryDelta), "Unit Gamma": value(position, "unitGamma"), "Unit Theta": value(position, "unitTheta"), "Unit Vega": value(position, "unitVega"),
+    "Open Interest": value(position, "openInterest"), Volume: value(position, "optionVolume"), "Total Delta XAU": value(position, "importedTotalDeltaXau"),
+    "Total Gamma XAU": value(position, "importedTotalGammaXau"), "Theta USD/day": value(position, "importedTotalThetaUsdDay"), "Vega USD/vol": value(position, "importedTotalVegaUsdVol"),
+    "Market Value": value(position, "importedMarketValue"), UPL: value(position, "importedUnrealizedPnl"), Source: position.marketSource ?? position.importSource ?? "MISSING",
+    "Quote As-of": position.marketQuoteTime ? new Date(position.marketQuoteTime) : null, "Refresh At": position.lastMarketRefreshAt ? new Date(position.lastMarketRefreshAt) : null,
+    Status: position.dataStatus ?? "MISSING",
+  });
+  audit.getRow(1).eachCell(cell => { cell.style = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F33" } }, font: { bold: true, color: { argb: "FFFFFFFF" } }, alignment: { vertical: "middle", wrapText: true } }; });
+  audit.autoFilter = { from: "A1", to: `Y${Math.max(1, audit.rowCount)}` };
+  for (const columnNumber of [6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18, 19, 20, 21]) audit.getColumn(columnNumber).numFmt = "#,##0.0000;[Red](#,##0.0000);-";
+  audit.getColumn(4).numFmt = "#,##0.000";
+  audit.getColumn(7).numFmt = "0.00%";
+  audit.getColumn(3).numFmt = "yyyy/mm/dd";
+  audit.getColumn(23).numFmt = "yyyy/mm/dd hh:mm:ss";
+  audit.getColumn(24).numFmt = "yyyy/mm/dd hh:mm:ss";
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

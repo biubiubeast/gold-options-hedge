@@ -48,6 +48,8 @@ export default function Formulas() {
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editExpression, setEditExpression] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editUsedIn, setEditUsedIn] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [newFormula, setNewFormula] = useState<NewFormula>(emptyFormula);
   const builtInNames = new Set(DEFAULT_FORMULAS.map(formula => formula.name));
@@ -94,6 +96,20 @@ export default function Formulas() {
         </CardContent>
       </Card>
 
+      <Card className="glass-card">
+        <CardContent className="p-4">
+          <details open>
+            <summary className="cursor-pointer text-sm font-semibold">完整使用说明：公式如何影响页面、哪些规则不是表达式</summary>
+            <div className="mt-3 grid gap-3 text-xs text-muted-foreground lg:grid-cols-2">
+              <div className="border border-border/60 p-3"><strong className="text-foreground">1. 编辑与发布</strong><p className="mt-1 leading-relaxed">点击任一公式的“编辑”，可同时修改表达式、业务说明和生效位置。点击“验证并保存”后，系统检查语法、未知变量和循环引用；通过后 Dashboard、仓位估值、矩阵、情景分析会在下一次查询/渲染时使用新公式。内置公式可单独恢复，也可恢复所有默认。</p></div>
+              <div className="border border-border/60 p-3"><strong className="text-foreground">2. 市场数据与公式的边界</strong><p className="mt-1 leading-relaxed">Mark、IV、Bid/Ask 和 Unit Greeks 来自行情源，不由这里的公式生成；只有缺少 GLD Greeks 时，Black-Scholes 才使用可编辑模型公式估算。点击“更新市场数据”会重新获取行情并重算 Total Greeks、MV、UPL。</p></div>
+              <div className="border border-border/60 p-3"><strong className="text-foreground">3. Largest Data Error</strong><p className="mt-1 leading-relaxed">这是固定的数据质量排序，不是交易公式：FAIL &gt; MISSING &gt; STALE &gt; WARN &gt; LIVE；同级按 Quote Age 最大排序。缺 Source、Mark、Multiplier 或 Greeks 显示 MISSING；Quote Age 超过 15 分钟显示 STALE。该规则为安全校验，不能被自定义表达式改成静默的 0。</p></div>
+              <div className="border border-border/60 p-3"><strong className="text-foreground">4. 热力颜色与 Roll Priority</strong><p className="mt-1 leading-relaxed">热力颜色使用当前 metric 的有效值，默认做 99 分位裁剪；支持 Quantile、Log、Zero-centered。Roll Priority 是透明加权 heuristic（DTE、Theta/MV、距 Strike、Delta、Spread、Time Value、Hedge Contribution、Residual Improvement），详情可在矩阵格弹窗展开。</p></div>
+            </div>
+          </details>
+        </CardContent>
+      </Card>
+
       {Object.entries(grouped).map(([category, categoryFormulas]) => (
         <section key={category} className="space-y-3">
           <Badge variant="outline" className={categoryColors[category] || ""}>{categoryLabels[category] || category}</Badge>
@@ -113,13 +129,18 @@ export default function Formulas() {
                       <p className="text-xs text-muted-foreground/80"><span className="text-primary/80">生效位置：</span>{formula.usedIn || "—"}</p>
                       {editingId === formula.id ? (
                         <div className="space-y-2 pt-2">
+                          <Label>表达式</Label>
                           <Textarea value={editExpression} onChange={event => setEditExpression(event.target.value)} className="font-mono text-sm min-h-20 bg-background/50" />
-                          <div className="flex gap-2"><Button size="sm" onClick={() => updateMutation.mutate({ id: formula.id, expression: editExpression })} disabled={updateMutation.isPending} className="gap-1"><Save className="w-3 h-3" />验证并保存</Button><Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>取消</Button></div>
+                          <Label>业务说明（可编辑内容）</Label>
+                          <Textarea value={editDescription} onChange={event => setEditDescription(event.target.value)} className="min-h-16 bg-background/50 text-xs" />
+                          <Label>生效位置 / 引用说明</Label>
+                          <Textarea value={editUsedIn} onChange={event => setEditUsedIn(event.target.value)} className="min-h-16 bg-background/50 text-xs" />
+                          <div className="flex gap-2"><Button size="sm" onClick={() => updateMutation.mutate({ id: formula.id, expression: editExpression, description: editDescription, usedIn: editUsedIn })} disabled={updateMutation.isPending} className="gap-1"><Save className="w-3 h-3" />验证并保存全部内容</Button><Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>取消</Button></div>
                         </div>
                       ) : <div className="p-3 rounded bg-background/50 border border-border/30 overflow-x-auto"><code className="text-sm font-mono whitespace-nowrap">{formula.expression}</code></div>}
                     </div>
                     <div className="flex gap-1 shrink-0">
-                      {editingId !== formula.id && <Button variant="ghost" size="sm" onClick={() => { setEditingId(formula.id); setEditExpression(formula.expression); }}>编辑</Button>}
+                      {editingId !== formula.id && <Button variant="ghost" size="sm" onClick={() => { setEditingId(formula.id); setEditExpression(formula.expression); setEditDescription(formula.description ?? ""); setEditUsedIn(formula.usedIn ?? ""); }}>编辑</Button>}
                       {formula.isDefault === 0 && isBuiltIn && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => resetMutation.mutate({ id: formula.id })} title="恢复默认"><RotateCcw className="w-3.5 h-3.5" /></Button>}
                       {!isBuiltIn && <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => {
                         if (window.confirm(`确认删除自定义公式 ${formula.name}？引用它的公式将无法计算。`)) deleteMutation.mutate({ id: formula.id });

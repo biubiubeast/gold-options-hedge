@@ -4,7 +4,9 @@ const BYBIT_BASE_URL = "https://api.bybit.com";
 const YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart";
 const TRADIER_BASE_URL = process.env.TRADIER_BASE_URL || "https://api.tradier.com/v1";
 const MARKETDATA_BASE_URL = "https://api.marketdata.app/v1";
-const REQUEST_TIMEOUT_MS = 8_000;
+const CBOE_GLD_CHAIN_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/GLD.json";
+const CBOE_GLD_QUOTE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/quotes/GLD.json";
+const REQUEST_TIMEOUT_MS = 15_000;
 const LIVE_CACHE_MS = 5_000;
 const OPTION_CACHE_MS = 10_000;
 
@@ -55,7 +57,22 @@ export interface GldOptionQuote {
   theta: number;
   vega: number;
   timestamp: number;
-  source: "MarketData.app / OPRA" | "Tradier / ORATS";
+  source: "MarketData.app / OPRA" | "Tradier / ORATS" | "Cboe delayed options / OPRA";
+  openInterest?: number;
+  volume?: number;
+  tradeable?: boolean;
+}
+
+export interface GldOptionChain {
+  quotes: GldOptionQuote[];
+  spot: number;
+  timestamp: number;
+  source: string;
+  status: "delayed" | "stale";
+  delaySeconds: number;
+  contractCount: number;
+  expiryCount: number;
+  strikeCount: number;
 }
 
 export interface GldContractRequest {
@@ -105,6 +122,10 @@ async function cached<T>(key: string, ttlMs: number, loader: () => Promise<T>): 
   }
 }
 
+export function clearMarketDataCache(): void {
+  cache.clear();
+}
+
 function toNumber(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
   return Number.isFinite(parsed) ? parsed : 0;
@@ -120,6 +141,22 @@ function optionalTimestamp(value: unknown): number {
   const raw = toNumber(value);
   if (raw <= 0) return 0;
   return raw > 10_000_000_000 ? raw : raw * 1000;
+}
+
+function exchangeTimestamp(value: unknown): number {
+  const text = String(value ?? "").trim();
+  const matched = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+  if (!matched) return optionalTimestamp(value);
+  const [, year, month, day, hour, minute, second] = matched;
+  const naiveUtc = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(naiveUtc));
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find(item => item.type === type)?.value);
+  const displayedAsUtc = Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"));
+  return naiveUtc - (displayedAsUtc - naiveUtc);
 }
 
 function spotPrice(price: number, timestamp: number, source: string, forceDelayed = false): SpotPrice {
@@ -237,9 +274,25 @@ async function getTradierGldPrice(): Promise<SpotPrice | null> {
   });
 }
 
+async function getCboeGldPrice(): Promise<SpotPrice | null> {
+  return cached("cboe-gld-spot", 15_000, async () => {
+    const data = await fetchJson<any>(CBOE_GLD_QUOTE_URL);
+    const bid = toNumber(data.data?.bid);
+    const ask = toNumber(data.data?.ask);
+    const price = bid > 0 && ask > 0 ? (bid + ask) / 2 : toNumber(data.data?.current_price);
+    if (price <= 0) throw new Error("Cboe returned no GLD quote");
+    const timestamp = exchangeTimestamp(data.timestamp) || Date.now();
+    return spotPrice(price, timestamp, "Cboe delayed quote / CTA", true);
+  }).catch(error => {
+    console.error("[MarketData] Failed to fetch Cboe GLD spot:", error);
+    return null;
+  });
+}
+
 export async function getGldPrice(): Promise<SpotPrice | null> {
   return await getMarketDataGldPrice()
     || await getTradierGldPrice()
+    || await getCboeGldPrice()
     || await getYahooPrice("GLD", "gld-spot");
 }
 
@@ -339,13 +392,77 @@ function normalizeTradierOption(raw: any, expiry: string): GldOptionQuote | null
   };
 }
 
+export function normalizeCboeGldOption(raw: any, timestamp: number): GldOptionQuote | null {
+  const symbol = String(raw?.option ?? "").trim().toUpperCase();
+  const match = symbol.match(/^GLD(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/);
+  if (!match) return null;
+  const [, year, month, day, side, strikeToken] = match;
+  const bid = toNumber(raw.bid);
+  const ask = toNumber(raw.ask);
+  const theoretical = toNumber(raw.theo);
+  const last = toNumber(raw.last_trade_price);
+  const markPrice = bid > 0 && ask > 0 ? (bid + ask) / 2 : theoretical > 0 ? theoretical : last > 0 ? last : 0;
+  return {
+    symbol,
+    expiry: `20${year}-${month}-${day}`,
+    strike: Number(strikeToken) / 1000,
+    optionType: side === "C" ? "call" : "put",
+    markPrice,
+    markIv: toNumber(raw.iv),
+    bid1Price: bid,
+    ask1Price: ask,
+    delta: toNumber(raw.delta),
+    gamma: toNumber(raw.gamma),
+    theta: toNumber(raw.theta),
+    vega: toNumber(raw.vega),
+    timestamp,
+    source: "Cboe delayed options / OPRA",
+    openInterest: toNumber(raw.open_interest),
+    volume: toNumber(raw.volume),
+    tradeable: true,
+  };
+}
+
+export async function getGldOptionChain(): Promise<GldOptionChain> {
+  return cached("cboe-gld-full-chain", 30_000, async () => {
+    const data = await fetchJson<any>(CBOE_GLD_CHAIN_URL);
+    const timestamp = exchangeTimestamp(data.timestamp) || Date.now();
+    const quotes = (Array.isArray(data.data?.options) ? data.data.options : [])
+      .map((raw: any) => normalizeCboeGldOption(raw, timestamp))
+      .filter((quote: GldOptionQuote | null): quote is GldOptionQuote => quote !== null);
+    if (!quotes.length) throw new Error("Cboe returned no GLD option contracts");
+    const delaySeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+    return {
+      quotes,
+      spot: toNumber(data.data?.current_price),
+      timestamp,
+      source: "Cboe delayed options / OPRA",
+      status: delaySeconds > 60 * 60 ? "stale" : "delayed",
+      delaySeconds,
+      contractCount: quotes.length,
+      expiryCount: new Set(quotes.map((quote: GldOptionQuote) => quote.expiry)).size,
+      strikeCount: new Set(quotes.map((quote: GldOptionQuote) => quote.strike)).size,
+    };
+  });
+}
+
 export async function getGldOptionQuotes(
   expiries: string[],
   contracts: GldContractRequest[] = [],
 ): Promise<GldOptionQuote[]> {
   const marketDataQuotes = await getMarketDataGldOptionQuotes(contracts);
   const token = process.env.TRADIER_API_TOKEN;
-  if (!token || expiries.length === 0) return marketDataQuotes;
+  if (!token || expiries.length === 0) {
+    const chain = await getGldOptionChain().catch(error => {
+      console.error("[MarketData] Failed to fetch Cboe GLD option chain:", error);
+      return null;
+    });
+    if (!chain) return marketDataQuotes;
+    const wanted = new Set(contracts.map(contract => `${contract.expiry}|${contract.strike}|${contract.optionType}`));
+    const fallback = chain.quotes.filter(quote => wanted.has(`${quote.expiry}|${quote.strike}|${quote.optionType}`));
+    const priorityKeys = new Set(marketDataQuotes.map(quote => `${quote.expiry}|${quote.strike}|${quote.optionType}`));
+    return [...marketDataQuotes, ...fallback.filter(quote => !priorityKeys.has(`${quote.expiry}|${quote.strike}|${quote.optionType}`))];
+  }
   const uniqueExpiries = [...new Set(expiries)].slice(0, 24);
   const chains = await Promise.all(uniqueExpiries.map(expiry =>
     cached(`tradier-gld-${expiry}`, OPTION_CACHE_MS, async () => {
@@ -360,10 +477,16 @@ export async function getGldOptionQuotes(
     }),
   ));
   const priorityKeys = new Set(marketDataQuotes.map(quote => `${quote.expiry}|${quote.strike}|${quote.optionType}`));
-  return [
+  const tradierQuotes = [
     ...marketDataQuotes,
     ...chains.flat().filter(quote => !priorityKeys.has(`${quote.expiry}|${quote.strike}|${quote.optionType}`)),
   ];
+  const foundKeys = new Set(tradierQuotes.map(quote => `${quote.expiry}|${quote.strike}|${quote.optionType}`));
+  const missing = contracts.filter(contract => !foundKeys.has(`${contract.expiry}|${contract.strike}|${contract.optionType}`));
+  if (!missing.length) return tradierQuotes;
+  const chain = await getGldOptionChain().catch(() => null);
+  const wanted = new Set(missing.map(contract => `${contract.expiry}|${contract.strike}|${contract.optionType}`));
+  return [...tradierQuotes, ...(chain?.quotes ?? []).filter(quote => wanted.has(`${quote.expiry}|${quote.strike}|${quote.optionType}`))];
 }
 
 export function getMarketSources() {
@@ -391,6 +514,14 @@ export function getMarketSources() {
         authentication: "无需密钥",
         mode: "交易所实时快照",
         documentationUrl: "https://bybit-exchange.github.io/docs/v5/market/tickers",
+      },
+      {
+        product: "GLD 完整期权链 / Greeks / Bid-Ask（免密钥底座）",
+        provider: "Cboe Delayed Quotes / OPRA",
+        endpoint: "/api/global/delayed_quotes/options/GLD.json",
+        authentication: "无需密钥",
+        mode: "完整上市合约；延迟行情，页面显示 Source / As-of / STALE",
+        documentationUrl: "https://www.cboe.com/delayed_quotes/gld/quote_table",
       },
       {
         product: "GLD 实时期权 / Greeks / Bid-Ask（首选）",

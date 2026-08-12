@@ -19,6 +19,7 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { LiveSpotBar } from "./LiveSpotBar";
+import { MarketRefreshButton } from "./MarketRefreshButton";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -230,6 +231,7 @@ function DashboardLayoutContent({
             <LiveSpotBar />
           </div>
           <div className="flex items-center gap-1 shrink-0" role="group" aria-label="页面缩放">
+            <MarketRefreshButton compact />
             <Button
               type="button"
               variant="ghost"

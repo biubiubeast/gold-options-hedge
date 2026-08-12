@@ -36,6 +36,10 @@ describe("position Excel import/export", () => {
     const now = new Date("2026-08-11T00:00:00.000Z");
     const records: PositionRecord[] = preview.positions.map((position, index) => ({ ...position, id: index + 1, userId: 1, createdAt: now, updatedAt: now }));
     const exported = await createPositionWorkbook(records);
+    const exportedWorkbook = new ExcelJS.Workbook();
+    await exportedWorkbook.xlsx.load(exported as any);
+    expect(exportedWorkbook.worksheets.map(sheet => sheet.name)).toEqual(["期权持仓_XAUT_GLD", "Market_Data_实时明细"]);
+    expect(exportedWorkbook.getWorksheet("Market_Data_实时明细")?.getRow(1).values).toContain("Mark IV");
     const roundTrip = await parsePositionWorkbook(exported, "exported.xlsx");
     expect(roundTrip.exactHeaderMatch).toBe(true);
     expect(roundTrip.errors).toEqual([]);

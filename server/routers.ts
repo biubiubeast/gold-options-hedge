@@ -3,6 +3,7 @@ import { z } from "zod";
 import * as db from "./db";
 import {
   getGldOptionQuotes,
+  getGldOptionChain,
   getGldPrice,
   getGoldPrice,
   getMarketSources,
@@ -13,6 +14,7 @@ import {
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
 import { validateFormula } from "@shared/formulaEngine";
 import { createPositionWorkbook, parsePositionWorkbook } from "./positionExcel";
+import { refreshPositionMarketData } from "./positionMarketRefresh";
 
 const numericString = z.string().trim().refine(value => {
   const parsed = Number(value);
@@ -44,6 +46,14 @@ const optionalPositionFields = {
   xauEqNetQty: nullableNumericText.optional(),
   referenceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   importedMarkPrice: nullableNumericText.optional(),
+  markIv: nullableNumericText.optional(),
+  bid1Price: nullableNumericText.optional(),
+  ask1Price: nullableNumericText.optional(),
+  marketQuoteTime: nullableText.optional(),
+  marketSource: nullableText.optional(),
+  lastMarketRefreshAt: nullableText.optional(),
+  openInterest: nullableNumericText.optional(),
+  optionVolume: nullableNumericText.optional(),
   importedMarketValue: nullableNumericText.optional(),
   entryValue: nullableNumericText.optional(),
   importedEntryCost: nullableNumericText.optional(),
@@ -151,6 +161,10 @@ export const appRouter = router({
       mode: z.enum(["replace", "upsert"]),
       positions: z.array(importedPositionSchema).min(1).max(2_000),
     })).mutation(({ ctx, input }) => db.importPositions(ctx.user.id, input.positions, input.mode)),
+    refreshMarketData: protectedProcedure.mutation(async ({ ctx }) => {
+      const positions = await db.getPositionsByUser(ctx.user.id);
+      return refreshPositionMarketData(ctx.user.id, positions);
+    }),
     exportExcel: protectedProcedure.query(async ({ ctx }) => {
       const positions = await db.getPositionsByUser(ctx.user.id);
       const workbook = await createPositionWorkbook(positions);
@@ -178,6 +192,7 @@ export const appRouter = router({
         })).max(100).optional(),
       }))
       .query(({ input }) => getGldOptionQuotes(input.expiries, input.contracts)),
+    gldOptionChain: protectedProcedure.query(getGldOptionChain),
     spotPrices: publicProcedure.query(async () => {
       const [xaut, gld, gold] = await Promise.all([getXautSpotPrice(), getGldPrice(), getGoldPrice()]);
       return { xaut, gld, gold };

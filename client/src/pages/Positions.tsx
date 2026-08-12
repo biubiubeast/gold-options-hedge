@@ -11,6 +11,7 @@ import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Info, Loader2, 
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { PositionExcelPreview } from "@shared/positionExcel";
+import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 
 interface PositionForm {
   underlying: "XAUT" | "GLD";
@@ -200,6 +201,7 @@ export default function Positions() {
           <p className="mt-1 text-sm text-muted-foreground">Excel 快照是主导入流程；手工录入用于临时修正或单腿补录。</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <MarketRefreshButton />
           <Button variant="outline" onClick={handleExportExcel} className="gap-2" disabled={exportExcelQuery.isFetching || !positions?.length}>
             {exportExcelQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} 导出 Excel
           </Button>
@@ -280,8 +282,8 @@ export default function Positions() {
       <Card className="glass-card">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table className="min-w-[1500px]">
-              <TableHeader><TableRow><TableHead>Source / Venue</TableHead><TableHead>Instrument</TableHead><TableHead>U</TableHead><TableHead>Expiry</TableHead><TableHead>Strike</TableHead><TableHead>C/P</TableHead><TableHead>Qty</TableHead><TableHead>Multiplier</TableHead><TableHead>Mark</TableHead><TableHead>Entry</TableHead><TableHead>MV</TableHead><TableHead>Entry Cost</TableHead><TableHead>UPL</TableHead><TableHead>Unit Δ</TableHead><TableHead>Total Δ XAU</TableHead><TableHead>Γ XAU</TableHead><TableHead>Θ USD/d</TableHead><TableHead>Vega USD/v</TableHead><TableHead>Status</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
+            <Table className="min-w-[1900px]">
+              <TableHeader><TableRow><TableHead>Source / Venue</TableHead><TableHead>Instrument</TableHead><TableHead>U</TableHead><TableHead>Expiry</TableHead><TableHead>Strike</TableHead><TableHead>C/P</TableHead><TableHead>Qty</TableHead><TableHead>Multiplier</TableHead><TableHead>Mark</TableHead><TableHead>Mark IV</TableHead><TableHead>Bid / Ask</TableHead><TableHead>Entry</TableHead><TableHead>MV</TableHead><TableHead>Entry Cost</TableHead><TableHead>UPL</TableHead><TableHead>Unit Δ</TableHead><TableHead>Total Δ XAU</TableHead><TableHead>Γ XAU</TableHead><TableHead>Θ USD/d</TableHead><TableHead>Vega USD/v</TableHead><TableHead>As-of / Source</TableHead><TableHead>Status</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
               <TableBody>{positions?.length ? positions.map(position => (
                 <TableRow key={position.id} className="hover:bg-secondary/30">
                   <TableCell className="max-w-48"><p className="truncate text-xs" title={position.sourceAccount ?? ""}>{position.sourceAccount ?? "LOCAL-HEDGE"}</p><p className="truncate text-[10px] text-muted-foreground">{position.venue ?? "MANUAL"}</p></TableCell>
@@ -290,18 +292,22 @@ export default function Positions() {
                   <TableCell className="font-mono text-xs">{position.expiry}</TableCell><TableCell className="font-mono">{position.strike}</TableCell>
                   <TableCell><Badge variant="outline" className={position.optionType === "call" ? "text-green-400" : "text-red-400"}>{position.optionType.toUpperCase()}</Badge></TableCell>
                   <TableCell className="font-mono">{position.quantity}</TableCell><TableCell className="font-mono text-xs">{position.contractMultiplier ?? (position.underlying === "GLD" ? "100" : "1")} × {position.multiplierXau ?? "—"} XAU</TableCell>
-                  <TableCell className="font-mono">{position.importedMarkPrice ?? "—"}</TableCell><TableCell className="font-mono">{position.entryPrice}</TableCell>
+                  <TableCell className="font-mono">{position.importedMarkPrice ?? "—"}</TableCell>
+                  <TableCell className="font-mono">{position.markIv ? `${(Number(position.markIv) * 100).toFixed(2)}%` : "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{position.bid1Price ?? "—"} / {position.ask1Price ?? "—"}</TableCell>
+                  <TableCell className="font-mono">{position.entryPrice}</TableCell>
                   <TableCell className="font-mono">{money(position.importedMarketValue)}</TableCell><TableCell className="font-mono">{money(position.importedEntryCost)}</TableCell>
                   <TableCell className={`font-mono ${Number(position.importedUnrealizedPnl) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{money(position.importedUnrealizedPnl)}</TableCell>
                   <TableCell className="font-mono">{money(position.entryDelta)}</TableCell><TableCell className="font-mono">{money(position.importedTotalDeltaXau)}</TableCell>
                   <TableCell className="font-mono">{money(position.importedTotalGammaXau)}</TableCell><TableCell className="font-mono">{money(position.importedTotalThetaUsdDay)}</TableCell><TableCell className="font-mono">{money(position.importedTotalVegaUsdVol)}</TableCell>
+                  <TableCell className="max-w-60"><p className="truncate font-mono text-[10px]" title={position.marketQuoteTime ?? ""}>{position.marketQuoteTime?.replace("T", " ").slice(0, 19) ?? position.referenceDate ?? "MISSING"}</p><p className="truncate text-[10px] text-muted-foreground" title={position.marketSource ?? ""}>{position.marketSource ?? position.importSource ?? "MISSING"}</p></TableCell>
                   <TableCell><Badge variant="outline" className={position.dataStatus === "STALE" ? "border-amber-500/40 text-amber-300" : ""}>{position.dataStatus ?? (position.importSource ? "STALE" : "WARN")}</Badge></TableCell>
                   <TableCell className="text-right"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(position)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { if (window.confirm(`确认删除 ${position.underlying} ${position.strike} ${position.optionType.toUpperCase()}？`)) deleteMutation.mutate({ id: position.id }); }}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell>
                 </TableRow>
-              )) : <TableRow><TableCell colSpan={20} className="py-12 text-center text-muted-foreground"><FileSpreadsheet className="mx-auto mb-2 h-8 w-8 opacity-50" />上传持仓 Excel，或添加第一条仓位</TableCell></TableRow>}</TableBody>
+              )) : <TableRow><TableCell colSpan={23} className="py-12 text-center text-muted-foreground"><FileSpreadsheet className="mx-auto mb-2 h-8 w-8 opacity-50" />上传持仓 Excel，或添加第一条仓位</TableCell></TableRow>}</TableBody>
             </Table>
           </div>
-          <div className="flex items-center gap-2 border-t border-border/50 px-3 py-2 text-[11px] text-muted-foreground"><Info className="h-3.5 w-3.5" />导入的 Mark 与 Greeks 保留 Reference Date 并标记 STALE；若实时 API 有同一合约报价，分析页会优先使用实时值。</div>
+          <div className="flex items-center gap-2 border-t border-border/50 px-3 py-2 text-[11px] text-muted-foreground"><Info className="h-3.5 w-3.5" />“更新市场数据”会持久化 Mark、IV、Bid/Ask、Greeks、MV、UPL、Source 与 As-of；之后导出的 Excel 主表及 Market_Data_实时明细均使用这些最新值。</div>
         </CardContent>
       </Card>
     </div>
