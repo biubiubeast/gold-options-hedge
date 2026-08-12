@@ -143,20 +143,15 @@ function optionalTimestamp(value: unknown): number {
   return raw > 10_000_000_000 ? raw : raw * 1000;
 }
 
-function exchangeTimestamp(value: unknown): number {
+export function parseCboeTimestamp(value: unknown): number {
   const text = String(value ?? "").trim();
   const matched = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
   if (!matched) return optionalTimestamp(value);
   const [, year, month, day, hour, minute, second] = matched;
-  const naiveUtc = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
-  }).formatToParts(new Date(naiveUtc));
-  const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find(item => item.type === type)?.value);
-  const displayedAsUtc = Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"));
-  return naiveUtc - (displayedAsUtc - naiveUtc);
+  // Cboe's delayed-quote JSON timestamps are UTC even though they omit the
+  // trailing `Z`. Treating them as America/New_York makes quotes appear four
+  // hours newer (and can silently turn stale data into apparent live data).
+  return Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
 }
 
 function spotPrice(price: number, timestamp: number, source: string, forceDelayed = false): SpotPrice {
@@ -281,7 +276,7 @@ async function getCboeGldPrice(): Promise<SpotPrice | null> {
     const ask = toNumber(data.data?.ask);
     const price = bid > 0 && ask > 0 ? (bid + ask) / 2 : toNumber(data.data?.current_price);
     if (price <= 0) throw new Error("Cboe returned no GLD quote");
-    const timestamp = exchangeTimestamp(data.timestamp) || Date.now();
+    const timestamp = parseCboeTimestamp(data.timestamp) || Date.now();
     return spotPrice(price, timestamp, "Cboe delayed quote / CTA", true);
   }).catch(error => {
     console.error("[MarketData] Failed to fetch Cboe GLD spot:", error);
@@ -426,7 +421,7 @@ export function normalizeCboeGldOption(raw: any, timestamp: number): GldOptionQu
 export async function getGldOptionChain(): Promise<GldOptionChain> {
   return cached("cboe-gld-full-chain", 30_000, async () => {
     const data = await fetchJson<any>(CBOE_GLD_CHAIN_URL);
-    const timestamp = exchangeTimestamp(data.timestamp) || Date.now();
+    const timestamp = parseCboeTimestamp(data.timestamp) || Date.now();
     const quotes = (Array.isArray(data.data?.options) ? data.data.options : [])
       .map((raw: any) => normalizeCboeGldOption(raw, timestamp))
       .filter((quote: GldOptionQuote | null): quote is GldOptionQuote => quote !== null);

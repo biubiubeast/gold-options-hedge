@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { normalizeCboeGldOption } from "./marketData";
+import { normalizeCboeGldOption, parseCboeTimestamp } from "./marketData";
+
+describe("Cboe timestamp normalization", () => {
+  it("treats timezone-less Cboe timestamps as UTC", () => {
+    expect(parseCboeTimestamp("2026-08-12 08:16:24"))
+      .toBe(Date.parse("2026-08-12T08:16:24Z"));
+  });
+});
 
 describe("Cboe GLD full-chain normalization", () => {
   it("parses OCC symbols and keeps market/Greek metadata explicit", () => {
