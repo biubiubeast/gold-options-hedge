@@ -125,8 +125,8 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
   };
   const legendMaximum = sequentialMagnitude ? scale.clipHigh : scale.centered ? scale.p99Abs : scale.clipHigh;
   const legendGradient = sequentialMagnitude
-    ? "linear-gradient(to top, rgb(37 99 235), rgb(34 211 238), rgb(250 204 21), rgb(239 68 68))"
-    : centered ? "linear-gradient(to top, rgb(224 70 78), rgb(35 35 45), rgb(40 160 205))" : "linear-gradient(to top, rgb(30 35 50), rgb(222 164 48))";
+    ? "linear-gradient(to top, rgb(3 7 18), rgb(31 74 106), rgb(127 51 71), rgb(239 68 68))"
+    : centered ? "linear-gradient(to top, rgb(30 64 97), rgb(3 7 18), rgb(239 68 68))" : "linear-gradient(to top, rgb(3 7 18), rgb(31 74 106), rgb(127 51 71), rgb(239 68 68))";
 
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden border border-border/60 bg-background/70" data-testid="risk-heatmap-grid">
@@ -156,16 +156,20 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
               const isSyntheticSpot = range.state !== "within" && centerSpot && strike === Number(spot.toFixed(2));
               const spotLine = range.nearestStrike === strike;
               return <Tooltip key={key} delayDuration={80} open={hoveredCellKey === key} onOpenChange={open => setHoveredCellKey(open ? key : null)}><TooltipTrigger asChild><button
-                type="button" data-cell-key={key} data-spot-synthetic={isSyntheticSpot ? "true" : undefined}
-                className={`relative overflow-hidden border-b border-r px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${zoneClass[zoneFor(strike, spot, callPut)]} ${cell ? statusBorder[status] : "border-border/[0.09] opacity-35"} ${cell?.listed && !cell.held ? "border-cyan-300/80 ring-1 ring-inset ring-cyan-400/35" : ""} ${cell?.held ? "border-amber-200 ring-1 ring-inset ring-amber-300/90" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""} ${isSyntheticSpot ? "bg-amber-400/15" : ""}`}
-                style={{ height: rowHeight, ...(cell?.value == null ? {} : { backgroundColor: colorFor(cell.value) }) }}
+                type="button" data-cell-key={key} data-held={cell?.held ? "true" : "false"} data-spot-synthetic={isSyntheticSpot ? "true" : undefined}
+                className={`relative overflow-hidden border-b border-r px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${zoneClass[zoneFor(strike, spot, callPut)]} ${cell ? statusBorder[status] : "border-border/[0.07] opacity-30"} ${cell?.listed && !cell.held ? "border-cyan-300/45" : ""} ${cell?.held ? "z-[3] border-2 border-amber-100" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""} ${isSyntheticSpot ? "bg-amber-400/15" : ""}`}
+                style={{
+                  height: rowHeight,
+                  ...(cell?.value == null ? {} : { backgroundColor: colorFor(cell.value) }),
+                  ...(cell?.held ? { boxShadow: "inset 0 0 0 1px rgb(254 243 199 / 0.98), inset 0 0 0 3px rgb(245 158 11 / 0.82), 0 0 4px rgb(245 158 11 / 0.9)" } : {}),
+                }}
                 onClick={() => topPositions[0] && onSelectPosition(topPositions[0])}
                 onMouseEnter={() => cell && setHoveredCellKey(key)}
                 onMouseLeave={() => setHoveredCellKey(current => current === key ? null : current)}
                 onFocus={() => cell && setHoveredCellKey(key)}
                 onBlur={() => setHoveredCellKey(current => current === key ? null : current)}
                 aria-label={cell ? `${key} ${formatCompact(cell.value, metric)} ${cell.held ? "held" : "listed no position"} ${status}` : `${key} unavailable not listed`}
-              >{showLabel && <span className="font-semibold text-white drop-shadow-sm">{formatCompact(cell!.value, metric)}</span>}{cell && cell.positions.length > 1 && (labelMode !== "none" || cell.held) && <span className="absolute bottom-0 right-0 text-[6px] leading-none text-white/70">{cell.positions.length}</span>}{cell && status !== "LIVE" && (cell.held || labelMode !== "none") && <span className="absolute left-0 top-0 text-[6px] font-bold leading-none text-white">{statusAbbreviation(status)}</span>}{isSyntheticSpot && <span className="text-[7px] text-amber-200">SPOT</span>}</button></TooltipTrigger>
+              >{showLabel && <span className="font-semibold text-white drop-shadow-sm">{formatCompact(cell!.value, metric)}</span>}{cell?.held && <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 h-1.5 w-1.5 bg-amber-100 shadow-[0_0_3px_rgb(251_191_36)]" />}{cell && cell.positions.length > 1 && (labelMode !== "none" || cell.held) && <span className="absolute bottom-0 right-0 text-[6px] leading-none text-white/70">{cell.positions.length}</span>}{cell && status !== "LIVE" && (cell.held || labelMode !== "none") && <span className="absolute left-0 top-0 text-[6px] font-bold leading-none text-white">{statusAbbreviation(status)}</span>}{isSyntheticSpot && <span className="text-[7px] text-amber-200">SPOT</span>}</button></TooltipTrigger>
                 {cell && <TooltipContent side="right" sideOffset={6} collisionPadding={12} className="z-[100] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 rounded-sm bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">Cell {METRIC_LABELS[metric]} </span><strong className="float-right font-mono text-primary">{formatCompact(cell.value, metric)}</strong></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} /></div>)}</div><p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、Greeks、数据质量与 Roll 原因</p></TooltipContent>}
               </Tooltip>;
             });
@@ -174,13 +178,13 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
         </div>
       </div>
       <aside className="flex w-[62px] shrink-0 flex-col items-center border-l border-border/60 bg-card/50 px-1 py-2" aria-label="vertical heatmap legend">
-        <span className="text-center text-[7px] uppercase leading-tight text-muted-foreground">{sequentialMagnitude ? "ABS RISK" : scale.centered ? "SIGNED" : "RISK"}<br />P99 CLIP</span>
+        <span className="text-center text-[7px] uppercase leading-tight text-muted-foreground">{sequentialMagnitude ? "ABS VALUE" : scale.centered ? "SIGNED" : "RAW VALUE"}<br />P99 CLIP</span>
         <span className="mt-1 font-mono text-[7px] text-foreground">{formatCompact(legendMaximum, metric)}</span>
         <div className="my-1 min-h-16 w-3 flex-1 border border-white/10" style={{ background: legendGradient }} />
         {sequentialMagnitude ? <><span className="font-mono text-[7px] text-muted-foreground">{formatCompact(legendMaximum * 0.5, metric)}</span><span className="mt-auto font-mono text-[7px] text-blue-300">0</span></> : <span className="font-mono text-[7px] text-muted-foreground">{scale.centered ? formatCompact(-legendMaximum, metric) : "0"}</span>}
         <button type="button" onClick={handleCenterSpot} className="mt-1 text-center text-[7px] leading-tight text-amber-300 underline">CENTER<br />SPOT {formatPrice(spot)}</button>
-        <span className="mt-1 text-center text-[6px] leading-tight text-cyan-200">CYAN<br />LISTED</span>
-        <span className="mt-1 text-center text-[6px] leading-tight text-amber-200">GOLD<br />HELD</span>
+        <span className="mt-1 text-center text-[6px] leading-tight text-cyan-200">THIN CYAN<br />LISTED</span>
+        <span className="mt-1 text-center text-[6px] font-semibold leading-tight text-amber-100">THICK GOLD<br />HELD</span>
       </aside>
     </div>
   );

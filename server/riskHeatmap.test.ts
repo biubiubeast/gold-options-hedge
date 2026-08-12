@@ -85,7 +85,7 @@ describe("institutional risk heatmap acceptance", () => {
 
   it("maps zero-to-high absolute delta from blue to red without losing signed values", () => {
     const scale = buildHeatScale([0, 0.05, 0.5, 0.8, 1000], "quantile", false);
-    expect(magnitudeHeatColor(scale.normalize(0))).toContain("37 99 235");
+    expect(magnitudeHeatColor(scale.normalize(0))).toContain("3 7 18");
     expect(magnitudeHeatColor(scale.normalize(scale.clipHigh))).toContain("239 68 68");
     expect(aggregateMetric(enrichRiskPositions(generateMockPositions(100, 7, asOf), spots, asOf), "totalDelta")).not.toBeNull();
   });

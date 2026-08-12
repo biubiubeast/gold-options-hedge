@@ -469,22 +469,22 @@ export function formatPrice(value: number | null): string {
 export function heatColor(normalized: number, centered: boolean): string {
   if (centered) {
     const magnitude = Math.min(1, Math.abs(normalized));
-    const alpha = 0.10 + magnitude * 0.78;
-    return normalized < 0
-      ? `rgba(224, 70, 78, ${alpha.toFixed(3)})`
-      : `rgba(40, 160, 205, ${alpha.toFixed(3)})`;
+    const from = [3, 7, 18] as const;
+    const target = normalized < 0 ? [30, 64, 97] as const : [239, 68, 68] as const;
+    const channel = (index: 0 | 1 | 2) => Math.round(from[index] + (target[index] - from[index]) * magnitude);
+    return `rgb(${channel(0)} ${channel(1)} ${channel(2)} / ${0.88 + magnitude * 0.12})`;
   }
-  const alpha = 0.09 + Math.min(1, Math.max(0, normalized)) * 0.82;
-  return `rgba(222, 164, 48, ${alpha.toFixed(3)})`;
+  return magnitudeHeatColor(normalized);
 }
 
-/** Sequential risk palette: zero/low = blue, P99/high = red. */
+/** Unified risk palette: zero/low = blue-black, P99/high = red. */
 export function magnitudeHeatColor(normalized: number): string {
   const value = Math.min(1, Math.max(0, normalized));
   const stops = [
-    [0, 37, 99, 235],
-    [0.35, 34, 211, 238],
-    [0.68, 250, 204, 21],
+    [0, 3, 7, 18],
+    [0.25, 11, 31, 54],
+    [0.55, 31, 74, 106],
+    [0.78, 127, 51, 71],
     [1, 239, 68, 68],
   ] as const;
   const upperIndex = stops.findIndex(stop => stop[0] >= value);
@@ -492,7 +492,7 @@ export function magnitudeHeatColor(normalized: number): string {
   const lower = stops[Math.max(0, (upperIndex < 0 ? stops.length - 1 : upperIndex) - 1)];
   const ratio = upper[0] === lower[0] ? 0 : (value - lower[0]) / (upper[0] - lower[0]);
   const channel = (from: number, to: number) => Math.round(from + (to - from) * ratio);
-  return `rgb(${channel(lower[1], upper[1])} ${channel(lower[2], upper[2])} ${channel(lower[3], upper[3])} / ${0.36 + value * 0.62})`;
+  return `rgb(${channel(lower[1], upper[1])} ${channel(lower[2], upper[2])} ${channel(lower[3], upper[3])} / ${0.88 + value * 0.12})`;
 }
 
 export function exerciseControl(position: EnrichedRiskPosition, spot: number): ExerciseControl {

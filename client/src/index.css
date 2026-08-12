@@ -92,7 +92,10 @@
 }
 
 .matrix-fullscreen-shell:fullscreen {
-  padding: 1rem;
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  padding: 0.35rem;
   overflow: hidden;
   background: var(--color-background);
 }
@@ -100,16 +103,17 @@
 .matrix-pseudo-fullscreen {
   position: fixed;
   inset: 0;
-  z-index: 100;
-  padding: 1rem;
+  z-index: 45;
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  padding: 0.35rem;
   overflow: hidden;
   background: var(--color-background);
 }
 
-.matrix-fullscreen-shell:fullscreen .matrix-viewport,
-.matrix-pseudo-fullscreen .matrix-viewport {
-  max-height: calc(100vh - 6rem);
-  height: calc(100vh - 6rem);
+.matrix-pseudo-fullscreen [data-testid="risk-heatmap-grid"] {
+  min-height: 0;
 }
 
 ::-webkit-scrollbar {
