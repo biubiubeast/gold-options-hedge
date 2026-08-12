@@ -4,7 +4,7 @@ import { HeatmapGrid, type CellLabelMode, type HeatmapCellModel, type HoverDataP
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { getPositionMarketData, type MarketSnapshot, type PortfolioPosition } from "@/lib/portfolio";
-import { buildGldChainRiskPositions, buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
+import { buildChainRiskPositions, buildGldChainRiskPositions, buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import {
@@ -26,7 +26,7 @@ import {
   type HeatmapMetric,
   type RiskUnderlying,
 } from "@shared/riskHeatmap";
-import { ArrowLeftRight, Eye, EyeOff, Info, Loader2, LocateFixed } from "lucide-react";
+import { ArrowLeftRight, ArrowUpDown, Eye, EyeOff, Info, Loader2, LocateFixed, Maximize2, Minus, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 type DatasetMode = "chain" | "live" | "mock100" | "mock200";
@@ -132,6 +132,7 @@ function PositionDetailDialog({ position, onClose }: { position: EnrichedRiskPos
     ["Venue / Broker / Account", `${position.venue} / ${position.broker} / ${position.account}`], ["Net Qty", position.netQty],
     ["Contract Multiplier", position.contractMultiplier], ["XAU per unit", position.underlying === "GLD" ? position.gldOzPerShare : position.underlyingOzPerUnit],
     ["Mark / Bid / Ask", `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)}`], ["Mark IV", formatCompact(position.markIV, "markIV")],
+    ["Bid IV / Ask IV / Spread", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")} / ${formatCompact(position.ivSpread, "ivSpread")}`],
     ["Unit Delta", position.unitDelta], ["Unit Gamma", position.unitGamma], ["Unit Theta", position.unitTheta], ["Unit Vega", position.unitVega],
     ["Total Delta XAU", position.totalDeltaXAU], ["Total Gamma XAU", position.totalGammaXAU], ["Total Theta USD/day", position.totalThetaUSD], ["Total Vega USD/vol", position.totalVegaUSD],
     ["Market Value", position.MV], ["Entry Cost", position.entryCost], ["UPL", position.UPL],
@@ -153,12 +154,15 @@ export default function Matrix() {
   const [venue, setVenue] = useState("all");
   const [broker, setBroker] = useState("all");
   const [account, setAccount] = useState("all");
-  const [callPut, setCallPut] = useState<"combined" | CallPut>("combined");
+  const [callPut, setCallPut] = useState<"combined" | CallPut>("call");
   const [expiryBucket, setExpiryBucket] = useState<ExpiryBucket>("all");
   const [status, setStatus] = useState<"all" | DataStatus>("all");
   const [metric, setMetric] = useState<HeatmapMetric>("unitDelta");
   const [scaleMode, setScaleMode] = useState<ColorScaleMode>("quantile");
   const [transpose, setTranspose] = useState(false);
+  const [reverseStrikes, setReverseStrikes] = useState(false);
+  const [cellSize, setCellSize] = useState(13);
+  const [fitAll, setFitAll] = useState(false);
   const [labelMode, setLabelMode] = useState<CellLabelMode>("none");
   const [hoverPreset, setHoverPreset] = useState<HoverDataPreset>("risk");
   const [spotUnderlying, setSpotUnderlying] = useState<RiskUnderlying | "XAU">("GLD");
@@ -168,8 +172,13 @@ export default function Matrix() {
   const [dataErrorHelp, setDataErrorHelp] = useState(false);
 
   const { data: gldChain, isFetching: chainFetching } = trpc.market.gldOptionChain.useQuery(undefined, {
-    enabled: dataset === "chain",
+    enabled: dataset === "chain" && underlying !== "XAUT",
     staleTime: 25_000,
+    refetchOnWindowFocus: false,
+  });
+  const { data: xautChain, isFetching: xautChainFetching } = trpc.market.xautOptionChain.useQuery(undefined, {
+    enabled: dataset === "chain" && underlying !== "GLD",
+    staleTime: 8_000,
     refetchOnWindowFocus: false,
   });
 
@@ -197,10 +206,10 @@ export default function Matrix() {
   })), [activeGldQuotes, formulas, positions, settings, spotPrices?.gld?.price, xautTickers]);
 
   const liveSpots = useMemo(() => ({
-    xaut: spotPrices?.xaut?.price ?? 0,
+    xaut: dataset === "chain" && xautChain?.spot ? xautChain.spot : spotPrices?.xaut?.price ?? 0,
     gld: dataset === "chain" && gldChain?.spot ? gldChain.spot : spotPrices?.gld?.price ?? 0,
     xau: spotPrices?.gold?.price ?? spotPrices?.xaut?.price ?? 0,
-  }), [dataset, gldChain?.spot, spotPrices]);
+  }), [dataset, gldChain?.spot, spotPrices, xautChain?.spot]);
   const displaySpots = useMemo(() => dataset === "live" || dataset === "chain"
     ? { GLD: liveSpots.gld, XAUT: liveSpots.xaut, XAU: liveSpots.xau }
     : { GLD: 247.3, XAUT: 3358, XAU: 3358 }, [dataset, liveSpots]);
@@ -210,12 +219,15 @@ export default function Matrix() {
     if (dataset === "mock200") return generateMockPositions(200, 20260811, asOf);
     const held = buildLiveRiskPositions({ views: liveViews, spots: liveSpots, settings, formulas });
     if (dataset !== "chain") return held;
-    const heldKeys = new Set(held.map(position => `${position.expiry}|${position.strike}|${position.callPut}`));
+    const heldKeys = new Set(held.map(position => `${position.underlying}|${position.expiry}|${position.strike}|${position.callPut}`));
     const gldOzPerShare = liveSpots.xau > 0 && liveSpots.gld > 0 ? liveSpots.gld / liveSpots.xau : null;
-    const listed = buildGldChainRiskPositions(gldChain?.quotes ?? [], gldOzPerShare)
-      .filter(position => !heldKeys.has(`${position.expiry}|${position.strike}|${position.callPut}`));
+    const xautPerUnit = liveSpots.xau > 0 && liveSpots.xaut > 0 ? liveSpots.xaut / liveSpots.xau : null;
+    const listed = [
+      ...buildGldChainRiskPositions(gldChain?.quotes ?? [], gldOzPerShare),
+      ...buildChainRiskPositions(xautChain?.quotes ?? [], "XAUT", xautPerUnit),
+    ].filter(position => !heldKeys.has(`${position.underlying}|${position.expiry}|${position.strike}|${position.callPut}`));
     return [...held, ...listed];
-  }, [asOf, dataset, formulas, gldChain?.quotes, liveSpots, liveViews, settings]);
+  }, [asOf, dataset, formulas, gldChain?.quotes, liveSpots, liveViews, settings, xautChain?.quotes]);
   const enriched = useMemo(() => enrichRiskPositions(riskPositions, displaySpots, asOf), [asOf, displaySpots, riskPositions]);
 
   const filterOptions = useMemo(() => ({
@@ -264,7 +276,8 @@ export default function Matrix() {
       strikes: [...new Set(filtered.map(position => position.strike))].sort((a, b) => a - b),
     };
   }, [filtered, metric]);
-  const sequentialMagnitude = metric === "unitDelta" || metric === "totalDelta";
+  const sequentialMagnitude = metric === "unitDelta" || metric === "totalDelta"
+    || metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread";
   const scale = useMemo(() => buildHeatScale(
     cells.map(cell => cell.value === null ? null : sequentialMagnitude ? Math.abs(cell.value) : cell.value),
     scaleMode,
@@ -289,17 +302,21 @@ export default function Matrix() {
     });
   };
 
-  if ((isLoading && (dataset === "live" || dataset === "chain")) || (dataset === "chain" && chainFetching && !gldChain)) return <div className="flex h-64 flex-col items-center justify-center gap-2"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="text-xs text-muted-foreground">读取 GLD 完整期权链…</p></div>;
+  const waitingForChain = dataset === "chain" && (
+    (underlying !== "XAUT" && chainFetching && !gldChain)
+    || (underlying !== "GLD" && xautChainFetching && !xautChain)
+  );
+  if ((isLoading && (dataset === "live" || dataset === "chain")) || waitingForChain) return <div className="flex h-64 flex-col items-center justify-center gap-2"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="text-xs text-muted-foreground">读取 {underlying === "all" ? "GLD + XAUT" : underlying} 完整期权链…</p></div>;
 
   return (
     <div className="flex h-[calc(100vh-5.5rem)] min-h-[560px] flex-col gap-1 overflow-hidden" data-testid="institutional-risk-heatmap">
       <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-1">
         <div className="flex min-w-0 items-baseline gap-2">
           <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">POSITION RISK HEATMAP</h1>
-          <span className="font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held · {filtered.length} instruments · {cells.length} cells{gldChain ? ` · ${gldChain.contractCount} GLD contracts` : ""}</span>
+          <span className="font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held · {filtered.length} instruments · {cells.length} cells{gldChain && underlying !== "XAUT" ? ` · ${gldChain.contractCount} GLD` : ""}{xautChain && underlying !== "GLD" ? ` · ${xautChain.contractCount} XAUT` : ""}</span>
         </div>
         <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
-          <span>As-of {gldChain ? new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false }) : asOf.toLocaleTimeString("zh-CN", { hour12: false })}</span>
+          <span>As-of {dataset === "chain" ? new Date(underlying === "XAUT" ? xautChain?.timestamp ?? asOf : gldChain?.timestamp ?? asOf).toLocaleString("zh-CN", { hour12: false }) : asOf.toLocaleTimeString("zh-CN", { hour12: false })}</span>
           <button type="button" onClick={() => setDataErrorHelp(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground"><Info className="h-3 w-3" />Largest Data Error</button>
           <button type="button" onClick={() => setCardsVisible(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground">{cardsVisible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{cardsVisible ? "Hide Cards" : "Show Cards"}</button>
           <MarketRefreshButton compact />
@@ -313,7 +330,7 @@ export default function Matrix() {
       <div className="grid h-7 shrink-0 grid-cols-[1.15fr_repeat(7,minmax(80px,1fr))] items-center gap-1 border border-border/60 bg-card/35 px-1">
         <NativeSelect label="DATA" value={dataset} onChange={value => setDataset(value as DatasetMode)} options={[
           { value: "live", label: "LIVE / IMPORTED" },
-          { value: "chain", label: "GLD FULL CHAIN" },
+          { value: "chain", label: "FULL OPTION CHAIN" },
           { value: "mock100", label: "MOCK 100" },
           { value: "mock200", label: "MOCK 200" },
         ]} />
@@ -326,17 +343,21 @@ export default function Matrix() {
         <NativeSelect label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))]} />
       </div>
 
-      <div className="grid min-h-8 shrink-0 grid-cols-[160px_112px_96px_100px_112px_auto_1fr] items-center gap-1 border border-border/60 bg-card/35 px-1">
+      <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1">
         <NativeSelect label="METRIC" value={metric} onChange={value => setMetric(value as HeatmapMetric)} options={metricOptions.map(([value, label]) => ({ value, label }))} />
         <NativeSelect label="SCALE" value={scaleMode} onChange={value => setScaleMode(value as ColorScaleMode)} options={[{ value: "quantile", label: "QUANTILE" }, { value: "log", label: "LOG" }, { value: "symmetric", label: "ZERO-CENTER" }]} />
         <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "XAU", label: "XAU" }]} />
         <NativeSelect label="LABEL" value={labelMode} onChange={value => setLabelMode(value as CellLabelMode)} options={[{ value: "none", label: "NONE" }, { value: "top", label: "TOP 15%" }, { value: "all", label: "ALL" }]} />
         <NativeSelect label="HOVER" value={hoverPreset} onChange={value => setHoverPreset(value as HoverDataPreset)} options={[{ value: "risk", label: "RISK" }, { value: "market", label: "MARKET" }, { value: "pnl", label: "PNL" }, { value: "all", label: "ALL" }]} />
         <button type="button" onClick={() => setTranspose(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${transpose ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowLeftRight className="h-3 w-3" />Transpose</button>
-        <span className="flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />{spotUnderlying} SPOT {formatPrice(spot)} · nearest {formatPrice(spotRangeState(strikes, spot).nearestStrike)}</span>
+        <button type="button" onClick={() => setReverseStrikes(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${reverseStrikes ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowUpDown className="h-3 w-3" />Strike {reverseStrikes ? "↓" : "↑"}</button>
+        <div className="flex h-6 items-center border border-border text-[9px] text-muted-foreground"><button aria-label="Smaller cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.max(3, value - 1)); }}><Minus className="h-3 w-3" /></button><span className="w-8 text-center font-mono">{cellSize}px</span><button aria-label="Larger cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.min(28, value + 1)); }}><Plus className="h-3 w-3" /></button></div>
+        <button type="button" onClick={() => setFitAll(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${fitAll ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><Maximize2 className="h-3 w-3" />Fit All</button>
+        <span className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />{spotUnderlying} SPOT {formatPrice(spot)} · nearest {formatPrice(spotRangeState(strikes, spot).nearestStrike)}</span>
       </div>
 
-      {dataset === "chain" && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · {Math.round(gldChain.delaySeconds / 60)}m age · cyan border = listed/no position · gold border = held · faint empty = unavailable/not listed</div>}
+      {dataset === "chain" && underlying !== "XAUT" && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">GLD FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · updated {new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed (actual lag varies) · cyan listed / gold held</div>}
+      {dataset === "chain" && underlying !== "GLD" && xautChain && <div className="shrink-0 border border-violet-400/30 bg-violet-500/5 px-2 py-0.5 font-mono text-[8px] text-violet-100">XAUT FULL CHAIN · {xautChain.contractCount} tradable contracts · {xautChain.expiryCount} expiries · {xautChain.strikeCount} strikes · {xautChain.source} · updated {new Date(xautChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(xautChain.delaySeconds)}s</div>}
       {filtered.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center border border-dashed border-border text-sm text-muted-foreground">
           <p>当前筛选没有有效 position。</p>
@@ -351,6 +372,9 @@ export default function Matrix() {
           scale={scale}
           importanceCutoff={importanceCutoff}
           transpose={transpose}
+          reverseStrikes={reverseStrikes}
+          cellSize={cellSize}
+          fitAll={fitAll}
           spot={spot}
           callPut={callPut}
           highlightCellKey={highlightCellKey}

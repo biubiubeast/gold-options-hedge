@@ -77,6 +77,8 @@ export type MarketSnapshot = {
   markIv: number;
   bid1: number;
   ask1: number;
+  bidIv?: number | null;
+  askIv?: number | null;
   delta: number;
   gamma: number;
   theta: number;
@@ -94,6 +96,8 @@ type XautTicker = {
   markIv: string;
   bid1Price: string;
   ask1Price: string;
+  bid1Iv?: string;
+  ask1Iv?: string;
   delta: string;
   gamma: string;
   theta: string;
@@ -108,6 +112,8 @@ type GldQuote = {
   markIv: number;
   bid1Price: number;
   ask1Price: number;
+  bidIv?: number | null;
+  askIv?: number | null;
   delta: number;
   gamma: number;
   theta: number;
@@ -203,6 +209,8 @@ export function getPositionMarketData(args: {
         markIv: numberOf(ticker.markIv),
         bid1: numberOf(ticker.bid1Price),
         ask1: numberOf(ticker.ask1Price),
+        bidIv: finiteImported(ticker.bid1Iv),
+        askIv: finiteImported(ticker.ask1Iv),
         delta: numberOf(ticker.delta),
         gamma: numberOf(ticker.gamma),
         theta: numberOf(ticker.theta),
@@ -230,6 +238,8 @@ export function getPositionMarketData(args: {
         markIv: numberOf(quote.markIv),
         bid1: numberOf(quote.bid1Price),
         ask1: numberOf(quote.ask1Price),
+        bidIv: finiteImported(quote.bidIv),
+        askIv: finiteImported(quote.askIv),
         delta: numberOf(quote.delta),
         gamma: numberOf(quote.gamma),
         theta: numberOf(quote.theta),

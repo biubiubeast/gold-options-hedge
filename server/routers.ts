@@ -8,6 +8,7 @@ import {
   getGoldPrice,
   getMarketSources,
   getXautOptionInstruments,
+  getXautOptionChain,
   getXautOptionTickers,
   getXautSpotPrice,
 } from "./marketData";
@@ -193,6 +194,7 @@ export const appRouter = router({
       }))
       .query(({ input }) => getGldOptionQuotes(input.expiries, input.contracts)),
     gldOptionChain: protectedProcedure.query(getGldOptionChain),
+    xautOptionChain: protectedProcedure.query(getXautOptionChain),
     spotPrices: publicProcedure.query(async () => {
       const [xaut, gld, gold] = await Promise.all([getXautSpotPrice(), getGldPrice(), getGoldPrice()]);
       return { xaut, gld, gold };

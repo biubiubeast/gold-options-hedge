@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeCboeGldOption, parseCboeTimestamp } from "./marketData";
+import { impliedVolatilityFromPrice, normalizeCboeGldOption, parseCboeTimestamp } from "./marketData";
 
 describe("Cboe timestamp normalization", () => {
   it("treats timezone-less Cboe timestamps as UTC", () => {
@@ -22,7 +22,27 @@ describe("Cboe GLD full-chain normalization", () => {
     });
   });
 
+  it("derives bid/ask IV from Cboe option prices and preserves a positive IV spread", () => {
+    const asOf = Date.parse("2026-08-12T08:00:00Z");
+    const quote = normalizeCboeGldOption({
+      option: "GLD260821C00400000", bid: 8.2, ask: 8.8, iv: 0.245,
+      delta: 0.54, gamma: 0.03, theta: -0.08, vega: 0.14,
+    }, asOf, 402.5);
+    expect(quote?.bidIv).not.toBeNull();
+    expect(quote?.askIv).not.toBeNull();
+    expect(quote!.askIv!).toBeGreaterThan(quote!.bidIv!);
+    expect(quote!.ivSpread).toBeCloseTo(quote!.askIv! - quote!.bidIv!, 8);
+  });
+
   it("does not invent a contract when an OCC symbol is invalid", () => {
     expect(normalizeCboeGldOption({ option: "MISSING" }, Date.now())).toBeNull();
+  });
+});
+
+describe("implied volatility inversion", () => {
+  it("returns null for an impossible quote instead of silently using zero", () => {
+    expect(impliedVolatilityFromPrice({
+      price: 500, spot: 400, strike: 400, expiry: "2026-09-18", optionType: "call", asOf: Date.parse("2026-08-12T08:00:00Z"),
+    })).toBeNull();
   });
 });

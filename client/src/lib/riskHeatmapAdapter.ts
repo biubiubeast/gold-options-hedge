@@ -70,6 +70,9 @@ export function buildLiveRiskPositions(args: {
       bid: market.bid1 > 0 ? market.bid1 : null,
       ask: market.ask1 > 0 ? market.ask1 : null,
       markIV: market.markIv > 0 ? market.markIv : null,
+      bidIV: market.bidIv ?? null,
+      askIV: market.askIv ?? null,
+      ivSpread: market.bidIv != null && market.askIv != null ? market.askIv - market.bidIv : null,
       unitDelta: finiteOrNull(market.delta),
       unitGamma: market.available ? finiteOrNull(market.gamma) : null,
       unitTheta: market.available ? finiteOrNull(market.theta) : null,
@@ -101,45 +104,59 @@ export function buildLiveRiskPositions(args: {
   });
 }
 
-type GldChainQuote = {
+type ChainQuote = {
   symbol: string; expiry: string; strike: number; optionType: "call" | "put"; markPrice: number; markIv: number;
+  bidIv?: number | null; askIv?: number | null; ivSpread?: number | null;
   bid1Price: number; ask1Price: number; delta: number; gamma: number; theta: number; vega: number;
   timestamp: number; source: string; openInterest?: number; volume?: number;
+  marketAvailable?: boolean;
 };
 
-export function buildGldChainRiskPositions(quotes: GldChainQuote[], gldOzPerShare: number | null): RiskPosition[] {
-  return quotes.map(quote => ({
+export function buildChainRiskPositions(quotes: ChainQuote[], underlying: "GLD" | "XAUT", xauPerUnit: number | null): RiskPosition[] {
+  return quotes.map(quote => {
+    const marketAvailable = quote.marketAvailable !== false;
+    return ({
     id: `chain:${quote.symbol}`,
-    venue: "Cboe / OPRA",
+    venue: underlying === "GLD" ? "Cboe / OPRA" : "Bybit",
     broker: "MARKET CHAIN",
     account: "LISTED-NO-POSITION",
-    underlying: "GLD",
+    underlying,
     instrument: quote.symbol,
     callPut: quote.optionType,
     expiry: quote.expiry,
     strike: quote.strike,
     netQty: 0,
-    contractMultiplier: 100,
-    deliverableSource: "OCC standard GLD contract display · verify adjusted deliverables with broker contract master",
+    contractMultiplier: underlying === "GLD" ? 100 : 1,
+    deliverableSource: underlying === "GLD"
+      ? "OCC standard GLD contract display · verify adjusted deliverables with broker contract master"
+      : "Bybit V5 instrument specification",
     contractAdjusted: false,
-    gldOzPerShare,
-    underlyingOzPerUnit: null,
-    markPrice: Number.isFinite(quote.markPrice) ? quote.markPrice : null,
+    gldOzPerShare: underlying === "GLD" ? xauPerUnit : null,
+    underlyingOzPerUnit: underlying === "XAUT" ? xauPerUnit : null,
+    markPrice: marketAvailable && quote.markPrice > 0 ? quote.markPrice : null,
     bid: quote.bid1Price > 0 ? quote.bid1Price : 0,
     ask: quote.ask1Price > 0 ? quote.ask1Price : 0,
-    markIV: quote.markIv > 0 ? quote.markIv : null,
-    unitDelta: Number.isFinite(quote.delta) ? quote.delta : null,
-    unitGamma: Number.isFinite(quote.gamma) ? quote.gamma : null,
-    unitTheta: Number.isFinite(quote.theta) ? quote.theta : null,
-    unitVega: Number.isFinite(quote.vega) ? quote.vega : null,
+    markIV: marketAvailable && quote.markIv > 0 ? quote.markIv : null,
+    bidIV: quote.bidIv ?? null,
+    askIV: quote.askIv ?? null,
+    ivSpread: quote.ivSpread ?? null,
+    unitDelta: marketAvailable && Number.isFinite(quote.delta) ? quote.delta : null,
+    unitGamma: marketAvailable && Number.isFinite(quote.gamma) ? quote.gamma : null,
+    unitTheta: marketAvailable && Number.isFinite(quote.theta) ? quote.theta : null,
+    unitVega: marketAvailable && Number.isFinite(quote.vega) ? quote.vega : null,
     totalDeltaXAU: null, totalGammaXAU: null, totalThetaUSD: null, totalVegaUSD: null,
     MV: null, entryCost: null, UPL: null,
     quoteTime: new Date(quote.timestamp).toISOString(),
     positionTime: null,
     source: quote.source,
-    dataStatus: Date.now() - quote.timestamp > 15 * 60_000 ? "STALE" : "LIVE",
+    dataStatus: !marketAvailable ? "MISSING" : quote.source.includes("Cboe") || Date.now() - quote.timestamp > 15 * 60_000 ? "STALE" : "LIVE",
     positionKind: "listed",
     openInterest: quote.openInterest ?? null,
     volume: quote.volume ?? null,
-  }));
+  });
+  });
+}
+
+export function buildGldChainRiskPositions(quotes: ChainQuote[], gldOzPerShare: number | null): RiskPosition[] {
+  return buildChainRiskPositions(quotes, "GLD", gldOzPerShare);
 }

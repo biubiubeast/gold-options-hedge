@@ -23,8 +23,10 @@ export interface BybitTickerOption {
   underlyingPrice: string;
   bid1Price: string;
   bid1Size: string;
+  bid1Iv: string;
   ask1Price: string;
   ask1Size: string;
+  ask1Iv: string;
   delta: string;
   gamma: string;
   theta: string;
@@ -50,6 +52,9 @@ export interface GldOptionQuote {
   optionType: "call" | "put";
   markPrice: number;
   markIv: number;
+  bidIv: number | null;
+  askIv: number | null;
+  ivSpread: number | null;
   bid1Price: number;
   ask1Price: number;
   delta: number;
@@ -61,6 +66,7 @@ export interface GldOptionQuote {
   openInterest?: number;
   volume?: number;
   tradeable?: boolean;
+  marketAvailable?: boolean;
 }
 
 export interface GldOptionChain {
@@ -73,6 +79,15 @@ export interface GldOptionChain {
   contractCount: number;
   expiryCount: number;
   strikeCount: number;
+}
+
+export interface XautOptionQuote extends Omit<GldOptionQuote, "source"> {
+  source: "Bybit V5 realtime options";
+}
+
+export interface XautOptionChain extends Omit<GldOptionChain, "quotes" | "status"> {
+  quotes: XautOptionQuote[];
+  status: "realtime" | "stale";
 }
 
 export interface GldContractRequest {
@@ -129,6 +144,50 @@ export function clearMarketDataCache(): void {
 function toNumber(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+const MONTHS: Record<string, string> = {
+  JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06",
+  JUL: "07", AUG: "08", SEP: "09", OCT: "10", NOV: "11", DEC: "12",
+};
+
+function normalCdf(value: number): number {
+  const sign = value < 0 ? -1 : 1;
+  const x = Math.abs(value) / Math.sqrt(2);
+  const t = 1 / (1 + 0.3275911 * x);
+  const erf = 1 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x));
+  return 0.5 * (1 + sign * erf);
+}
+
+function bsPrice(spot: number, strike: number, years: number, rate: number, volatility: number, optionType: "call" | "put"): number {
+  if (years <= 0) return Math.max(optionType === "call" ? spot - strike : strike - spot, 0);
+  const sqrtTime = Math.sqrt(years);
+  const d1 = (Math.log(spot / strike) + (rate + volatility * volatility / 2) * years) / (volatility * sqrtTime);
+  const d2 = d1 - volatility * sqrtTime;
+  return optionType === "call"
+    ? spot * normalCdf(d1) - strike * Math.exp(-rate * years) * normalCdf(d2)
+    : strike * Math.exp(-rate * years) * normalCdf(-d2) - spot * normalCdf(-d1);
+}
+
+/** Invert option price to annualized IV. Null means the quote violates no-arbitrage bounds or is unavailable. */
+export function impliedVolatilityFromPrice(args: { price: number; spot: number; strike: number; expiry: string; optionType: "call" | "put"; asOf: number }): number | null {
+  const { price, spot, strike, optionType, asOf } = args;
+  if (![price, spot, strike].every(value => Number.isFinite(value) && value > 0)) return null;
+  const expiryTime = Date.parse(`${args.expiry}T20:00:00Z`);
+  const years = Math.max((expiryTime - asOf) / (365.25 * 86_400_000), 1 / (365.25 * 24));
+  const discountedStrike = strike * Math.exp(-0.045 * years);
+  const lowerBound = optionType === "call" ? Math.max(spot - discountedStrike, 0) : Math.max(discountedStrike - spot, 0);
+  const upperBound = optionType === "call" ? spot : discountedStrike;
+  if (price < lowerBound - 0.02 || price > upperBound + 0.02) return null;
+  let low = 0.0001;
+  let high = 5;
+  for (let iteration = 0; iteration < 28; iteration += 1) {
+    const mid = (low + high) / 2;
+    if (bsPrice(spot, strike, years, 0.045, mid, optionType) < price) low = mid;
+    else high = mid;
+  }
+  const result = (low + high) / 2;
+  return Number.isFinite(result) ? result : null;
 }
 
 function timestampSeconds(value: unknown): number {
@@ -191,6 +250,70 @@ export async function getXautOptionInstruments(): Promise<BybitInstrument[]> {
   }).catch(error => {
     console.error("[MarketData] Failed to fetch XAUT instruments:", error);
     return [];
+  });
+}
+
+function parseBybitOptionSymbol(symbol: string): { expiry: string; strike: number; optionType: "call" | "put" } | null {
+  const match = symbol.toUpperCase().match(/^XAUT-(\d{1,2})([A-Z]{3})(\d{2})-([0-9.]+)-([CP])(?:-|$)/);
+  if (!match || !MONTHS[match[2]]) return null;
+  const [, day, month, year, strike, side] = match;
+  return {
+    expiry: `20${year}-${MONTHS[month]}-${day.padStart(2, "0")}`,
+    strike: toNumber(strike),
+    optionType: side === "C" ? "call" : "put",
+  };
+}
+
+export async function getXautOptionChain(): Promise<XautOptionChain> {
+  return cached("bybit-xaut-full-chain", 10_000, async () => {
+    const [tickers, instruments, spotQuote] = await Promise.all([
+      getXautOptionTickers(),
+      getXautOptionInstruments(),
+      getXautSpotPrice(),
+    ]);
+    const tickerMap = new Map(tickers.map(ticker => [ticker.symbol, ticker]));
+    const timestamp = Math.max(...tickers.map(ticker => timestampSeconds(ticker.timestamp)), Date.now() - 60_000);
+    const quotes: XautOptionQuote[] = [];
+    for (const instrument of instruments.filter(item => item.status === "Trading")) {
+        const parsed = parseBybitOptionSymbol(instrument.symbol);
+        if (!parsed) continue;
+        const ticker = tickerMap.get(instrument.symbol);
+        const bidIv = ticker && toNumber(ticker.bid1Iv) > 0 ? toNumber(ticker.bid1Iv) : null;
+        const askIv = ticker && toNumber(ticker.ask1Iv) > 0 ? toNumber(ticker.ask1Iv) : null;
+        quotes.push({
+          symbol: instrument.symbol,
+          ...parsed,
+          markPrice: ticker ? toNumber(ticker.markPrice) : 0,
+          markIv: ticker ? toNumber(ticker.markIv) : 0,
+          bidIv,
+          askIv,
+          ivSpread: bidIv !== null && askIv !== null ? askIv - bidIv : null,
+          bid1Price: ticker ? toNumber(ticker.bid1Price) : 0,
+          ask1Price: ticker ? toNumber(ticker.ask1Price) : 0,
+          delta: ticker ? toNumber(ticker.delta) : 0,
+          gamma: ticker ? toNumber(ticker.gamma) : 0,
+          theta: ticker ? toNumber(ticker.theta) : 0,
+          vega: ticker ? toNumber(ticker.vega) : 0,
+          timestamp: ticker ? timestampSeconds(ticker.timestamp) : timestamp,
+          source: "Bybit V5 realtime options" as const,
+          openInterest: ticker ? toNumber(ticker.openInterest) : 0,
+          volume: ticker ? toNumber(ticker.volume24h) : 0,
+          tradeable: true,
+          marketAvailable: Boolean(ticker),
+        });
+    }
+    const delaySeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+    return {
+      quotes,
+      spot: spotQuote?.price ?? toNumber(tickers[0]?.indexPrice),
+      timestamp,
+      source: "Bybit V5 realtime options",
+      status: delaySeconds > 15 * 60 ? "stale" : "realtime",
+      delaySeconds,
+      contractCount: quotes.length,
+      expiryCount: new Set(quotes.map(quote => quote.expiry)).size,
+      strikeCount: new Set(quotes.map(quote => quote.strike)).size,
+    };
   });
 }
 
@@ -324,6 +447,9 @@ function normalizeMarketDataOption(data: any, contract: GldContractRequest): Gld
     optionType: contract.optionType,
     markPrice,
     markIv: toNumber(first(data.iv)),
+    bidIv: null,
+    askIv: null,
+    ivSpread: null,
     bid1Price: bid,
     ask1Price: ask,
     delta: toNumber(first(data.delta)),
@@ -364,6 +490,12 @@ function normalizeTradierOption(raw: any, expiry: string): GldOptionQuote | null
   const markPrice = bid > 0 && ask > 0 ? (bid + ask) / 2 : last;
   const greeks = raw.greeks || {};
   const rawIv = toNumber(greeks.mid_iv || greeks.smv_vol || raw.iv);
+  const normalizeIv = (value: unknown) => {
+    const iv = toNumber(value);
+    return iv > 0 ? (iv > 3 ? iv / 100 : iv) : null;
+  };
+  const bidIv = normalizeIv(greeks.bid_iv || raw.bid_iv);
+  const askIv = normalizeIv(greeks.ask_iv || raw.ask_iv);
   return {
     symbol: String(raw.symbol || ""),
     expiry: String(raw.expiration_date || expiry),
@@ -371,6 +503,9 @@ function normalizeTradierOption(raw: any, expiry: string): GldOptionQuote | null
     optionType,
     markPrice,
     markIv: rawIv > 3 ? rawIv / 100 : rawIv,
+    bidIv,
+    askIv,
+    ivSpread: bidIv !== null && askIv !== null ? askIv - bidIv : null,
     bid1Price: bid,
     ask1Price: ask,
     delta: toNumber(greeks.delta),
@@ -387,7 +522,7 @@ function normalizeTradierOption(raw: any, expiry: string): GldOptionQuote | null
   };
 }
 
-export function normalizeCboeGldOption(raw: any, timestamp: number): GldOptionQuote | null {
+export function normalizeCboeGldOption(raw: any, timestamp: number, spot = 0): GldOptionQuote | null {
   const symbol = String(raw?.option ?? "").trim().toUpperCase();
   const match = symbol.match(/^GLD(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/);
   if (!match) return null;
@@ -397,13 +532,21 @@ export function normalizeCboeGldOption(raw: any, timestamp: number): GldOptionQu
   const theoretical = toNumber(raw.theo);
   const last = toNumber(raw.last_trade_price);
   const markPrice = bid > 0 && ask > 0 ? (bid + ask) / 2 : theoretical > 0 ? theoretical : last > 0 ? last : 0;
+  const expiry = `20${year}-${month}-${day}`;
+  const strike = Number(strikeToken) / 1000;
+  const optionType = side === "C" ? "call" : "put";
+  const bidIv = impliedVolatilityFromPrice({ price: bid, spot, strike, expiry, optionType, asOf: timestamp });
+  const askIv = impliedVolatilityFromPrice({ price: ask, spot, strike, expiry, optionType, asOf: timestamp });
   return {
     symbol,
-    expiry: `20${year}-${month}-${day}`,
-    strike: Number(strikeToken) / 1000,
-    optionType: side === "C" ? "call" : "put",
+    expiry,
+    strike,
+    optionType,
     markPrice,
     markIv: toNumber(raw.iv),
+    bidIv,
+    askIv,
+    ivSpread: bidIv !== null && askIv !== null ? askIv - bidIv : null,
     bid1Price: bid,
     ask1Price: ask,
     delta: toNumber(raw.delta),
@@ -422,14 +565,15 @@ export async function getGldOptionChain(): Promise<GldOptionChain> {
   return cached("cboe-gld-full-chain", 30_000, async () => {
     const data = await fetchJson<any>(CBOE_GLD_CHAIN_URL);
     const timestamp = parseCboeTimestamp(data.timestamp) || Date.now();
+    const spot = toNumber(data.data?.current_price);
     const quotes = (Array.isArray(data.data?.options) ? data.data.options : [])
-      .map((raw: any) => normalizeCboeGldOption(raw, timestamp))
+      .map((raw: any) => normalizeCboeGldOption(raw, timestamp, spot))
       .filter((quote: GldOptionQuote | null): quote is GldOptionQuote => quote !== null);
     if (!quotes.length) throw new Error("Cboe returned no GLD option contracts");
     const delaySeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
     return {
       quotes,
-      spot: toNumber(data.data?.current_price),
+      spot,
       timestamp,
       source: "Cboe delayed options / OPRA",
       status: delaySeconds > 60 * 60 ? "stale" : "delayed",

@@ -1,6 +1,7 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   CENTERED_METRICS,
+  METRIC_LABELS,
   formatCompact,
   formatPrice,
   heatColor,
@@ -28,6 +29,9 @@ type Props = {
   scale: HeatScale;
   importanceCutoff: number;
   transpose: boolean;
+  reverseStrikes: boolean;
+  cellSize: number;
+  fitAll: boolean;
   spot: number;
   callPut: "combined" | CallPut;
   highlightCellKey: string | null;
@@ -63,6 +67,8 @@ function TooltipPosition({ position, metric, preset }: { position: EnrichedRiskP
   if (preset === "market" || preset === "all") rows.push(
     ["Mark / IV", `${formatPrice(position.markPrice)} / ${formatCompact(position.markIV, "markIV")}`],
     ["Bid / Ask", `${formatPrice(position.bid)} / ${formatPrice(position.ask)}`],
+    ["Bid IV / Ask IV", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")}`],
+    ["IV spread", formatCompact(position.ivSpread, "ivSpread")],
     ["Source / As-of", `${position.source ?? "MISSING"} / ${position.quoteTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`],
     ["OI / Volume", `${formatCompact(position.openInterest ?? null)} / ${formatCompact(position.volume ?? null)}`],
   );
@@ -74,22 +80,30 @@ function TooltipPosition({ position, metric, preset }: { position: EnrichedRiskP
   return <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[10px]">{rows.map(([label, value]) => <div key={label} className="contents"><span className="text-muted-foreground">{label}</span><span className="text-right font-mono">{value}</span></div>)}</div>;
 }
 
-export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanceCutoff, transpose, spot, callPut, highlightCellKey, labelMode, hoverPreset, sequentialMagnitude, onSelectPosition }: Props) {
+export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanceCutoff, transpose, reverseStrikes, cellSize, fitAll, spot, callPut, highlightCellKey, labelMode, hoverPreset, sequentialMagnitude, onSelectPosition }: Props) {
   const [centerSpot, setCenterSpot] = useState(false);
+  const [hoveredCellKey, setHoveredCellKey] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const centeredOnceRef = useRef<string | null>(null);
   const range = useMemo(() => spotRangeState(strikes, spot), [spot, strikes]);
   useEffect(() => setCenterSpot(false), [spot, strikes]);
   const displayStrikes = useMemo(() => {
-    if (!centerSpot || range.state === "within" || !Number.isFinite(spot)) return strikes;
-    return [...new Set([...strikes, Number(spot.toFixed(2))])].sort((a, b) => a - b);
-  }, [centerSpot, range.state, spot, strikes]);
+    const values = !centerSpot || range.state === "within" || !Number.isFinite(spot)
+      ? [...strikes]
+      : [...new Set([...strikes, Number(spot.toFixed(2))])];
+    return values.sort((a, b) => reverseStrikes ? b - a : a - b);
+  }, [centerSpot, range.state, reverseStrikes, spot, strikes]);
   const cellMap = useMemo(() => new Map(cells.map(cell => [cell.key, cell])), [cells]);
   const centered = CENTERED_METRICS.has(metric) && !sequentialMagnitude;
   const columnValues = transpose ? displayStrikes : expiries;
   const rowValues = transpose ? expiries : displayStrikes;
-  const template = `82px repeat(${columnValues.length}, minmax(32px, 1fr))`;
-  const minWidth = Math.max(480, 82 + columnValues.length * 34);
+  const columnMin = fitAll ? 1 : Math.max(8, Math.round(cellSize * 2.6));
+  const axisWidth = fitAll ? 52 : 82;
+  const template = `${axisWidth}px repeat(${columnValues.length}, minmax(${columnMin}px, 1fr))`;
+  const minWidth = fitAll ? 0 : Math.max(480, axisWidth + columnValues.length * columnMin);
+  const rowHeight = fitAll
+    ? `max(2px, min(${cellSize}px, calc((100vh - 238px) / ${Math.max(1, rowValues.length)})))`
+    : `${cellSize}px`;
   const scrollToSpot = (behavior: ScrollBehavior = "smooth") => requestAnimationFrame(() => requestAnimationFrame(() => {
     const target = viewportRef.current?.querySelector<HTMLElement>("[data-spot-row='true'], [data-spot-synthetic='true']");
     target?.scrollIntoView({ behavior, block: "center", inline: "nearest" });
@@ -129,7 +143,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
             const rowStrike = transpose ? null : Number(row);
             const isSpotRow = rowStrike !== null && range.nearestStrike === rowStrike;
             const zone = rowStrike === null ? "NEUTRAL" : zoneFor(rowStrike, spot, callPut);
-            const axis = <div key={`axis-${String(row)}`} data-spot-row={isSpotRow ? "true" : undefined} className={`sticky left-0 z-10 flex h-[13px] items-center justify-between border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{rowStrike !== null && <span className="text-[7px]">{isSpotRow ? `SPOT ${formatPrice(spot)}` : zone === "NEUTRAL" ? "" : zone}</span>}</div>;
+            const axis = <div key={`axis-${String(row)}`} data-spot-row={isSpotRow ? "true" : undefined} style={{ height: rowHeight }} className={`sticky left-0 z-10 flex items-center justify-between overflow-hidden border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{!fitAll && rowStrike !== null && <span className="text-[7px]">{isSpotRow ? `SPOT ${formatPrice(spot)}` : zone === "NEUTRAL" ? "" : zone}</span>}</div>;
             const buttons = columnValues.map(column => {
               const expiry = transpose ? String(row) : String(column);
               const strike = transpose ? Number(column) : Number(row);
@@ -141,14 +155,18 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
               const topPositions = cell ? [...cell.positions].sort((a, b) => Math.abs(metricValue(b, metric) ?? 0) - Math.abs(metricValue(a, metric) ?? 0)) : [];
               const isSyntheticSpot = range.state !== "within" && centerSpot && strike === Number(spot.toFixed(2));
               const spotLine = range.nearestStrike === strike;
-              return <Tooltip key={key} delayDuration={80}><TooltipTrigger asChild><button
+              return <Tooltip key={key} delayDuration={80} open={hoveredCellKey === key} onOpenChange={open => setHoveredCellKey(open ? key : null)}><TooltipTrigger asChild><button
                 type="button" data-cell-key={key} data-spot-synthetic={isSyntheticSpot ? "true" : undefined}
-                className={`relative h-[13px] overflow-hidden border-b border-r px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${zoneClass[zoneFor(strike, spot, callPut)]} ${cell ? statusBorder[status] : "border-border/[0.09] opacity-35"} ${cell?.listed && !cell.held ? "border-cyan-300/80 ring-1 ring-inset ring-cyan-400/35" : ""} ${cell?.held ? "border-amber-200 ring-1 ring-inset ring-amber-300/90" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""} ${isSyntheticSpot ? "bg-amber-400/15" : ""}`}
-                style={cell?.value == null ? undefined : { backgroundColor: colorFor(cell.value) }}
+                className={`relative overflow-hidden border-b border-r px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${zoneClass[zoneFor(strike, spot, callPut)]} ${cell ? statusBorder[status] : "border-border/[0.09] opacity-35"} ${cell?.listed && !cell.held ? "border-cyan-300/80 ring-1 ring-inset ring-cyan-400/35" : ""} ${cell?.held ? "border-amber-200 ring-1 ring-inset ring-amber-300/90" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""} ${isSyntheticSpot ? "bg-amber-400/15" : ""}`}
+                style={{ height: rowHeight, ...(cell?.value == null ? {} : { backgroundColor: colorFor(cell.value) }) }}
                 onClick={() => topPositions[0] && onSelectPosition(topPositions[0])}
+                onMouseEnter={() => cell && setHoveredCellKey(key)}
+                onMouseLeave={() => setHoveredCellKey(current => current === key ? null : current)}
+                onFocus={() => cell && setHoveredCellKey(key)}
+                onBlur={() => setHoveredCellKey(current => current === key ? null : current)}
                 aria-label={cell ? `${key} ${formatCompact(cell.value, metric)} ${cell.held ? "held" : "listed no position"} ${status}` : `${key} unavailable not listed`}
               >{showLabel && <span className="font-semibold text-white drop-shadow-sm">{formatCompact(cell!.value, metric)}</span>}{cell && cell.positions.length > 1 && (labelMode !== "none" || cell.held) && <span className="absolute bottom-0 right-0 text-[6px] leading-none text-white/70">{cell.positions.length}</span>}{cell && status !== "LIVE" && (cell.held || labelMode !== "none") && <span className="absolute left-0 top-0 text-[6px] font-bold leading-none text-white">{statusAbbreviation(status)}</span>}{isSyntheticSpot && <span className="text-[7px] text-amber-200">SPOT</span>}</button></TooltipTrigger>
-                {cell && <TooltipContent side="right" className="w-80 border border-border bg-popover p-2 shadow-xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} /></div>)}</div><p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、Greeks、数据质量与 Roll 原因</p></TooltipContent>}
+                {cell && <TooltipContent side="right" sideOffset={6} collisionPadding={12} className="z-[100] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 rounded-sm bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">Cell {METRIC_LABELS[metric]} </span><strong className="float-right font-mono text-primary">{formatCompact(cell.value, metric)}</strong></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} /></div>)}</div><p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、Greeks、数据质量与 Roll 原因</p></TooltipContent>}
               </Tooltip>;
             });
             return [axis, ...buttons];

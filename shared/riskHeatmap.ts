@@ -11,6 +11,9 @@ export type HeatmapMetric =
   | "theta"
   | "vega"
   | "markIV"
+  | "bidIV"
+  | "askIV"
+  | "ivSpread"
   | "MV"
   | "UPL"
   | "DTE"
@@ -38,6 +41,9 @@ export interface RiskPosition {
   bid: number | null;
   ask: number | null;
   markIV: number | null;
+  bidIV: number | null;
+  askIV: number | null;
+  ivSpread: number | null;
   unitDelta: number | null;
   unitGamma: number | null;
   unitTheta: number | null;
@@ -157,6 +163,9 @@ export const METRIC_LABELS: Record<HeatmapMetric, string> = {
   theta: "Theta USD/day",
   vega: "Vega USD/vol",
   markIV: "Mark IV",
+  bidIV: "Bid IV",
+  askIV: "Ask IV",
+  ivSpread: "Ask−Bid IV Spread",
   MV: "Market Value",
   UPL: "UPL",
   DTE: "DTE",
@@ -211,6 +220,9 @@ export function metricValue(position: EnrichedRiskPosition, metric: HeatmapMetri
     case "theta": return position.totalThetaUSD;
     case "vega": return position.totalVegaUSD;
     case "markIV": return position.markIV;
+    case "bidIV": return position.bidIV;
+    case "askIV": return position.askIV;
+    case "ivSpread": return position.ivSpread;
     case "MV": return position.MV;
     case "UPL": return position.UPL;
     case "DTE": return Number.isFinite(position.dte) ? position.dte : null;
@@ -227,7 +239,7 @@ export function aggregateMetric(positions: EnrichedRiskPosition[], metric: Heatm
   if (metric === "unitDelta" || metric === "distanceToStrike") {
     return values.reduce((selected, value) => Math.abs(value) > Math.abs(selected) ? value : selected, values[0]);
   }
-  if (metric === "markIV" || metric === "rollPriority") return Math.max(...values);
+  if (metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread" || metric === "rollPriority") return Math.max(...values);
   if (metric === "DTE") return Math.min(...values);
   return values.reduce((sum, value) => sum + value, 0);
 }
@@ -437,7 +449,7 @@ export function buildHeatScale(values: Array<number | null>, mode: ColorScaleMod
 
 export function formatCompact(value: number | null, metric?: HeatmapMetric): string {
   if (value === null || !Number.isFinite(value)) return "MISSING";
-  if (metric === "markIV" || metric === "distanceToStrike") return `${(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0)}%`;
+  if (metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread" || metric === "distanceToStrike") return `${(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0)}%`;
   if (metric === "DTE") return `${Math.round(value)}d`;
   if (metric === "rollPriority") return `${value.toFixed(0)}`;
   const absolute = Math.abs(value);
@@ -642,6 +654,9 @@ export function generateMockPositions(count: 100 | 200, seed = 20260811, asOf: D
       bid: missing ? null : bid,
       ask: missing ? null : ask,
       markIV: missing ? null : markIV,
+      bidIV: missing ? null : Math.max(0.01, markIV - 0.012),
+      askIV: missing ? null : markIV + 0.014,
+      ivSpread: missing ? null : 0.026,
       unitDelta: missing ? null : Math.max(-0.75, Math.min(0.75, theoretical.delta)),
       unitGamma: missing ? null : theoretical.gamma,
       unitTheta: missing ? null : theoretical.theta,
