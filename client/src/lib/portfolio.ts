@@ -24,6 +24,14 @@ export type PortfolioPosition = {
   xauEqNetQty?: string | null;
   referenceDate?: string | null;
   importedMarkPrice?: string | null;
+  markIv?: string | null;
+  bid1Price?: string | null;
+  ask1Price?: string | null;
+  marketQuoteTime?: string | null;
+  marketSource?: string | null;
+  lastMarketRefreshAt?: string | null;
+  openInterest?: string | null;
+  optionVolume?: string | null;
   importedMarketValue?: string | null;
   entryValue?: string | null;
   importedEntryCost?: string | null;
@@ -138,22 +146,22 @@ function importedSnapshot(position: PortfolioPosition): MarketSnapshot | null {
   const theta = finiteImported(position.unitTheta);
   const vega = finiteImported(position.unitVega);
   if ([markPrice, delta, gamma, theta, vega].some(value => value === null)) return null;
-  const quoteTime = position.referenceDate ? `${position.referenceDate}T23:59:59.000Z` : null;
+  const quoteTime = position.marketQuoteTime ?? (position.referenceDate ? `${position.referenceDate}T23:59:59.000Z` : null);
   const age = quoteTime ? Date.now() - Date.parse(quoteTime) : Number.POSITIVE_INFINITY;
   return {
     markPrice: markPrice!,
-    markIv: 0,
-    bid1: 0,
-    ask1: 0,
+    markIv: finiteImported(position.markIv) ?? 0,
+    bid1: finiteImported(position.bid1Price) ?? 0,
+    ask1: finiteImported(position.ask1Price) ?? 0,
     delta: delta!,
     gamma: gamma!,
     theta: theta!,
     vega: vega!,
-    source: `Excel · ${position.importSource ?? "position snapshot"}${position.importRow ? ` · row ${position.importRow}` : ""}`,
+    source: position.marketSource ?? `Excel · ${position.importSource ?? "position snapshot"}${position.importRow ? ` · row ${position.importRow}` : ""}`,
     estimated: false,
     available: true,
     quoteTime,
-    dataStatus: !quoteTime ? "WARN" : age > 15 * 60_000 ? "STALE" : "LIVE",
+    dataStatus: position.dataStatus ?? (!quoteTime ? "WARN" : age > 15 * 60_000 ? "STALE" : "LIVE"),
   };
 }
 

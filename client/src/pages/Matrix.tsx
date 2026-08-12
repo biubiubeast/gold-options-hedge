@@ -4,7 +4,8 @@ import { HeatmapGrid, type CellLabelMode, type HeatmapCellModel, type HoverDataP
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { getPositionMarketData, type MarketSnapshot, type PortfolioPosition } from "@/lib/portfolio";
-import { buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
+import { buildGldChainRiskPositions, buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
+import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import {
   CENTERED_METRICS,
@@ -25,10 +26,10 @@ import {
   type HeatmapMetric,
   type RiskUnderlying,
 } from "@shared/riskHeatmap";
-import { ArrowLeftRight, Loader2, LocateFixed } from "lucide-react";
+import { ArrowLeftRight, Eye, EyeOff, Info, Loader2, LocateFixed } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-type DatasetMode = "live" | "mock100" | "mock200";
+type DatasetMode = "chain" | "live" | "mock100" | "mock200";
 type ExpiryBucket = "all" | "expired" | "0-2" | "3-7" | "8-30" | "31+";
 type SelectOption = { value: string; label: string };
 
@@ -37,7 +38,7 @@ const statusSeverity: Record<DataStatus, number> = { LIVE: 0, WARN: 1, STALE: 2,
 
 function initialDataset(): DatasetMode {
   const requested = new URLSearchParams(window.location.search).get("mock");
-  return requested === "200" ? "mock200" : requested === "100" ? "mock100" : "live";
+  return requested === "200" ? "mock200" : requested === "100" ? "mock100" : "chain";
 }
 
 function NativeSelect({ label, value, options, onChange, className = "" }: {
@@ -155,7 +156,7 @@ export default function Matrix() {
   const [callPut, setCallPut] = useState<"combined" | CallPut>("combined");
   const [expiryBucket, setExpiryBucket] = useState<ExpiryBucket>("all");
   const [status, setStatus] = useState<"all" | DataStatus>("all");
-  const [metric, setMetric] = useState<HeatmapMetric>("totalDelta");
+  const [metric, setMetric] = useState<HeatmapMetric>("unitDelta");
   const [scaleMode, setScaleMode] = useState<ColorScaleMode>("quantile");
   const [transpose, setTranspose] = useState(false);
   const [labelMode, setLabelMode] = useState<CellLabelMode>("none");
@@ -163,6 +164,14 @@ export default function Matrix() {
   const [spotUnderlying, setSpotUnderlying] = useState<RiskUnderlying | "XAU">("GLD");
   const [highlightCellKey, setHighlightCellKey] = useState<string | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<EnrichedRiskPosition | null>(null);
+  const [cardsVisible, setCardsVisible] = useState(() => localStorage.getItem("heatmap-decision-cards-visible") !== "false");
+  const [dataErrorHelp, setDataErrorHelp] = useState(false);
+
+  const { data: gldChain, isFetching: chainFetching } = trpc.market.gldOptionChain.useQuery(undefined, {
+    enabled: dataset === "chain",
+    staleTime: 25_000,
+    refetchOnWindowFocus: false,
+  });
 
   const gldExpiries = useMemo(() => [...new Set((positions || []).filter(position => position.underlying === "GLD").map(position => position.expiry))], [positions]);
   const gldContracts = useMemo(() => (positions || [])
@@ -173,33 +182,40 @@ export default function Matrix() {
     { expiries: gldExpiries.slice(0, 24), contracts: gldContracts },
     { enabled: dataset === "live" && gldExpiries.length > 0, refetchInterval: 10_000 },
   );
+  const activeGldQuotes = dataset === "chain" ? gldChain?.quotes : gldQuotes;
 
   const liveViews = useMemo(() => (positions || []).map(position => ({
     position: position as PortfolioPosition,
     market: getPositionMarketData({
       position: position as PortfolioPosition,
       xautTickers,
-      gldQuotes,
+      gldQuotes: activeGldQuotes,
       gldSpot: spotPrices?.gld?.price ?? 0,
       formulas,
       settings,
     }) as MarketSnapshot,
-  })), [formulas, gldQuotes, positions, settings, spotPrices?.gld?.price, xautTickers]);
+  })), [activeGldQuotes, formulas, positions, settings, spotPrices?.gld?.price, xautTickers]);
 
   const liveSpots = useMemo(() => ({
     xaut: spotPrices?.xaut?.price ?? 0,
-    gld: spotPrices?.gld?.price ?? 0,
+    gld: dataset === "chain" && gldChain?.spot ? gldChain.spot : spotPrices?.gld?.price ?? 0,
     xau: spotPrices?.gold?.price ?? spotPrices?.xaut?.price ?? 0,
-  }), [spotPrices]);
-  const displaySpots = useMemo(() => dataset === "live"
+  }), [dataset, gldChain?.spot, spotPrices]);
+  const displaySpots = useMemo(() => dataset === "live" || dataset === "chain"
     ? { GLD: liveSpots.gld, XAUT: liveSpots.xaut, XAU: liveSpots.xau }
     : { GLD: 247.3, XAUT: 3358, XAU: 3358 }, [dataset, liveSpots]);
   const asOf = useMemo(() => new Date(), [dataset, gldQuotes, positions, spotPrices, xautTickers]);
   const riskPositions = useMemo(() => {
     if (dataset === "mock100") return generateMockPositions(100, 20260811, asOf);
     if (dataset === "mock200") return generateMockPositions(200, 20260811, asOf);
-    return buildLiveRiskPositions({ views: liveViews, spots: liveSpots, settings, formulas });
-  }, [asOf, dataset, formulas, liveSpots, liveViews, settings]);
+    const held = buildLiveRiskPositions({ views: liveViews, spots: liveSpots, settings, formulas });
+    if (dataset !== "chain") return held;
+    const heldKeys = new Set(held.map(position => `${position.expiry}|${position.strike}|${position.callPut}`));
+    const gldOzPerShare = liveSpots.xau > 0 && liveSpots.gld > 0 ? liveSpots.gld / liveSpots.xau : null;
+    const listed = buildGldChainRiskPositions(gldChain?.quotes ?? [], gldOzPerShare)
+      .filter(position => !heldKeys.has(`${position.expiry}|${position.strike}|${position.callPut}`));
+    return [...held, ...listed];
+  }, [asOf, dataset, formulas, gldChain?.quotes, liveSpots, liveViews, settings]);
   const enriched = useMemo(() => enrichRiskPositions(riskPositions, displaySpots, asOf), [asOf, displaySpots, riskPositions]);
 
   const filterOptions = useMemo(() => ({
@@ -211,6 +227,9 @@ export default function Matrix() {
     if (underlying === "GLD") setSpotUnderlying("GLD");
     else if (underlying === "XAUT") setSpotUnderlying("XAUT");
   }, [underlying]);
+  useEffect(() => {
+    localStorage.setItem("heatmap-decision-cards-visible", String(cardsVisible));
+  }, [cardsVisible]);
 
   const filtered = useMemo(() => enriched.filter(position =>
     (underlying === "all" || position.underlying === underlying)
@@ -236,6 +255,8 @@ export default function Matrix() {
       strike: cellPositions[0].strike,
       positions: cellPositions,
       value: aggregateMetric(cellPositions, metric),
+      listed: cellPositions.some(position => position.positionKind === "listed"),
+      held: cellPositions.some(position => position.positionKind !== "listed"),
     }));
     return {
       cells: cellModels,
@@ -250,7 +271,8 @@ export default function Matrix() {
     !sequentialMagnitude && CENTERED_METRICS.has(metric),
   ), [cells, metric, scaleMode, sequentialMagnitude]);
   const importanceCutoff = useMemo(() => percentile(cells.map(cell => Math.abs(cell.value ?? 0)).filter(value => value > 0), 0.85), [cells]);
-  const cards = useMemo(() => buildDecisionCards(filtered), [filtered]);
+  const heldFiltered = useMemo(() => filtered.filter(position => position.positionKind !== "listed"), [filtered]);
+  const cards = useMemo(() => buildDecisionCards(heldFiltered), [heldFiltered]);
   const spot = displaySpots[spotUnderlying];
 
   useEffect(() => {
@@ -267,26 +289,31 @@ export default function Matrix() {
     });
   };
 
-  if (isLoading && dataset === "live") return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  if ((isLoading && (dataset === "live" || dataset === "chain")) || (dataset === "chain" && chainFetching && !gldChain)) return <div className="flex h-64 flex-col items-center justify-center gap-2"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="text-xs text-muted-foreground">读取 GLD 完整期权链…</p></div>;
 
   return (
     <div className="flex h-[calc(100vh-5.5rem)] min-h-[560px] flex-col gap-1 overflow-hidden" data-testid="institutional-risk-heatmap">
       <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-1">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">GLD + XAUT POSITION RISK HEATMAP</h1>
-          <span className="font-mono text-[9px] text-muted-foreground">{filtered.length}/{enriched.length} positions · {cells.length} cells</span>
+          <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">POSITION RISK HEATMAP</h1>
+          <span className="font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held · {filtered.length} instruments · {cells.length} cells{gldChain ? ` · ${gldChain.contractCount} GLD contracts` : ""}</span>
         </div>
         <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
-          <span>As-of {asOf.toLocaleTimeString("zh-CN", { hour12: false })}</span>
+          <span>As-of {gldChain ? new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false }) : asOf.toLocaleTimeString("zh-CN", { hour12: false })}</span>
+          <button type="button" onClick={() => setDataErrorHelp(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground"><Info className="h-3 w-3" />Largest Data Error</button>
+          <button type="button" onClick={() => setCardsVisible(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground">{cardsVisible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{cardsVisible ? "Hide Cards" : "Show Cards"}</button>
+          <MarketRefreshButton compact />
           {selectedPosition && <span className="max-w-64 truncate text-foreground">Selected: {positionLabel(selectedPosition)} · Roll {selectedPosition.rollPriority.total.toFixed(0)}</span>}
         </div>
       </div>
 
-      <DecisionCards cards={cards} onLocate={locateCell} />
+      {dataErrorHelp && <div className="shrink-0 border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-[9px] leading-relaxed text-amber-100"><strong>Largest Data Error</strong> 只检查当前筛选中的真实持仓：先按严重度 FAIL &gt; MISSING &gt; STALE &gt; WARN &gt; LIVE 排序；严重度相同时选 Quote Age 最大的一条。它不是盈亏或风险值，而是最需要修复的数据质量问题。缺 Source、Mark、合约乘数或 Greeks 会触发 MISSING；报价超过 15 分钟触发 STALE。</div>}
+      {cardsVisible && <DecisionCards cards={cards} onLocate={locateCell} />}
 
       <div className="grid h-7 shrink-0 grid-cols-[1.15fr_repeat(7,minmax(80px,1fr))] items-center gap-1 border border-border/60 bg-card/35 px-1">
         <NativeSelect label="DATA" value={dataset} onChange={value => setDataset(value as DatasetMode)} options={[
           { value: "live", label: "LIVE / IMPORTED" },
+          { value: "chain", label: "GLD FULL CHAIN" },
           { value: "mock100", label: "MOCK 100" },
           { value: "mock200", label: "MOCK 200" },
         ]} />
@@ -309,6 +336,7 @@ export default function Matrix() {
         <span className="flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />{spotUnderlying} SPOT {formatPrice(spot)} · nearest {formatPrice(spotRangeState(strikes, spot).nearestStrike)}</span>
       </div>
 
+      {dataset === "chain" && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · {Math.round(gldChain.delaySeconds / 60)}m age · cyan border = listed/no position · gold border = held · faint empty = unavailable/not listed</div>}
       {filtered.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center border border-dashed border-border text-sm text-muted-foreground">
           <p>当前筛选没有有效 position。</p>
@@ -333,8 +361,8 @@ export default function Matrix() {
         />
       )}
 
-      <ExpiryPanel positions={filtered} gldSpot={displaySpots.GLD} />
-      <ScenarioStrip positions={filtered} spots={displaySpots} />
+      <ExpiryPanel positions={heldFiltered} gldSpot={displaySpots.GLD} />
+      <ScenarioStrip positions={heldFiltered} spots={displaySpots} />
       <PositionDetailDialog position={selectedPosition} onClose={() => setSelectedPosition(null)} />
     </div>
   );

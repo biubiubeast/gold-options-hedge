@@ -37,6 +37,14 @@ export type PositionRecord = {
   xauEqNetQty?: string | null;
   referenceDate?: string | null;
   importedMarkPrice?: string | null;
+  markIv?: string | null;
+  bid1Price?: string | null;
+  ask1Price?: string | null;
+  marketQuoteTime?: string | null;
+  marketSource?: string | null;
+  lastMarketRefreshAt?: string | null;
+  openInterest?: string | null;
+  optionVolume?: string | null;
   importedMarketValue?: string | null;
   entryValue?: string | null;
   importedEntryCost?: string | null;
@@ -270,6 +278,25 @@ export async function updatePosition(
     if (!position) throw new Error("仓位不存在");
     Object.assign(position, data, { updatedAt: new Date().toISOString() });
     await saveStore(store);
+  });
+}
+
+export async function updatePositionsMarketData(
+  userId: number,
+  updates: Array<{ id: number; data: Partial<Omit<PositionInput, "userId">> }>,
+) {
+  return serialize(async () => {
+    const store = await loadStore();
+    const now = new Date().toISOString();
+    let updated = 0;
+    for (const update of updates) {
+      const position = store.positions.find(item => item.id === update.id && item.userId === userId);
+      if (!position) continue;
+      Object.assign(position, update.data, { updatedAt: now });
+      updated += 1;
+    }
+    if (updated > 0) await saveStore(store);
+    return updated;
   });
 }
 

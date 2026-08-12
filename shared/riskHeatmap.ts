@@ -53,6 +53,9 @@ export interface RiskPosition {
   positionTime: string | null;
   source: string | null;
   dataStatus: DataStatus;
+  positionKind?: "held" | "listed";
+  openInterest?: number | null;
+  volume?: number | null;
   availableUSD?: number | null;
   buyingPower?: number | null;
   officialClose?: number | null;
@@ -277,6 +280,15 @@ function riskOunces(position: RiskPosition): number | null {
 }
 
 export function deriveTotals(position: RiskPosition): RiskPosition {
+  if (position.positionKind === "listed") return {
+    ...position,
+    totalDeltaXAU: null,
+    totalGammaXAU: null,
+    totalThetaUSD: null,
+    totalVegaUSD: null,
+    MV: null,
+    UPL: null,
+  };
   const multiplier = finiteOrNull(position.contractMultiplier);
   const ounces = finiteOrNull(riskOunces(position));
   const mark = finiteOrNull(position.markPrice);

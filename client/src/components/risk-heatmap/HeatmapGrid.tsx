@@ -16,7 +16,7 @@ import {
 } from "@shared/riskHeatmap";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
-export type HeatmapCellModel = { key: string; expiry: string; strike: number; positions: EnrichedRiskPosition[]; value: number | null };
+export type HeatmapCellModel = { key: string; expiry: string; strike: number; positions: EnrichedRiskPosition[]; value: number | null; listed?: boolean; held?: boolean };
 export type CellLabelMode = "none" | "top" | "all";
 export type HoverDataPreset = "risk" | "market" | "pnl" | "all";
 
@@ -64,6 +64,7 @@ function TooltipPosition({ position, metric, preset }: { position: EnrichedRiskP
     ["Mark / IV", `${formatPrice(position.markPrice)} / ${formatCompact(position.markIV, "markIV")}`],
     ["Bid / Ask", `${formatPrice(position.bid)} / ${formatPrice(position.ask)}`],
     ["Source / As-of", `${position.source ?? "MISSING"} / ${position.quoteTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`],
+    ["OI / Volume", `${formatCompact(position.openInterest ?? null)} / ${formatCompact(position.volume ?? null)}`],
   );
   if (preset === "pnl" || preset === "all") rows.push(
     ["Qty / Multiplier", `${formatCompact(position.netQty)} / ${formatCompact(position.contractMultiplier)}`],
@@ -76,6 +77,7 @@ function TooltipPosition({ position, metric, preset }: { position: EnrichedRiskP
 export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanceCutoff, transpose, spot, callPut, highlightCellKey, labelMode, hoverPreset, sequentialMagnitude, onSelectPosition }: Props) {
   const [centerSpot, setCenterSpot] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const centeredOnceRef = useRef<string | null>(null);
   const range = useMemo(() => spotRangeState(strikes, spot), [spot, strikes]);
   useEffect(() => setCenterSpot(false), [spot, strikes]);
   const displayStrikes = useMemo(() => {
@@ -88,10 +90,21 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
   const rowValues = transpose ? expiries : displayStrikes;
   const template = `82px repeat(${columnValues.length}, minmax(32px, 1fr))`;
   const minWidth = Math.max(480, 82 + columnValues.length * 34);
+  const scrollToSpot = (behavior: ScrollBehavior = "smooth") => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const target = viewportRef.current?.querySelector<HTMLElement>("[data-spot-row='true'], [data-spot-synthetic='true']");
+    target?.scrollIntoView({ behavior, block: "center", inline: "nearest" });
+  }));
   const handleCenterSpot = () => {
-    setCenterSpot(true);
-    requestAnimationFrame(() => requestAnimationFrame(() => viewportRef.current?.querySelector<HTMLElement>("[data-spot-synthetic='true']")?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" })));
+    if (range.state !== "within") setCenterSpot(true);
+    scrollToSpot();
   };
+  useEffect(() => {
+    if (transpose || range.nearestStrike === null || !cells.length) return;
+    const marker = `${range.nearestStrike}|${cells.length}`;
+    if (centeredOnceRef.current === marker) return;
+    centeredOnceRef.current = marker;
+    scrollToSpot("auto");
+  }, [cells.length, range.nearestStrike, transpose]);
   const colorFor = (value: number) => {
     const normalized = scale.normalize(sequentialMagnitude ? Math.abs(value) : value);
     return sequentialMagnitude ? magnitudeHeatColor(normalized) : heatColor(normalized, centered);
@@ -116,7 +129,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
             const rowStrike = transpose ? null : Number(row);
             const isSpotRow = rowStrike !== null && range.nearestStrike === rowStrike;
             const zone = rowStrike === null ? "NEUTRAL" : zoneFor(rowStrike, spot, callPut);
-            const axis = <div key={`axis-${String(row)}`} className={`sticky left-0 z-10 flex h-[16px] items-center justify-between border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{rowStrike !== null && <span className="text-[7px]">{isSpotRow ? `SPOT ${formatPrice(spot)}` : zone === "NEUTRAL" ? "" : zone}</span>}</div>;
+            const axis = <div key={`axis-${String(row)}`} data-spot-row={isSpotRow ? "true" : undefined} className={`sticky left-0 z-10 flex h-[13px] items-center justify-between border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{rowStrike !== null && <span className="text-[7px]">{isSpotRow ? `SPOT ${formatPrice(spot)}` : zone === "NEUTRAL" ? "" : zone}</span>}</div>;
             const buttons = columnValues.map(column => {
               const expiry = transpose ? String(row) : String(column);
               const strike = transpose ? Number(column) : Number(row);
@@ -130,12 +143,12 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
               const spotLine = range.nearestStrike === strike;
               return <Tooltip key={key} delayDuration={80}><TooltipTrigger asChild><button
                 type="button" data-cell-key={key} data-spot-synthetic={isSyntheticSpot ? "true" : undefined}
-                className={`relative h-[16px] overflow-hidden border-b border-r px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${zoneClass[zoneFor(strike, spot, callPut)]} ${cell ? statusBorder[status] : "border-border/[0.12]"} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""} ${isSyntheticSpot ? "bg-amber-400/15" : ""}`}
+                className={`relative h-[13px] overflow-hidden border-b border-r px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${zoneClass[zoneFor(strike, spot, callPut)]} ${cell ? statusBorder[status] : "border-border/[0.09] opacity-35"} ${cell?.listed && !cell.held ? "border-cyan-300/80 ring-1 ring-inset ring-cyan-400/35" : ""} ${cell?.held ? "border-amber-200 ring-1 ring-inset ring-amber-300/90" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""} ${isSyntheticSpot ? "bg-amber-400/15" : ""}`}
                 style={cell?.value == null ? undefined : { backgroundColor: colorFor(cell.value) }}
                 onClick={() => topPositions[0] && onSelectPosition(topPositions[0])}
-                aria-label={cell ? `${key} ${formatCompact(cell.value, metric)} ${status}` : `${key} no position`}
-              >{showLabel && <span className="font-semibold text-white drop-shadow-sm">{formatCompact(cell!.value, metric)}</span>}{cell && cell.positions.length > 1 && <span className="absolute bottom-0 right-0 text-[6px] leading-none text-white/70">{cell.positions.length}</span>}{cell && status !== "LIVE" && <span className="absolute left-0 top-0 text-[6px] font-bold leading-none text-white">{statusAbbreviation(status)}</span>}{isSyntheticSpot && <span className="text-[7px] text-amber-200">SPOT</span>}</button></TooltipTrigger>
-                {cell && <TooltipContent side="right" className="w-80 border border-border bg-popover p-2 shadow-xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.positions.length} position(s) · {status}</span></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} /></div>)}</div><p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击方格查看完整仓位、Greeks、数据质量与 Roll 原因</p></TooltipContent>}
+                aria-label={cell ? `${key} ${formatCompact(cell.value, metric)} ${cell.held ? "held" : "listed no position"} ${status}` : `${key} unavailable not listed`}
+              >{showLabel && <span className="font-semibold text-white drop-shadow-sm">{formatCompact(cell!.value, metric)}</span>}{cell && cell.positions.length > 1 && (labelMode !== "none" || cell.held) && <span className="absolute bottom-0 right-0 text-[6px] leading-none text-white/70">{cell.positions.length}</span>}{cell && status !== "LIVE" && (cell.held || labelMode !== "none") && <span className="absolute left-0 top-0 text-[6px] font-bold leading-none text-white">{statusAbbreviation(status)}</span>}{isSyntheticSpot && <span className="text-[7px] text-amber-200">SPOT</span>}</button></TooltipTrigger>
+                {cell && <TooltipContent side="right" className="w-80 border border-border bg-popover p-2 shadow-xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} /></div>)}</div><p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、Greeks、数据质量与 Roll 原因</p></TooltipContent>}
               </Tooltip>;
             });
             return [axis, ...buttons];
@@ -147,7 +160,9 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
         <span className="mt-1 font-mono text-[7px] text-foreground">{formatCompact(legendMaximum, metric)}</span>
         <div className="my-1 min-h-16 w-3 flex-1 border border-white/10" style={{ background: legendGradient }} />
         {sequentialMagnitude ? <><span className="font-mono text-[7px] text-muted-foreground">{formatCompact(legendMaximum * 0.5, metric)}</span><span className="mt-auto font-mono text-[7px] text-blue-300">0</span></> : <span className="font-mono text-[7px] text-muted-foreground">{scale.centered ? formatCompact(-legendMaximum, metric) : "0"}</span>}
-        <span className="mt-1 text-center text-[7px] leading-tight text-amber-300">SPOT<br />{formatPrice(spot)}</span>
+        <button type="button" onClick={handleCenterSpot} className="mt-1 text-center text-[7px] leading-tight text-amber-300 underline">CENTER<br />SPOT {formatPrice(spot)}</button>
+        <span className="mt-1 text-center text-[6px] leading-tight text-cyan-200">CYAN<br />LISTED</span>
+        <span className="mt-1 text-center text-[6px] leading-tight text-amber-200">GOLD<br />HELD</span>
       </aside>
     </div>
   );

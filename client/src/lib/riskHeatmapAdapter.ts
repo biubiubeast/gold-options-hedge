@@ -85,6 +85,9 @@ export function buildLiveRiskPositions(args: {
       positionTime,
       source: market.source || null,
       dataStatus: fallbackStatus(market),
+      positionKind: "held",
+      openInterest: finiteOrNull(position.openInterest),
+      volume: finiteOrNull(position.optionVolume),
       availableUSD: null,
       buyingPower: null,
       officialClose: position.underlying === "GLD" ? finiteOrNull(spots.gld) : null,
@@ -96,4 +99,47 @@ export function buildLiveRiskPositions(args: {
     };
     return riskPosition;
   });
+}
+
+type GldChainQuote = {
+  symbol: string; expiry: string; strike: number; optionType: "call" | "put"; markPrice: number; markIv: number;
+  bid1Price: number; ask1Price: number; delta: number; gamma: number; theta: number; vega: number;
+  timestamp: number; source: string; openInterest?: number; volume?: number;
+};
+
+export function buildGldChainRiskPositions(quotes: GldChainQuote[], gldOzPerShare: number | null): RiskPosition[] {
+  return quotes.map(quote => ({
+    id: `chain:${quote.symbol}`,
+    venue: "Cboe / OPRA",
+    broker: "MARKET CHAIN",
+    account: "LISTED-NO-POSITION",
+    underlying: "GLD",
+    instrument: quote.symbol,
+    callPut: quote.optionType,
+    expiry: quote.expiry,
+    strike: quote.strike,
+    netQty: 0,
+    contractMultiplier: 100,
+    deliverableSource: "OCC standard GLD contract display · verify adjusted deliverables with broker contract master",
+    contractAdjusted: false,
+    gldOzPerShare,
+    underlyingOzPerUnit: null,
+    markPrice: Number.isFinite(quote.markPrice) ? quote.markPrice : null,
+    bid: quote.bid1Price > 0 ? quote.bid1Price : 0,
+    ask: quote.ask1Price > 0 ? quote.ask1Price : 0,
+    markIV: quote.markIv > 0 ? quote.markIv : null,
+    unitDelta: Number.isFinite(quote.delta) ? quote.delta : null,
+    unitGamma: Number.isFinite(quote.gamma) ? quote.gamma : null,
+    unitTheta: Number.isFinite(quote.theta) ? quote.theta : null,
+    unitVega: Number.isFinite(quote.vega) ? quote.vega : null,
+    totalDeltaXAU: null, totalGammaXAU: null, totalThetaUSD: null, totalVegaUSD: null,
+    MV: null, entryCost: null, UPL: null,
+    quoteTime: new Date(quote.timestamp).toISOString(),
+    positionTime: null,
+    source: quote.source,
+    dataStatus: Date.now() - quote.timestamp > 15 * 60_000 ? "STALE" : "LIVE",
+    positionKind: "listed",
+    openInterest: quote.openInterest ?? null,
+    volume: quote.volume ?? null,
+  }));
 }

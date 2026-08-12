@@ -102,6 +102,8 @@ docker compose -f docker-compose.public.yml down
 1. 把代码放到你自己的 GitHub 私有仓库；确认 `.env` 和 `data/portfolio.json` 没有被提交。
 2. 在 Render 选择 **New → Blueprint**，连接仓库并确认识别到 `render.yaml`。
 3. 部署时填写 `APP_PASSWORD`；`APP_USERNAME` 已设为 `xauwhale`。服务创建后可在 **Environment** 中添加 `MARKETDATA_TOKEN`，以启用 GLD 低延迟现价和 OPRA 实时期权 Greeks；`TRADIER_API_TOKEN` 是兼容备用源。
+
+市场数据一键刷新、GLD 完整链热力图、Largest Data Error 与双表 Excel 导出的详细教程见 [docs/live-market-chain-guide.md](docs/live-market-chain-guide.md)。
 4. 部署完成后使用 Render 分配的 `https://...onrender.com` 地址访问，也可绑定自己的域名。
 5. 免费实例会休眠、重启，且没有持久磁盘；仓位录入后请立即从网站导出 JSON 备份。
 

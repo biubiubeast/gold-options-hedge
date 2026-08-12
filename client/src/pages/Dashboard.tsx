@@ -9,6 +9,7 @@ import { Activity, BarChart3, DollarSign, RotateCcw, TrendingUp } from "lucide-r
 import { useMemo, useState } from "react";
 import { calculatePosition, getPositionMarketData } from "@/lib/portfolio";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 
 const money = (value: number) => new Intl.NumberFormat("zh-CN", {
   style: "currency",
@@ -113,7 +114,8 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-gold-gradient">黄金期权组合总览</h1>
           <p className="text-sm text-muted-foreground mt-1">估值统一为 USD；Delta / Gamma 统一映射到 XAU/USD 风险量纲</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <MarketRefreshButton />
           {summary.estimated > 0 && <Badge variant="outline" className="text-amber-400 border-amber-400/30">{summary.estimated} 个模型估算</Badge>}
           {summary.unavailable > 0 && <Badge variant="destructive">{summary.unavailable} 个行情不可用</Badge>}
         </div>
