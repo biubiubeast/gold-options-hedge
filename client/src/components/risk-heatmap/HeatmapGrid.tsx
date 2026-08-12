@@ -102,7 +102,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
   const template = `${axisWidth}px repeat(${columnValues.length}, minmax(${columnMin}px, 1fr))`;
   const minWidth = fitAll ? 0 : Math.max(480, axisWidth + columnValues.length * columnMin);
   const rowHeight = fitAll
-    ? `max(2px, min(${cellSize}px, calc((100vh - 238px) / ${Math.max(1, rowValues.length)})))`
+    ? `max(0.65px, min(${cellSize}px, calc((100vh - 350px) / ${Math.max(1, rowValues.length)})))`
     : `${cellSize}px`;
   const scrollToSpot = (behavior: ScrollBehavior = "smooth") => requestAnimationFrame(() => requestAnimationFrame(() => {
     const target = viewportRef.current?.querySelector<HTMLElement>("[data-spot-row='true'], [data-spot-synthetic='true']");
