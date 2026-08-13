@@ -17,6 +17,7 @@ import {
   type HeatmapMetric,
 } from "@shared/riskHeatmap";
 import { cloneElement, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEventHandler, type ReactElement } from "react";
+import type { PortfolioSettings } from "@/lib/portfolio";
 
 export type HeatmapCellModel = { key: string; expiry: string; strike: number; positions: EnrichedRiskPosition[]; value: number | null; listed?: boolean; held?: boolean };
 export type CellLabelMode = "none" | "held" | "top" | "all";
@@ -40,13 +41,9 @@ type Props = {
   hoverPreset: HoverDataPreset;
   sequentialMagnitude: boolean;
   heldCellContent: { underlying: boolean; callPut: boolean; dataStatus: boolean };
+  hoverContent: PortfolioSettings["heatmapHoverContent"];
   onSelectPosition: (position: EnrichedRiskPosition) => void;
 };
-
-const statusBorder = {
-  LIVE: "border-white/[0.07]", STALE: "border-amber-400/70", WARN: "border-amber-300/50",
-  MISSING: "border-orange-500/80 border-dashed", FAIL: "border-red-500 ring-1 ring-red-500/40",
-} as const;
 
 function zoneFor(strike: number, spot: number, callPut: Props["callPut"]): "ITM" | "ATM" | "OTM" | "NEUTRAL" {
   if (spot <= 0) return "NEUTRAL";
@@ -61,27 +58,34 @@ const heldStatusAbbreviation = (status: ReturnType<typeof worstStatus>) => ({ LI
 const heldStatusColor = (status: ReturnType<typeof worstStatus>) => ({ LIVE: "text-emerald-300", STALE: "text-amber-200", WARN: "text-yellow-200", MISSING: "text-orange-200", FAIL: "text-red-300" })[status];
 const cellMetricLabel = (value: number | null, metric: HeatmapMetric) => formatCompact(value, metric).replace(/^\+/, "");
 
-function TooltipPosition({ position, metric, preset }: { position: EnrichedRiskPosition; metric: HeatmapMetric; preset: HoverDataPreset }) {
-  const rows: Array<[string, string]> = [["Selected metric", formatCompact(metricValue(position, metric), metric)]];
-  if (preset === "risk" || preset === "all") rows.push(
-    ["Unit Δ / Total Δ", `${formatCompact(position.unitDelta)} / ${formatCompact(position.totalDeltaXAU)} oz`],
-    ["Γ / Θ / Vega", `${formatCompact(position.totalGammaXAU)} / $${formatCompact(position.totalThetaUSD)}/d / $${formatCompact(position.totalVegaUSD)}`],
-    ["DTE / Roll", `${position.dte}d / ${position.rollPriority.total.toFixed(0)}`],
-  );
-  if (preset === "market" || preset === "all") rows.push(
-    ["Qty / Notional", `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`],
-    ["Mark / IV", `${formatPrice(position.markPrice)} / ${formatCompact(position.markIV, "markIV")}`],
-    ["Bid / Ask", `${formatPrice(position.bid)} / ${formatPrice(position.ask)}`],
-    ["Bid IV / Ask IV", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")}`],
-    ["IV spread", formatCompact(position.ivSpread, "ivSpread")],
-    ["Source / As-of", `${position.source ?? "MISSING"} / ${position.quoteTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`],
-    ["OI / Volume", `${formatCompact(position.openInterest ?? null)} / ${formatCompact(position.volume ?? null)}`],
-  );
-  if (preset === "pnl" || preset === "all") rows.push(
-    ["Qty / Multiplier", `${formatCompact(position.netQty)} / ${formatCompact(position.contractMultiplier)}`],
-    ["MV / Entry", `$${formatCompact(position.MV)} / $${formatCompact(position.entryCost)}`],
-    ["UPL", `$${formatCompact(position.UPL)}`],
-  );
+function TooltipPosition({ position, metric, preset, content }: { position: EnrichedRiskPosition; metric: HeatmapMetric; preset: HoverDataPreset; content: Props["hoverContent"] }) {
+  const rows: Array<[string, string]> = [];
+  if (content.selectedMetric) rows.push(["Selected metric", formatCompact(metricValue(position, metric), metric)]);
+  if (preset === "risk" || preset === "all") {
+    if (content.unitDelta) rows.push(["Unit Delta", formatCompact(position.unitDelta)]);
+    if (content.totalDelta) rows.push(["Total Delta XAU", `${formatCompact(position.totalDeltaXAU)} oz`]);
+    if (content.unitGamma) rows.push(["Unit Gamma", formatCompact(position.unitGamma)]);
+    if (content.totalGamma) rows.push(["Total Gamma XAU", formatCompact(position.totalGammaXAU)]);
+    if (content.unitTheta) rows.push(["Unit Theta", formatCompact(position.unitTheta)]);
+    if (content.totalTheta) rows.push(["Total Theta USD/day", `$${formatCompact(position.totalThetaUSD)}`]);
+    if (content.unitVega) rows.push(["Unit Vega", formatCompact(position.unitVega)]);
+    if (content.totalVega) rows.push(["Total Vega USD/vol", `$${formatCompact(position.totalVegaUSD)}`]);
+    if (content.dteRoll) rows.push(["DTE / Roll", `${position.dte}d / ${position.rollPriority.total.toFixed(0)}`]);
+  }
+  if (preset === "market" || preset === "all") {
+    if (content.qtyNotional) rows.push(["Qty / Notional", `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`]);
+    if (content.markIv) rows.push(["Mark / IV", `${formatPrice(position.markPrice)} / ${formatCompact(position.markIV, "markIV")}`]);
+    if (content.bidAsk) rows.push(["Bid / Ask", `${formatPrice(position.bid)} / ${formatPrice(position.ask)}`]);
+    if (content.bidAskIv) rows.push(["Bid IV / Ask IV", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")}`]);
+    if (content.ivSpread) rows.push(["IV spread", formatCompact(position.ivSpread, "ivSpread")]);
+    if (content.sourceQuote) rows.push(["Source / Quote As-of", `${position.source ?? "MISSING"} / ${position.quoteTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`]);
+    if (content.openInterestVolume) rows.push(["OI / Volume", `${formatCompact(position.openInterest ?? null)} / ${formatCompact(position.volume ?? null)}`]);
+  }
+  if (preset === "pnl" || preset === "all") {
+    if (content.qtyNotional) rows.push(["Qty / Multiplier", `${formatCompact(position.netQty)} / ${formatCompact(position.contractMultiplier)}`]);
+    if (content.mvEntry) rows.push(["MV / Entry", `$${formatCompact(position.MV)} / $${formatCompact(position.entryCost)}`]);
+    if (content.upl) rows.push(["UPL", `$${formatCompact(position.UPL)}`]);
+  }
   return <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[10px]">{rows.map(([label, value]) => <div key={label} className="contents"><span className="text-muted-foreground">{label}</span><span className="text-right font-mono">{value}</span></div>)}</div>;
 }
 
@@ -119,7 +123,7 @@ function ExpiryTooltip({ expiry, positions, preset, children }: { expiry: string
   return <Tooltip open={open} onOpenChange={setOpen} delayDuration={100}><TooltipTrigger asChild>{cloneElement(children, { onClick: () => setOpen(value => !value) })}</TooltipTrigger><TooltipContent side="bottom" sideOffset={4} collisionPadding={10} className="z-[110] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">EXPIRY {expiry}</strong><span className="text-[9px] text-muted-foreground">{preset.toUpperCase()} SUMMARY</span></div><div className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[10px]">{rows.map(([label, value]) => <div key={label} className="contents"><span className="text-muted-foreground">{label}</span><span className="text-right font-mono">{value}</span></div>)}</div></TooltipContent></Tooltip>;
 }
 
-export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanceCutoff, transpose, reverseStrikes, cellSize, fitAll, spot, callPut, highlightCellKey, labelMode, hoverPreset, sequentialMagnitude, heldCellContent, onSelectPosition }: Props) {
+export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanceCutoff, transpose, reverseStrikes, cellSize, fitAll, spot, callPut, highlightCellKey, labelMode, hoverPreset, sequentialMagnitude, heldCellContent, hoverContent, onSelectPosition }: Props) {
   const [centerSpot, setCenterSpot] = useState(false);
   const [hoveredCellKey, setHoveredCellKey] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -218,7 +222,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
               const spotLine = range.nearestStrike === strike;
               return <Tooltip key={key} delayDuration={80} open={hoveredCellKey === key} onOpenChange={open => setHoveredCellKey(open ? key : null)}><TooltipTrigger asChild><button
                 type="button" data-cell-key={key} data-held={cell?.held ? "true" : "false"} data-xaut-held={xautHeld ? "true" : "false"} data-spot-synthetic={isSyntheticSpot ? "true" : undefined}
-                className={`relative overflow-hidden border-b border-r px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${zoneClass[zoneFor(strike, spot, callPut)]} ${cell ? statusBorder[status] : "border-border/[0.07] opacity-30"} ${cell?.listed && !cell.held ? "border-cyan-300/45" : ""} ${cell?.held ? "z-[3] border border-amber-200" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""} ${isSyntheticSpot ? "bg-amber-400/15" : ""}`}
+                className={`relative overflow-hidden border border-solid px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${zoneClass[zoneFor(strike, spot, callPut)]} ${cell ? "border-cyan-300/45" : "border-border/[0.07] opacity-30"} ${cell?.held ? "z-[3] border-amber-200" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""} ${isSyntheticSpot ? "bg-amber-400/15" : ""}`}
                 style={{
                   height: rowHeight,
                   containerType: "size",
@@ -231,7 +235,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
                 onBlur={() => setHoveredCellKey(current => current === key ? null : current)}
                 aria-label={cell ? `${key} ${formatCompact(cell.value, metric)} ${cell.held ? "held" : "listed no position"} ${status}` : `${key} unavailable not listed`}
               >{xautHeld && <span data-xaut-held-border="true" aria-hidden="true" className="pointer-events-none absolute inset-0 z-[1] border-solid border-amber-300" style={{ borderWidth: "clamp(1px, min(7cqi, 22cqh), 3px)" }} />}{showLabel && <span title={formatCompact(cell!.value, metric)} className="relative z-[2] block max-w-full truncate pl-px font-semibold leading-none text-white drop-shadow-sm" style={{ paddingRight: heldMarkerVisible ? "38%" : "1px", fontSize: "clamp(4px, min(28cqi, 65cqh), 11px)" }}>{cellMetricLabel(cell!.value, metric)}</span>}{heldMarkerVisible && <span data-held-marker="true" aria-hidden="true" title="持仓合约识别码" className="pointer-events-none absolute right-[3%] top-1/2 z-[2] flex -translate-y-1/2 gap-px font-mono font-black leading-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]" style={{ fontSize: "clamp(4px, min(15cqi, 50cqh), 8px)" }}>{heldCellContent.underlying && heldMarker && <span className="text-amber-100">{heldMarker}</span>}{heldCellContent.callPut && heldCallPutMarker && <span className="text-sky-100">{heldCallPutMarker}</span>}{heldCellContent.dataStatus && heldStatusMarker && <span className={heldStatusColor(status)}>{heldStatusMarker}</span>}</span>}{cell && cell.positions.length > 1 && labelMode !== "none" && <span className="absolute bottom-0 left-0 z-[2] text-[5px] leading-none text-white/60">{cell.positions.length}</span>}{isSyntheticSpot && <span className="relative z-[2] text-[7px] text-amber-200">SPOT</span>}</button></TooltipTrigger>
-                {cell && <TooltipContent side="right" sideOffset={6} collisionPadding={12} className="z-[100] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 rounded-sm bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">Cell {METRIC_LABELS[metric]} </span><strong className="float-right font-mono text-primary">{cell.value === null && HELD_ONLY_HEATMAP_METRICS.has(metric) ? "NO POSITION · NOT COLORED" : formatCompact(cell.value, metric)}</strong></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} /></div>)}</div><p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、Greeks、数据质量与 Roll 原因</p></TooltipContent>}
+                {cell && <TooltipContent side="right" sideOffset={6} collisionPadding={12} className="z-[100] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 rounded-sm bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">Cell {METRIC_LABELS[metric]} </span><strong className="float-right font-mono text-primary">{cell.value === null ? "MISSING · NOT COLORED" : formatCompact(cell.value, metric)}</strong></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} content={hoverContent} /></div>)}</div><p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、数据质量与已选择的详情字段</p></TooltipContent>}
               </Tooltip>;
             });
             return [axis, ...buttons];

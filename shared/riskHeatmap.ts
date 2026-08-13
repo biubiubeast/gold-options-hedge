@@ -266,6 +266,10 @@ export function aggregateHeatmapCellMetric(positions: EnrichedRiskPosition[], me
   const eligible = HELD_ONLY_HEATMAP_METRICS.has(metric)
     ? positions.filter(position => position.positionKind !== "listed")
     : positions;
+  if (eligible.length === 0) return null;
+  // Never grade a partially known cell. If any contract needed by the selected
+  // metric is missing, the entire cell remains visibly listed but uncoloured.
+  if (eligible.some(position => metricValue(position, metric) === null)) return null;
   return aggregateMetric(eligible, metric);
 }
 

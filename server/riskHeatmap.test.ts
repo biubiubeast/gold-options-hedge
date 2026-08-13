@@ -118,4 +118,12 @@ describe("institutional risk heatmap acceptance", () => {
     expect(scale.clipLow).toBe(4);
     expect(scale.clipHigh).toBe(7);
   });
+
+  it("leaves a cell ungraded when any selected-metric input is missing", () => {
+    const source = enrichRiskPositions(generateMockPositions(2, 47, asOf), spots, asOf);
+    const valid = { ...source[0], unitDelta: 0.42 };
+    const missing = { ...source[1], unitDelta: null };
+    expect(aggregateHeatmapCellMetric([valid, missing], "unitDelta")).toBeNull();
+    expect(aggregateHeatmapCellMetric([valid], "unitDelta")).toBe(0.42);
+  });
 });

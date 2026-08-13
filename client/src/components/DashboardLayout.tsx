@@ -25,7 +25,7 @@ import { AutoMarketRefresh } from "./AutoMarketRefresh";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: ListPlus, label: "仓位管理", path: "/positions" },
-  { icon: Grid3X3, label: "矩阵视图", path: "/matrix" },
+  { icon: Grid3X3, label: "风险热力图", path: "/matrix" },
   { icon: Calculator, label: "公式管理", path: "/formulas" },
   { icon: Database, label: "数据来源", path: "/data-sources" },
   { icon: Settings, label: "设置", path: "/settings" },

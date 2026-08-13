@@ -15,21 +15,29 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
+import { AdminPageGate } from "./components/AdminPageGate";
+
+const ProtectedDashboard = () => <AdminPageGate><Dashboard /></AdminPageGate>;
+const ProtectedFormulas = () => <AdminPageGate><Formulas /></AdminPageGate>;
+const ProtectedDataSources = () => <AdminPageGate><DataSources /></AdminPageGate>;
+const ProtectedSettings = () => <AdminPageGate><Settings /></AdminPageGate>;
+const ProtectedOptionDetail = () => <AdminPageGate><OptionDetail /></AdminPageGate>;
+const ProtectedNotFound = () => <AdminPageGate><NotFound /></AdminPageGate>;
 
 function Router() {
   return (
     <DashboardLayout>
       <Switch>
-        <Route path="/" component={Dashboard} />
+        <Route path="/" component={ProtectedDashboard} />
         <Route path="/positions" component={Positions} />
         <Route path="/matrix" component={Matrix} />
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/formulas" component={Formulas} />
-        <Route path="/data-sources" component={DataSources} />
-        <Route path="/settings" component={Settings} />
-        <Route path="/option/:id" component={OptionDetail} />
-        <Route path="/404" component={NotFound} />
-        <Route component={NotFound} />
+        <Route path="/dashboard" component={ProtectedDashboard} />
+        <Route path="/formulas" component={ProtectedFormulas} />
+        <Route path="/data-sources" component={ProtectedDataSources} />
+        <Route path="/settings" component={ProtectedSettings} />
+        <Route path="/option/:id" component={ProtectedOptionDetail} />
+        <Route path="/404" component={ProtectedNotFound} />
+        <Route component={ProtectedNotFound} />
       </Switch>
     </DashboardLayout>
   );

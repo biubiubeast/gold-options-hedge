@@ -4,24 +4,49 @@ import {
 } from "@/lib/portfolio";
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY = "gold-options-portfolio-settings-v3";
-const LEGACY_STORAGE_KEY = "gold-options-portfolio-settings-v2";
+const STORAGE_KEY = "gold-options-portfolio-settings-v4";
+const LEGACY_STORAGE_KEYS = ["gold-options-portfolio-settings-v3", "gold-options-portfolio-settings-v2"];
 const SETTINGS_EVENT = "gold-options-portfolio-settings-change";
 
 function loadSettings(): PortfolioSettings {
   try {
     const current = localStorage.getItem(STORAGE_KEY);
-    const saved = JSON.parse(current || localStorage.getItem(LEGACY_STORAGE_KEY) || "{}") as Partial<PortfolioSettings>;
+    const legacy = LEGACY_STORAGE_KEYS.map(key => localStorage.getItem(key)).find(Boolean);
+    const saved = JSON.parse(current || legacy || "{}") as Partial<PortfolioSettings>;
     const migrated = {
       ...DEFAULT_PORTFOLIO_SETTINGS,
       ...saved,
       heatmapVisibleFilters: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleFilters,
-        ...saved.heatmapVisibleFilters,
+        ...(current ? saved.heatmapVisibleFilters : {}),
+      },
+      heatmapFilterOptions: {
+        dataset: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.dataset, ...saved.heatmapFilterOptions?.dataset },
+        underlying: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.underlying, ...saved.heatmapFilterOptions?.underlying },
+        callPut: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.callPut, ...saved.heatmapFilterOptions?.callPut },
+        expiryBucket: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.expiryBucket, ...saved.heatmapFilterOptions?.expiryBucket },
+        status: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.status, ...saved.heatmapFilterOptions?.status },
+        metric: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.metric, ...saved.heatmapFilterOptions?.metric },
+        scale: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.scale, ...saved.heatmapFilterOptions?.scale },
+        spot: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.spot, ...saved.heatmapFilterOptions?.spot },
+        label: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.label, ...saved.heatmapFilterOptions?.label },
+        hover: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.hover, ...saved.heatmapFilterOptions?.hover },
+      },
+      heatmapHiddenDynamicOptions: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.heatmapHiddenDynamicOptions,
+        ...saved.heatmapHiddenDynamicOptions,
       },
       heatmapHeldCellContent: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapHeldCellContent,
         ...saved.heatmapHeldCellContent,
+      },
+      heatmapHoverContent: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.heatmapHoverContent,
+        ...saved.heatmapHoverContent,
+      },
+      heatmapDetailContent: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.heatmapDetailContent,
+        ...saved.heatmapDetailContent,
       },
     };
     if (!current && saved.gldSpotScaleOverride === null) migrated.gldSpotScaleOverride = DEFAULT_PORTFOLIO_SETTINGS.gldSpotScaleOverride;
@@ -52,7 +77,7 @@ export function usePortfolioSettings() {
   }, []);
   const resetSettings = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    LEGACY_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
     setSettingsState(DEFAULT_PORTFOLIO_SETTINGS);
     queueMicrotask(() => window.dispatchEvent(new Event(SETTINGS_EVENT)));
   }, []);

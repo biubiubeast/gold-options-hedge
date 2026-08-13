@@ -7,6 +7,7 @@ import { getPositionMarketData, type MarketSnapshot, type PortfolioPosition } fr
 import { buildChainRiskPositions, buildGldChainRiskPositions, buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import type { PortfolioSettings } from "@/lib/portfolio";
 import {
   CENTERED_METRICS,
   HELD_ONLY_HEATMAP_METRICS,
@@ -38,7 +39,6 @@ type MetricRange = { min: number; max: number };
 const RANGE_STORAGE_KEY = "heatmap-metric-custom-ranges-v1";
 const percentageMetrics = new Set<HeatmapMetric>(["markIV", "bidIV", "askIV", "ivSpread", "distanceToStrike"]);
 
-const metricOptions = Object.entries(METRIC_LABELS) as Array<[HeatmapMetric, string]>;
 const statusSeverity: Record<DataStatus, number> = { LIVE: 0, WARN: 1, STALE: 2, MISSING: 3, FAIL: 4 };
 
 function initialDataset(): DatasetMode {
@@ -129,23 +129,26 @@ function expiryBucketMatches(position: EnrichedRiskPosition, bucket: ExpiryBucke
   return position.dte >= 31;
 }
 
-function PositionDetailDialog({ position, onClose }: { position: EnrichedRiskPosition | null; onClose: () => void }) {
+function PositionDetailDialog({ position, content, onClose }: { position: EnrichedRiskPosition | null; content: PortfolioSettings["heatmapDetailContent"]; onClose: () => void }) {
   if (!position) return null;
-  const fields: Array<[string, unknown]> = [
-    ["Instrument", position.instrument], ["Underlying / CallPut", `${position.underlying} / ${position.callPut.toUpperCase()}`],
-    ["Expiry / DTE", `${position.expiry} / ${position.dte}d`], ["Strike", formatPrice(position.strike)],
-    ["Venue / Broker / Account", `${position.venue} / ${position.broker} / ${position.account}`], ["Net Qty", position.netQty],
-    ["Contract Multiplier", position.contractMultiplier], ["XAU per unit", position.underlying === "GLD" ? position.gldOzPerShare : position.underlyingOzPerUnit],
-    ["Mark / Bid / Ask", `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)}`], ["Mark IV", formatCompact(position.markIV, "markIV")],
-    ["Bid IV / Ask IV / Spread", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")} / ${formatCompact(position.ivSpread, "ivSpread")}`],
-    ["Qty / Notional USD", `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`],
-    ["Unit Delta", position.unitDelta], ["Unit Gamma", position.unitGamma], ["Unit Theta", position.unitTheta], ["Unit Vega", position.unitVega],
-    ["Total Delta XAU", position.totalDeltaXAU], ["Total Gamma XAU", position.totalGammaXAU], ["Total Theta USD/day", position.totalThetaUSD], ["Total Vega USD/vol", position.totalVegaUSD],
-    ["Market Value", position.MV], ["Entry Cost", position.entryCost], ["UPL", position.UPL],
-    ["Source", position.source], ["Quote As-of", position.quoteTime], ["Position As-of", position.positionTime], ["Data Status", position.dataStatus],
-    ["Deliverable Source", position.deliverableSource], ["Adjusted Contract", position.contractAdjusted ? "YES" : "NO"],
+  const candidates: Array<[keyof typeof content, string, unknown]> = [
+    ["instrument", "Instrument", position.instrument], ["underlyingCallPut", "Underlying / CallPut", `${position.underlying} / ${position.callPut.toUpperCase()}`],
+    ["expiryDte", "Expiry / DTE", `${position.expiry} / ${position.dte}d`], ["strike", "Strike", formatPrice(position.strike)],
+    ["venueBrokerAccount", "Venue / Broker / Account", `${position.venue} / ${position.broker} / ${position.account}`], ["netQty", "Net Qty", position.netQty],
+    ["contractMultiplier", "Contract Multiplier", position.contractMultiplier], ["xauPerUnit", "XAU per unit", position.underlying === "GLD" ? position.gldOzPerShare : position.underlyingOzPerUnit],
+    ["markBidAsk", "Mark / Bid / Ask", `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)}`], ["markIv", "Mark IV", formatCompact(position.markIV, "markIV")],
+    ["bidAskIv", "Bid IV / Ask IV / Spread", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")} / ${formatCompact(position.ivSpread, "ivSpread")}`],
+    ["qtyNotional", "Qty / Notional USD", `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`],
+    ["unitDelta", "Unit Delta", position.unitDelta], ["totalDelta", "Total Delta XAU", position.totalDeltaXAU],
+    ["unitGamma", "Unit Gamma", position.unitGamma], ["totalGamma", "Total Gamma XAU", position.totalGammaXAU],
+    ["unitTheta", "Unit Theta", position.unitTheta], ["totalTheta", "Total Theta USD/day", position.totalThetaUSD],
+    ["unitVega", "Unit Vega", position.unitVega], ["totalVega", "Total Vega USD/vol", position.totalVegaUSD],
+    ["marketValue", "Market Value", position.MV], ["entryCost", "Entry Cost", position.entryCost], ["upl", "UPL", position.UPL],
+    ["source", "Source", position.source], ["quoteAsOf", "Quote As-of", position.quoteTime], ["dataStatus", "Data Status", position.dataStatus],
+    ["deliverableSource", "Deliverable Source", position.deliverableSource], ["adjustedContract", "Adjusted Contract", position.contractAdjusted ? "YES" : "NO"],
   ];
-  return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>{positionLabel(position)} · 完整仓位详情</DialogTitle><DialogDescription>完整合约、Greeks、估值、数据质量以及可展开解释的 Roll Priority。</DialogDescription></DialogHeader><div className="grid grid-cols-2 gap-px border border-border/60 bg-border/60 md:grid-cols-4">{fields.map(([label, value]) => <div key={label} className="min-w-0 bg-background p-2"><p className="text-[9px] uppercase text-muted-foreground">{label}</p><p className="mt-1 break-words font-mono text-xs">{value === null || value === undefined ? "MISSING" : String(value)}</p></div>)}</div><div className="border border-border/60 p-3"><div className="flex items-center justify-between"><strong className="text-sm">Roll Priority</strong><span className="font-mono text-lg">{position.rollPriority.total.toFixed(0)} / 100</span></div>{position.rollPriority.factors.map(factor => <div key={factor.key} className="mt-2 grid grid-cols-[90px_1fr_auto] gap-2 text-xs"><span>{factor.label}</span><span className="text-muted-foreground">{factor.reason}</span><span className="font-mono">{factor.contribution.toFixed(1)} / {(factor.weight * 100).toFixed(0)}</span></div>)}</div></DialogContent></Dialog>;
+  const fields = candidates.filter(([key]) => content[key]);
+  return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>{positionLabel(position)} · 完整仓位详情</DialogTitle><DialogDescription>按“设置”页面选择的合约、风险、估值与数据质量字段展示。</DialogDescription></DialogHeader><div className="grid grid-cols-2 gap-px border border-border/60 bg-border/60 md:grid-cols-4">{fields.map(([, label, value]) => <div key={label} className="min-w-0 bg-background p-2"><p className="text-[9px] uppercase text-muted-foreground">{label}</p><p className="mt-1 break-words font-mono text-xs">{value === null || value === undefined ? "MISSING" : String(value)}</p></div>)}</div>{content.rollPriority && <div className="border border-border/60 p-3"><div className="flex items-center justify-between"><strong className="text-sm">Roll Priority</strong><span className="font-mono text-lg">{position.rollPriority.total.toFixed(0)} / 100</span></div>{position.rollPriority.factors.map(factor => <div key={factor.key} className="mt-2 grid grid-cols-[90px_1fr_auto] gap-2 text-xs"><span>{factor.label}</span><span className="text-muted-foreground">{factor.reason}</span><span className="font-mono">{factor.contribution.toFixed(1)} / {(factor.weight * 100).toFixed(0)}</span></div>)}</div>}</DialogContent></Dialog>;
 }
 
 export default function Matrix() {
@@ -164,7 +167,7 @@ export default function Matrix() {
   const [callPut, setCallPut] = useState<"combined" | CallPut>("call");
   const [expiryBucket, setExpiryBucket] = useState<ExpiryBucket>("all");
   const [status, setStatus] = useState<"all" | DataStatus>("all");
-  const [metric, setMetric] = useState<HeatmapMetric>("unitDelta");
+  const [metric, setMetric] = useState<HeatmapMetric>("notionalSize");
   const [scaleMode, setScaleMode] = useState<ColorScaleMode>("quantile");
   const [transpose, setTranspose] = useState(false);
   const [reverseStrikes, setReverseStrikes] = useState(false);
@@ -251,16 +254,36 @@ export default function Matrix() {
   const enriched = useMemo(() => enrichRiskPositions(riskPositions, displaySpots, asOf), [asOf, displaySpots, riskPositions]);
 
   const filterOptions = useMemo(() => ({
-    venue: [...new Set(enriched.map(position => position.venue))].sort(),
-    broker: [...new Set(enriched.map(position => position.broker))].sort(),
-    account: [...new Set(enriched.map(position => position.account))].sort(),
-  }), [enriched]);
+    venue: [...new Set(enriched.map(position => position.venue))].sort().filter(value => !settings.heatmapHiddenDynamicOptions.venue.includes(value)),
+    broker: [...new Set(enriched.map(position => position.broker))].sort().filter(value => !settings.heatmapHiddenDynamicOptions.broker.includes(value)),
+    account: [...new Set(enriched.map(position => position.account))].sort().filter(value => !settings.heatmapHiddenDynamicOptions.account.includes(value)),
+  }), [enriched, settings.heatmapHiddenDynamicOptions]);
+  const enabledOptions = settings.heatmapFilterOptions;
+  const metricOptions = (Object.entries(METRIC_LABELS) as Array<[HeatmapMetric, string]>).filter(([key]) => enabledOptions.metric[key]);
   useEffect(() => {
     if (underlying === "GLD") setSpotUnderlying("GLD");
     else if (underlying === "XAUT") setSpotUnderlying("XAUT");
   }, [underlying]);
   useEffect(() => {
-    if (!visibleFilters.dataset && dataset !== "chain") setDataset("chain");
+    const fallback = <T extends string>(current: T, enabled: Record<string, boolean>, setValue: (value: T) => void) => {
+      if (!enabled[current]) setValue(Object.keys(enabled).find(key => enabled[key]) as T);
+    };
+    if (visibleFilters.dataset) fallback(dataset, enabledOptions.dataset, setDataset);
+    if (visibleFilters.underlying) fallback(underlying, enabledOptions.underlying, setUnderlying);
+    if (visibleFilters.callPut) fallback(callPut, enabledOptions.callPut, setCallPut);
+    if (visibleFilters.expiryBucket) fallback(expiryBucket, enabledOptions.expiryBucket, setExpiryBucket);
+    if (visibleFilters.status) fallback(status, enabledOptions.status, setStatus);
+    if (visibleFilters.metric) fallback(metric, enabledOptions.metric, setMetric);
+    if (visibleFilters.scale) fallback(scaleMode, enabledOptions.scale, setScaleMode);
+    if (visibleFilters.spot) fallback(spotUnderlying, enabledOptions.spot, setSpotUnderlying);
+    if (visibleFilters.label) fallback(labelMode, enabledOptions.label, setLabelMode);
+    if (visibleFilters.hover) fallback(hoverPreset, enabledOptions.hover, setHoverPreset);
+    if (venue !== "all" && !filterOptions.venue.includes(venue)) setVenue("all");
+    if (broker !== "all" && !filterOptions.broker.includes(broker)) setBroker("all");
+    if (account !== "all" && !filterOptions.account.includes(account)) setAccount("all");
+  }, [account, broker, callPut, dataset, enabledOptions, expiryBucket, filterOptions, hoverPreset, labelMode, metric, scaleMode, spotUnderlying, status, underlying, venue, visibleFilters]);
+  useEffect(() => {
+    if (!visibleFilters.dataset && dataset !== "chain" && !new URLSearchParams(window.location.search).has("mock")) setDataset("chain");
     if (!visibleFilters.underlying && underlying !== "all") setUnderlying("all");
     if (!visibleFilters.venue && venue !== "all") setVenue("all");
     if (!visibleFilters.broker && broker !== "all") setBroker("all");
@@ -419,7 +442,7 @@ export default function Matrix() {
     <div className={`matrix-fullscreen-shell flex h-[calc(100vh-5.5rem)] min-h-[560px] flex-col gap-1 overflow-hidden ${isFullscreen ? "matrix-pseudo-fullscreen" : ""}`} data-testid="institutional-risk-heatmap" data-fullscreen={isFullscreen ? "true" : "false"}>
       <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-1">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">POSITION RISK HEATMAP</h1>
+          <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">风险热力图</h1>
           <span className="font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held · {filtered.length} instruments · {cells.length} cells{gldChain && underlying !== "XAUT" ? ` · ${gldChain.contractCount} GLD` : ""}{xautChain && underlying !== "GLD" ? ` · ${xautChain.contractCount} XAUT` : ""}</span>
         </div>
         <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
@@ -440,34 +463,36 @@ export default function Matrix() {
           { value: "chain", label: "FULL OPTION CHAIN" },
           { value: "mock100", label: "MOCK 100" },
           { value: "mock200", label: "MOCK 200" },
-        ]} />}
-        {visibleFilters.underlying && <NativeSelect className="min-w-[90px] flex-1" label="U" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "all", label: "ALL" }]} />}
+        ].filter(option => enabledOptions.dataset[option.value as DatasetMode])} />}
+        {visibleFilters.underlying && <NativeSelect className="min-w-[90px] flex-1" label="UNDERLYING" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.underlying[option.value as keyof typeof enabledOptions.underlying])} />}
         {visibleFilters.venue && <NativeSelect className="min-w-[100px] flex-1" label="VENUE" value={venue} onChange={setVenue} options={[{ value: "all", label: "ALL" }, ...filterOptions.venue.map(value => ({ value, label: value }))]} />}
         {visibleFilters.broker && <NativeSelect className="min-w-[100px] flex-1" label="BROKER" value={broker} onChange={setBroker} options={[{ value: "all", label: "ALL" }, ...filterOptions.broker.map(value => ({ value, label: value }))]} />}
         {visibleFilters.account && <NativeSelect className="min-w-[110px] flex-1" label="ACCOUNT" value={account} onChange={setAccount} options={[{ value: "all", label: "ALL" }, ...filterOptions.account.map(value => ({ value, label: value }))]} />}
-        {visibleFilters.callPut && <NativeSelect className="min-w-[100px] flex-1" label="C/P" value={callPut} onChange={value => setCallPut(value as typeof callPut)} options={[{ value: "combined", label: "COMBINED" }, { value: "call", label: "CALL" }, { value: "put", label: "PUT" }]} />}
-        {visibleFilters.expiryBucket && <NativeSelect className="min-w-[90px] flex-1" label="DTE" value={expiryBucket} onChange={value => setExpiryBucket(value as ExpiryBucket)} options={[{ value: "all", label: "ALL" }, { value: "expired", label: "EXP" }, { value: "0-2", label: "0–2" }, { value: "3-7", label: "3–7" }, { value: "8-30", label: "8–30" }, { value: "31+", label: "31+" }]} />}
-        {visibleFilters.status && <NativeSelect className="min-w-[100px] flex-1" label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))]} />}
+        {visibleFilters.callPut && <NativeSelect className="min-w-[100px] flex-1" label="C/P" value={callPut} onChange={value => setCallPut(value as typeof callPut)} options={[{ value: "call", label: "CALL" }, { value: "put", label: "PUT" }, { value: "combined", label: "COMBINED" }].filter(option => enabledOptions.callPut[option.value as keyof typeof enabledOptions.callPut])} />}
+        {visibleFilters.expiryBucket && <NativeSelect className="min-w-[90px] flex-1" label="DTE" value={expiryBucket} onChange={value => setExpiryBucket(value as ExpiryBucket)} options={[{ value: "all", label: "ALL" }, { value: "expired", label: "EXP" }, { value: "0-2", label: "0–2" }, { value: "3-7", label: "3–7" }, { value: "8-30", label: "8–30" }, { value: "31+", label: "31+" }].filter(option => enabledOptions.expiryBucket[option.value as ExpiryBucket])} />}
+        {visibleFilters.status && <NativeSelect className="min-w-[100px] flex-1" label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))].filter(option => enabledOptions.status[option.value as keyof typeof enabledOptions.status])} />}
+        {visibleFilters.metric && <NativeSelect label="METRIC" value={metric} onChange={value => setMetric(value as HeatmapMetric)} options={metricOptions.map(([value, label]) => ({ value, label }))} />}
+        {visibleFilters.label && <NativeSelect label="LABEL" value={labelMode} onChange={value => setLabelMode(value as CellLabelMode)} options={[{ value: "none", label: "NONE" }, { value: "held", label: "HELD METRIC" }, { value: "top", label: "TOP 15%" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.label[option.value as keyof typeof enabledOptions.label])} />}
+        {visibleFilters.hover && <NativeSelect label="HOVER" value={hoverPreset} onChange={value => setHoverPreset(value as HoverDataPreset)} options={[{ value: "risk", label: "RISK" }, { value: "market", label: "MARKET" }, { value: "pnl", label: "PNL" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.hover[option.value as keyof typeof enabledOptions.hover])} />}
       </div>}
 
-      <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1">
-        <NativeSelect label="METRIC" value={metric} onChange={value => setMetric(value as HeatmapMetric)} options={metricOptions.map(([value, label]) => ({ value, label }))} />
-        <NativeSelect label="SCALE" value={scaleMode} onChange={value => setScaleMode(value as ColorScaleMode)} options={[{ value: "quantile", label: "QUANTILE" }, { value: "log", label: "LOG" }, { value: "symmetric", label: "ZERO-CENTER" }]} />
-        <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "XAU", label: "XAU" }]} />
-        <NativeSelect label="LABEL" value={labelMode} onChange={value => setLabelMode(value as CellLabelMode)} options={[{ value: "none", label: "NONE" }, { value: "held", label: "HELD METRIC" }, { value: "top", label: "TOP 15%" }, { value: "all", label: "ALL" }]} />
-        <NativeSelect label="HOVER" value={hoverPreset} onChange={value => setHoverPreset(value as HoverDataPreset)} options={[{ value: "risk", label: "RISK" }, { value: "market", label: "MARKET" }, { value: "pnl", label: "PNL" }, { value: "all", label: "ALL" }]} />
+      {Object.entries(visibleFilters).some(([key, visible]) => visible && !["dataset", "underlying", "venue", "broker", "account", "callPut", "expiryBucket", "status", "metric", "label", "hover"].includes(key)) && <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1">
+        {visibleFilters.scale && <NativeSelect label="SCALE" value={scaleMode} onChange={value => setScaleMode(value as ColorScaleMode)} options={[{ value: "quantile", label: "QUANTILE" }, { value: "log", label: "LOG" }, { value: "symmetric", label: "ZERO-CENTER" }].filter(option => enabledOptions.scale[option.value as keyof typeof enabledOptions.scale])} />}
+        {visibleFilters.spot && <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "XAU", label: "XAU" }].filter(option => enabledOptions.spot[option.value as keyof typeof enabledOptions.spot])} />}
+        {visibleFilters.range && <>
         <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MIN{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale minimum" inputMode="decimal" value={rangeMinDraft} onChange={event => setRangeMinDraft(event.target.value)} placeholder={heldOnlyAutoRange ? formatCompact(heldOnlyAutoRange.min, metric) : "AUTO"} className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
         <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MAX{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale maximum" inputMode="decimal" value={rangeMaxDraft} onChange={event => setRangeMaxDraft(event.target.value)} placeholder={heldOnlyAutoRange ? formatCompact(heldOnlyAutoRange.max, metric) : "AUTO"} className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
         <button type="button" onClick={applyCustomRange} className="h-6 border border-border px-1.5 text-[8px] text-muted-foreground hover:text-foreground">Apply Range</button>
         {activeCustomRange && <button type="button" onClick={resetCustomRange} className="h-6 border border-emerald-400/60 px-1.5 text-[8px] text-emerald-300">Custom ✓ / Reset</button>}
         {rangeError && <span role="alert" className="text-[8px] text-red-300">{rangeError}</span>}
-        <button type="button" onClick={() => setTranspose(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${transpose ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowLeftRight className="h-3 w-3" />Transpose</button>
-        <button type="button" onClick={() => setReverseStrikes(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${reverseStrikes ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowUpDown className="h-3 w-3" />Strike {reverseStrikes ? "↓" : "↑"}</button>
-        <div className="flex h-6 items-center border border-border text-[9px] text-muted-foreground"><button aria-label="Smaller cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.max(3, value - 1)); }}><Minus className="h-3 w-3" /></button><span className="w-8 text-center font-mono">{cellSize}px</span><button aria-label="Larger cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.min(28, value + 1)); }}><Plus className="h-3 w-3" /></button></div>
-        <button type="button" onClick={() => setFitAll(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${fitAll ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ScanLine className="h-3 w-3" />Fit All</button>
-        <button type="button" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit heatmap fullscreen" : "Enter heatmap fullscreen"} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${isFullscreen ? "border-amber-300 bg-amber-300/15 text-amber-200" : "border-border text-muted-foreground"}`}>{isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</button>
+        </>}
+        {visibleFilters.transpose && <button type="button" onClick={() => setTranspose(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${transpose ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowLeftRight className="h-3 w-3" />Transpose</button>}
+        {visibleFilters.reverseStrikes && <button type="button" onClick={() => setReverseStrikes(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${reverseStrikes ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowUpDown className="h-3 w-3" />Strike {reverseStrikes ? "↓" : "↑"}</button>}
+        {visibleFilters.cellSize && <div className="flex h-6 items-center border border-border text-[9px] text-muted-foreground"><button aria-label="Smaller cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.max(3, value - 1)); }}><Minus className="h-3 w-3" /></button><span className="w-8 text-center font-mono">{cellSize}px</span><button aria-label="Larger cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.min(28, value + 1)); }}><Plus className="h-3 w-3" /></button></div>}
+        {visibleFilters.fitAll && <button type="button" onClick={() => setFitAll(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${fitAll ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ScanLine className="h-3 w-3" />Fit All</button>}
+        {visibleFilters.fullscreen && <button type="button" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit heatmap fullscreen" : "Enter heatmap fullscreen"} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${isFullscreen ? "border-amber-300 bg-amber-300/15 text-amber-200" : "border-border text-muted-foreground"}`}>{isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</button>}
         <span className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />{spotUnderlying} SPOT {formatPrice(spot)} · nearest {formatPrice(spotRangeState(strikes, spot).nearestStrike)}</span>
-      </div>
+      </div>}
 
       {dataset === "chain" && underlying !== "XAUT" && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">GLD FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · updated {new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed (actual lag varies) · cyan listed / gold held</div>}
       {dataset === "chain" && underlying !== "GLD" && xautChain && <div className="shrink-0 border border-violet-400/30 bg-violet-500/5 px-2 py-0.5 font-mono text-[8px] text-violet-100">XAUT FULL CHAIN · {xautChain.contractCount} tradable contracts · {xautChain.expiryCount} expiries · {xautChain.strikeCount} strikes · {xautChain.source} · updated {new Date(xautChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(xautChain.delaySeconds)}s</div>}
@@ -496,13 +521,14 @@ export default function Matrix() {
           hoverPreset={hoverPreset}
           sequentialMagnitude={sequentialMagnitude}
           heldCellContent={settings.heatmapHeldCellContent}
+          hoverContent={settings.heatmapHoverContent}
           onSelectPosition={setSelectedPosition}
         />
       )}
 
       <ExpiryPanel positions={heldFiltered} gldSpot={displaySpots.GLD} />
       <ScenarioStrip positions={heldFiltered} spots={displaySpots} />
-      <PositionDetailDialog position={selectedPosition} onClose={() => setSelectedPosition(null)} />
+      <PositionDetailDialog position={selectedPosition} content={settings.heatmapDetailContent} onClose={() => setSelectedPosition(null)} />
     </div>
   );
 }

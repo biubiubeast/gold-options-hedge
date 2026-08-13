@@ -2,6 +2,24 @@ import { blackScholes, timeToExpiry } from "@shared/blackScholes";
 import { evaluateNamedFormula } from "@shared/formulaEngine";
 import { DEFAULT_FORMULAS, type FormulaLike } from "@shared/marketTypes";
 import type { DataStatus } from "@shared/riskHeatmap";
+import type { HeatmapMetric } from "@shared/riskHeatmap";
+
+export type HeatmapControlKey =
+  | "dataset" | "underlying" | "venue" | "broker" | "account" | "callPut" | "expiryBucket" | "status"
+  | "metric" | "scale" | "spot" | "label" | "hover" | "range" | "transpose" | "reverseStrikes"
+  | "cellSize" | "fitAll" | "fullscreen";
+
+export type HeatmapHoverField =
+  | "selectedMetric" | "unitDelta" | "totalDelta" | "unitGamma" | "totalGamma" | "unitTheta" | "totalTheta"
+  | "unitVega" | "totalVega" | "dteRoll" | "qtyNotional" | "markIv" | "bidAsk" | "bidAskIv"
+  | "ivSpread" | "sourceQuote" | "openInterestVolume" | "mvEntry" | "upl";
+
+export type HeatmapDetailField =
+  | "instrument" | "underlyingCallPut" | "expiryDte" | "strike" | "venueBrokerAccount" | "netQty"
+  | "contractMultiplier" | "xauPerUnit" | "markBidAsk" | "markIv" | "bidAskIv" | "qtyNotional"
+  | "unitDelta" | "totalDelta" | "unitGamma" | "totalGamma" | "unitTheta" | "totalTheta"
+  | "unitVega" | "totalVega" | "marketValue" | "entryCost" | "upl" | "source" | "quoteAsOf"
+  | "dataStatus" | "deliverableSource" | "adjustedContract" | "rollPriority";
 
 export type PortfolioPosition = {
   id: number;
@@ -66,12 +84,42 @@ export type PortfolioSettings = {
     callPut: boolean;
     expiryBucket: boolean;
     status: boolean;
+    metric: boolean;
+    scale: boolean;
+    spot: boolean;
+    label: boolean;
+    hover: boolean;
+    range: boolean;
+    transpose: boolean;
+    reverseStrikes: boolean;
+    cellSize: boolean;
+    fitAll: boolean;
+    fullscreen: boolean;
+  };
+  heatmapFilterOptions: {
+    dataset: Record<"chain" | "live" | "mock100" | "mock200", boolean>;
+    underlying: Record<"GLD" | "XAUT" | "all", boolean>;
+    callPut: Record<"call" | "put" | "combined", boolean>;
+    expiryBucket: Record<"all" | "expired" | "0-2" | "3-7" | "8-30" | "31+", boolean>;
+    status: Record<DataStatus | "all", boolean>;
+    metric: Record<HeatmapMetric, boolean>;
+    scale: Record<"quantile" | "log" | "symmetric", boolean>;
+    spot: Record<"GLD" | "XAUT" | "XAU", boolean>;
+    label: Record<"none" | "held" | "top" | "all", boolean>;
+    hover: Record<"risk" | "market" | "pnl" | "all", boolean>;
+  };
+  heatmapHiddenDynamicOptions: {
+    venue: string[];
+    broker: string[];
+    account: string[];
   };
   heatmapHeldCellContent: {
     underlying: boolean;
     callPut: boolean;
     dataStatus: boolean;
   };
+  heatmapHoverContent: Record<HeatmapHoverField, boolean>;
+  heatmapDetailContent: Record<HeatmapDetailField, boolean>;
   xautContractMultiplier: number;
   gldContractMultiplier: number;
   xautSpotScaleOverride: number | null;
@@ -84,19 +132,112 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   marketAutoRefreshEnabled: true,
   marketAutoRefreshMinutes: 60,
   heatmapVisibleFilters: {
-    dataset: true,
+    dataset: false,
     underlying: true,
-    venue: true,
-    broker: true,
-    account: true,
+    venue: false,
+    broker: false,
+    account: false,
     callPut: true,
-    expiryBucket: true,
-    status: true,
+    expiryBucket: false,
+    status: false,
+    metric: true,
+    scale: false,
+    spot: false,
+    label: true,
+    hover: true,
+    range: false,
+    transpose: false,
+    reverseStrikes: false,
+    cellSize: false,
+    fitAll: false,
+    fullscreen: false,
+  },
+  heatmapFilterOptions: {
+    dataset: { chain: true, live: true, mock100: true, mock200: true },
+    underlying: { GLD: true, XAUT: true, all: true },
+    callPut: { call: true, put: true, combined: false },
+    expiryBucket: { all: true, expired: true, "0-2": true, "3-7": true, "8-30": true, "31+": true },
+    status: { all: true, LIVE: true, STALE: true, WARN: true, MISSING: true, FAIL: true },
+    metric: {
+      unitDelta: true,
+      totalDelta: true,
+      gamma: false,
+      theta: false,
+      vega: false,
+      markIV: true,
+      bidIV: true,
+      askIV: true,
+      ivSpread: true,
+      qty: true,
+      notionalSize: true,
+      MV: false,
+      UPL: false,
+      DTE: false,
+      distanceToStrike: false,
+      rollPriority: false,
+    },
+    scale: { quantile: true, log: true, symmetric: true },
+    spot: { GLD: true, XAUT: true, XAU: true },
+    label: { none: true, held: true, top: true, all: true },
+    hover: { risk: true, market: true, pnl: true, all: true },
+  },
+  heatmapHiddenDynamicOptions: { venue: [], broker: [], account: [] },
+  heatmapHoverContent: {
+    selectedMetric: true,
+    unitDelta: true,
+    totalDelta: true,
+    unitGamma: false,
+    totalGamma: false,
+    unitTheta: false,
+    totalTheta: false,
+    unitVega: false,
+    totalVega: false,
+    dteRoll: false,
+    qtyNotional: true,
+    markIv: true,
+    bidAsk: true,
+    bidAskIv: true,
+    ivSpread: true,
+    sourceQuote: true,
+    openInterestVolume: true,
+    mvEntry: true,
+    upl: true,
   },
   heatmapHeldCellContent: {
     underlying: true,
     callPut: true,
     dataStatus: true,
+  },
+  heatmapDetailContent: {
+    instrument: true,
+    underlyingCallPut: true,
+    expiryDte: true,
+    strike: true,
+    venueBrokerAccount: true,
+    netQty: true,
+    contractMultiplier: true,
+    xauPerUnit: true,
+    markBidAsk: true,
+    markIv: true,
+    bidAskIv: true,
+    qtyNotional: true,
+    unitDelta: true,
+    totalDelta: true,
+    unitGamma: false,
+    totalGamma: false,
+    unitTheta: false,
+    totalTheta: false,
+    unitVega: false,
+    totalVega: false,
+    marketValue: true,
+    entryCost: true,
+    upl: true,
+    source: true,
+    quoteAsOf: true,
+    dataStatus: true,
+    deliverableSource: true,
+    adjustedContract: true,
+    rollPriority: false,
   },
   xautContractMultiplier: 1,
   gldContractMultiplier: 100,

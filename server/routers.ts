@@ -16,6 +16,18 @@ import { DEFAULT_FORMULAS } from "@shared/marketTypes";
 import { validateFormula } from "@shared/formulaEngine";
 import { createPositionWorkbook, parsePositionWorkbook } from "./positionExcel";
 import { refreshPositionMarketData } from "./positionMarketRefresh";
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+const ADMIN_ACCESS_COOKIE = "gold_admin_pages";
+const adminPagePassword = () => process.env.ADMIN_PAGE_PASSWORD ?? "8888";
+const adminAccessToken = () => createHmac("sha256", process.env.JWT_SECRET || adminPagePassword()).update("gold-options-admin-pages-v1").digest("hex");
+const hasAdminAccess = (cookieHeader: string | undefined) => {
+  const token = cookieHeader?.split(";").map(part => part.trim()).find(part => part.startsWith(`${ADMIN_ACCESS_COOKIE}=`))?.slice(ADMIN_ACCESS_COOKIE.length + 1);
+  if (!token) return false;
+  const expected = Buffer.from(adminAccessToken());
+  const supplied = Buffer.from(decodeURIComponent(token));
+  return expected.length === supplied.length && timingSafeEqual(expected, supplied);
+};
 
 const numericString = z.string().trim().refine(value => {
   const parsed = Number(value);
@@ -116,6 +128,23 @@ const formulaInput = z.object({
 });
 
 export const appRouter = router({
+  adminAccess: router({
+    status: publicProcedure.query(({ ctx }) => ({ unlocked: hasAdminAccess(ctx.req.headers.cookie) })),
+    verify: publicProcedure.input(z.object({ password: z.string().min(1).max(64) })).mutation(({ ctx, input }) => {
+      const expected = Buffer.from(adminPagePassword());
+      const supplied = Buffer.from(input.password);
+      const valid = expected.length === supplied.length && timingSafeEqual(expected, supplied);
+      if (!valid) throw new Error("管理员密码错误");
+      ctx.res.cookie(ADMIN_ACCESS_COOKIE, adminAccessToken(), {
+        httpOnly: true,
+        maxAge: 8 * 60 * 60 * 1000,
+        path: "/",
+        sameSite: "lax",
+        secure: ctx.req.secure || ctx.req.headers["x-forwarded-proto"] === "https",
+      });
+      return { success: true } as const;
+    }),
+  }),
   auth: router({
     me: publicProcedure.query(({ ctx }) => ctx.user),
     logout: publicProcedure.mutation(() => ({ success: true } as const)),

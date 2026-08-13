@@ -5,8 +5,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import { MARKET_REFRESH_EVENT, readLastMarketRefreshAt } from "@/lib/marketRefreshStatus";
+import { trpc } from "@/lib/trpc";
 import { DEFAULT_PORTFOLIO_SETTINGS, type PortfolioSettings } from "@/lib/portfolio";
-import { CheckCircle2, Clock3, Database, Filter, RefreshCw, RotateCcw, Scale, ShieldAlert } from "lucide-react";
+import { METRIC_LABELS, type HeatmapMetric } from "@shared/riskHeatmap";
+import { CheckCircle2, Clock3, Database, Filter, MessageSquareText, RefreshCw, RotateCcw, Scale, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -24,6 +26,17 @@ const heatmapFilterLabels: Array<[keyof PortfolioSettings["heatmapVisibleFilters
   ["callPut", "Call / Put", "Call、Put 或 Combined"],
   ["expiryBucket", "DTE / Expiry Bucket", "按剩余期限区间筛选"],
   ["status", "Data Status", "LIVE、STALE、WARN、MISSING、FAIL"],
+  ["metric", "Metric", "热力图颜色所代表的指标"],
+  ["scale", "Color Scale", "Quantile、Log、Zero-centered"],
+  ["spot", "Spot 标记", "GLD、XAUT 或 XAU Spot"],
+  ["label", "Label", "方格内数值标签模式"],
+  ["hover", "Hover", "Hover 弹窗的数据预设"],
+  ["range", "色标上下限", "MIN、MAX 和自定义范围按钮"],
+  ["transpose", "Transpose", "Expiry 与 Strike 转置"],
+  ["reverseStrikes", "Strike 排序", "升序或降序"],
+  ["cellSize", "方格尺寸", "缩小或放大方格"],
+  ["fitAll", "Fit All", "自动容纳完整热力图"],
+  ["fullscreen", "Fullscreen", "进入或退出全屏"],
 ];
 
 const heldCellContentLabels: Array<[keyof PortfolioSettings["heatmapHeldCellContent"], string, string]> = [
@@ -32,10 +45,58 @@ const heldCellContentLabels: Array<[keyof PortfolioSettings["heatmapHeldCellCont
   ["dataStatus", "Data Status · L/S/W/M/F", "L=LIVE、S=STALE、W=WARN、M=MISSING、F=FAIL"],
 ];
 
+const fixedOptionGroups = [
+  ["dataset", "Data / 数据集", [["chain", "完整期权链"], ["live", "持仓行情"], ["mock100", "Mock 100"], ["mock200", "Mock 200"]]],
+  ["underlying", "Underlying", [["GLD", "GLD"], ["XAUT", "XAUT"], ["all", "ALL"]]],
+  ["callPut", "C/P", [["call", "CALL"], ["put", "PUT"], ["combined", "COMBINED"]]],
+  ["expiryBucket", "DTE", [["all", "ALL"], ["expired", "EXPIRED"], ["0-2", "0–2"], ["3-7", "3–7"], ["8-30", "8–30"], ["31+", "31+"]]],
+  ["status", "Data Status", [["all", "ALL"], ["LIVE", "LIVE"], ["STALE", "STALE"], ["WARN", "WARN"], ["MISSING", "MISSING"], ["FAIL", "FAIL"]]],
+  ["scale", "Color Scale", [["quantile", "QUANTILE"], ["log", "LOG"], ["symmetric", "ZERO-CENTER"]]],
+  ["spot", "Spot", [["GLD", "GLD"], ["XAUT", "XAUT"], ["XAU", "XAU"]]],
+  ["label", "Label", [["none", "NONE"], ["held", "HELD METRIC"], ["top", "TOP 15%"], ["all", "ALL"]]],
+  ["hover", "Hover Preset", [["risk", "RISK"], ["market", "MARKET"], ["pnl", "PNL"], ["all", "ALL"]]],
+] as const;
+
+const hoverContentLabels: Array<[keyof PortfolioSettings["heatmapHoverContent"], string, string]> = [
+  ["selectedMetric", "Selected Metric", "当前热力图 Metric 的值"],
+  ["unitDelta", "Unit Delta", "单张期权 Delta"], ["totalDelta", "Total Delta XAU", "持仓合计 XAU Delta"],
+  ["unitGamma", "Unit Gamma", "默认隐藏"], ["totalGamma", "Total Gamma", "默认隐藏"],
+  ["unitTheta", "Unit Theta", "默认隐藏"], ["totalTheta", "Total Theta", "默认隐藏"],
+  ["unitVega", "Unit Vega", "默认隐藏"], ["totalVega", "Total Vega", "默认隐藏"],
+  ["dteRoll", "DTE / Roll", "到期天数和 Roll Priority"], ["qtyNotional", "Qty / Notional", "持仓数量和名义本金"],
+  ["markIv", "Mark / IV", "Mark 价格与 IV"], ["bidAsk", "Bid / Ask", "盘口价格"],
+  ["bidAskIv", "Bid IV / Ask IV", "盘口隐含波动率"], ["ivSpread", "IV Spread", "Ask IV − Bid IV"],
+  ["sourceQuote", "Source / Quote As-of", "行情来源和时间"], ["openInterestVolume", "OI / Volume", "未平仓量与成交量"],
+  ["mvEntry", "MV / Entry", "市场价值与成本"], ["upl", "UPL", "未实现盈亏"],
+];
+
+const detailContentLabels: Array<[keyof PortfolioSettings["heatmapDetailContent"], string, string]> = [
+  ["instrument", "Instrument", "合约代码"], ["underlyingCallPut", "Underlying / C/P", "标的与期权类型"],
+  ["expiryDte", "Expiry / DTE", "到期日和剩余天数"], ["strike", "Strike", "行权价"],
+  ["venueBrokerAccount", "Venue / Broker / Account", "场所、经纪商和账户"], ["netQty", "Net Qty", "净持仓"],
+  ["contractMultiplier", "Contract Multiplier", "合约乘数"], ["xauPerUnit", "XAU per unit", "统一 XAU 量纲"],
+  ["markBidAsk", "Mark / Bid / Ask", "价格行情"], ["markIv", "Mark IV", "Mark 隐含波动率"],
+  ["bidAskIv", "Bid / Ask IV / Spread", "盘口 IV"], ["qtyNotional", "Qty / Notional", "持仓规模"],
+  ["unitDelta", "Unit Delta", "默认显示"], ["totalDelta", "Total Delta XAU", "默认显示"],
+  ["unitGamma", "Unit Gamma", "默认隐藏"], ["totalGamma", "Total Gamma", "默认隐藏"],
+  ["unitTheta", "Unit Theta", "默认隐藏"], ["totalTheta", "Total Theta", "默认隐藏"],
+  ["unitVega", "Unit Vega", "默认隐藏"], ["totalVega", "Total Vega", "默认隐藏"],
+  ["marketValue", "Market Value", "当前市值"], ["entryCost", "Entry Cost", "入场成本"], ["upl", "UPL", "未实现盈亏"],
+  ["source", "Source", "行情来源"], ["quoteAsOf", "Quote As-of", "行情时间"], ["dataStatus", "Data Status", "数据质量"],
+  ["deliverableSource", "Deliverable Source", "交割规格来源"], ["adjustedContract", "Adjusted Contract", "是否调整合约"],
+  ["rollPriority", "Roll Priority", "评分及各项原因"],
+];
+
 export default function Settings() {
   const { settings, setSettings, resetSettings } = usePortfolioSettings();
   const [draft, setDraft] = useState<PortfolioSettings>(settings);
   const [lastRefreshAt, setLastRefreshAt] = useState(readLastMarketRefreshAt);
+  const { data: positions } = trpc.positions.list.useQuery();
+  const dynamicFilterOptions = {
+    venue: [...new Set(["Bybit", "Cboe / OPRA", "OPRA", ...(positions ?? []).map(position => position.venue).filter((value): value is string => Boolean(value))])].sort(),
+    broker: [...new Set(["MARKET CHAIN", "SignalPlus", "Manual fallback", ...(positions ?? []).map(position => position.venue || (position.underlying === "XAUT" ? "SignalPlus" : "Manual fallback"))])].sort(),
+    account: [...new Set(["LISTED-NO-POSITION", "LOCAL-HEDGE", ...(positions ?? []).map(position => position.sourceAccount).filter((value): value is string => Boolean(value))])].sort(),
+  };
 
   useEffect(() => setDraft(settings), [settings]);
   useEffect(() => {
@@ -49,6 +110,11 @@ export default function Settings() {
   }, []);
 
   const save = () => {
+    const invalidGroup = fixedOptionGroups.find(([key]) => !Object.values(draft.heatmapFilterOptions[key]).some(Boolean));
+    if (invalidGroup || !Object.values(draft.heatmapFilterOptions.metric).some(Boolean)) {
+      toast.error(`${invalidGroup?.[1] ?? "Metric"} 至少保留一个可选项`);
+      return;
+    }
     const validated: PortfolioSettings = {
       ...draft,
       marketAutoRefreshMinutes: numeric(String(draft.marketAutoRefreshMinutes), 60, 1),
@@ -60,7 +126,7 @@ export default function Settings() {
       xautSpotScaleOverride: draft.xautSpotScaleOverride === null ? null : numeric(String(draft.xautSpotScaleOverride), 1, Number.EPSILON),
     };
     setSettings(validated);
-    toast.success("全站参数已保存并同步到 Dashboard、仓位、矩阵和详情页");
+    toast.success("全站参数已保存并同步到 Dashboard、仓位、风险热力图和详情页");
   };
 
   const reset = () => {
@@ -118,12 +184,46 @@ export default function Settings() {
       <Card className="glass-card">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Filter className="h-4 w-4 text-primary" />热力图筛选器显示设置</CardTitle></CardHeader>
         <CardContent>
-          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">选择 POSITION RISK HEATMAP 第一行展示哪些业务筛选器。隐藏某个筛选器后，该条件会自动恢复为非限制状态；Data 恢复为完整期权链，避免隐藏条件继续影响结果。</p>
+          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">默认只显示 Underlying、C/P、Metric、Label、Hover。隐藏业务筛选器后，该条件自动恢复为非限制状态；隐藏视图控制不会改变当前热力图计算。</p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {heatmapFilterLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3">
               <div className="min-w-0"><Label htmlFor={`heatmap-filter-${key}`} className="text-xs font-medium">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div>
               <Switch id={`heatmap-filter-${key}`} checked={draft.heatmapVisibleFilters[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapVisibleFilters: { ...current.heatmapVisibleFilters, [key]: checked } }))} aria-label={`热力图显示 ${label}`} />
             </div>)}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="glass-card">
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><SlidersHorizontal className="h-4 w-4 text-primary" />筛选项内部选项设置</CardTitle></CardHeader>
+        <CardContent className="space-y-5">
+          <p className="text-xs leading-relaxed text-muted-foreground">决定每个下拉框里可以选择什么。当前已选择项若被隐藏，风险热力图会自动切换到该组第一个可用项。每组至少保留一个选项。</p>
+          <div>
+            <p className="mb-2 text-xs font-semibold">Metric</p>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {(Object.entries(METRIC_LABELS) as Array<[HeatmapMetric, string]>).map(([key, label]) => <div key={key} className="flex items-center justify-between gap-2 rounded-md border border-border/60 p-2">
+                <Label htmlFor={`heatmap-option-metric-${key}`} className="text-[11px]">{label}</Label>
+                <Switch id={`heatmap-option-metric-${key}`} checked={draft.heatmapFilterOptions.metric[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapFilterOptions: { ...current.heatmapFilterOptions, metric: { ...current.heatmapFilterOptions.metric, [key]: checked } } }))} aria-label={`Metric 显示 ${label}`} />
+              </div>)}
+            </div>
+          </div>
+          {fixedOptionGroups.map(([groupKey, groupLabel, options]) => <div key={groupKey}>
+            <p className="mb-2 text-xs font-semibold">{groupLabel}</p>
+            <div className="flex flex-wrap gap-2">
+              {options.map(([key, label]) => <div key={key} className="flex min-w-28 items-center justify-between gap-3 rounded-md border border-border/60 px-2 py-1.5">
+                <Label htmlFor={`heatmap-option-${groupKey}-${key}`} className="text-[10px]">{label}</Label>
+                <Switch id={`heatmap-option-${groupKey}-${key}`} checked={(draft.heatmapFilterOptions[groupKey] as Record<string, boolean>)[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapFilterOptions: { ...current.heatmapFilterOptions, [groupKey]: { ...current.heatmapFilterOptions[groupKey], [key]: checked } } }))} aria-label={`${groupLabel} 显示 ${label}`} />
+              </div>)}
+            </div>
+          </div>)}
+          <div>
+            <p className="mb-2 text-xs font-semibold">动态选项 · Venue / Broker / Account</p>
+            <div className="grid gap-3 md:grid-cols-3">
+              {(Object.entries(dynamicFilterOptions) as Array<[keyof typeof dynamicFilterOptions, string[]]>).map(([group, values]) => <div key={group} className="rounded-md border border-border/60 p-3"><p className="mb-2 text-[10px] font-semibold uppercase">{group}</p>{values.length ? <div className="space-y-2">{values.map(value => {
+                const visible = !draft.heatmapHiddenDynamicOptions[group].includes(value);
+                return <div key={value} className="flex items-center justify-between gap-2"><span className="truncate text-[10px]">{value}</span><Switch checked={visible} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapHiddenDynamicOptions: { ...current.heatmapHiddenDynamicOptions, [group]: checked ? current.heatmapHiddenDynamicOptions[group].filter(item => item !== value) : [...current.heatmapHiddenDynamicOptions[group], value] } }))} aria-label={`${group} 显示 ${value}`} /></div>;
+              })}</div> : <p className="text-[10px] text-muted-foreground">暂无仓位选项</p>}</div>)}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -138,6 +238,22 @@ export default function Settings() {
               <Switch id={`held-cell-content-${key}`} checked={draft.heatmapHeldCellContent[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapHeldCellContent: { ...current.heatmapHeldCellContent, [key]: checked } }))} aria-label={`持仓方格显示 ${label}`} />
             </div>)}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="glass-card">
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><MessageSquareText className="h-4 w-4 text-primary" />Hover 弹窗内容</CardTitle></CardHeader>
+        <CardContent>
+          <p className="mb-4 text-xs text-muted-foreground">选择鼠标移到方格时显示的字段。Greeks / Risk 默认只显示 Unit Delta 和 Total Delta。</p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{hoverContentLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`hover-content-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] text-muted-foreground">{description}</p></div><Switch id={`hover-content-${key}`} checked={draft.heatmapHoverContent[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapHoverContent: { ...current.heatmapHoverContent, [key]: checked } }))} aria-label={`Hover 显示 ${label}`} /></div>)}</div>
+        </CardContent>
+      </Card>
+
+      <Card className="glass-card">
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><MessageSquareText className="h-4 w-4 text-amber-300" />完整仓位详情弹窗内容</CardTitle></CardHeader>
+        <CardContent>
+          <p className="mb-4 text-xs text-muted-foreground">选择点击方格后的完整详情字段。Position As-of 已永久移除；Greeks / Risk 默认只显示 Unit Delta 和 Total Delta。</p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{detailContentLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`detail-content-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] text-muted-foreground">{description}</p></div><Switch id={`detail-content-${key}`} checked={draft.heatmapDetailContent[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapDetailContent: { ...current.heatmapDetailContent, [key]: checked } }))} aria-label={`完整详情显示 ${label}`} /></div>)}</div>
         </CardContent>
       </Card>
 
