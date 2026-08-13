@@ -5,6 +5,7 @@ import {
   METRIC_LABELS,
   formatCompact,
   formatPrice,
+  formatSpotPrice,
   heatColor,
   magnitudeHeatColor,
   metricValue,
@@ -20,7 +21,7 @@ import { cloneElement, useEffect, useMemo, useRef, useState, type CSSProperties,
 import type { PortfolioSettings } from "@/lib/portfolio";
 
 export type HeatmapCellModel = { key: string; expiry: string; strike: number; positions: EnrichedRiskPosition[]; value: number | null; listed?: boolean; held?: boolean };
-export type CellLabelMode = "none" | "held" | "top" | "all";
+export type CellLabelMode = "none" | "held" | "top" | "bottom" | "all";
 export type HoverDataPreset = "risk" | "market" | "pnl" | "all";
 
 type Props = {
@@ -30,6 +31,7 @@ type Props = {
   metric: HeatmapMetric;
   scale: HeatScale;
   importanceCutoff: number;
+  lowImportanceCutoff: number;
   transpose: boolean;
   reverseStrikes: boolean;
   cellSize: number;
@@ -123,7 +125,7 @@ function ExpiryTooltip({ expiry, positions, preset, children }: { expiry: string
   return <Tooltip open={open} onOpenChange={setOpen} delayDuration={100}><TooltipTrigger asChild>{cloneElement(children, { onClick: () => setOpen(value => !value) })}</TooltipTrigger><TooltipContent side="bottom" sideOffset={4} collisionPadding={10} className="z-[110] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">EXPIRY {expiry}</strong><span className="text-[9px] text-muted-foreground">{preset.toUpperCase()} SUMMARY</span></div><div className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[10px]">{rows.map(([label, value]) => <div key={label} className="contents"><span className="text-muted-foreground">{label}</span><span className="text-right font-mono">{value}</span></div>)}</div></TooltipContent></Tooltip>;
 }
 
-export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanceCutoff, transpose, reverseStrikes, cellSize, fitAll, spot, callPut, highlightCellKey, labelMode, hoverPreset, sequentialMagnitude, heldCellContent, hoverContent, onSelectPosition }: Props) {
+export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanceCutoff, lowImportanceCutoff, transpose, reverseStrikes, cellSize, fitAll, spot, callPut, highlightCellKey, labelMode, hoverPreset, sequentialMagnitude, heldCellContent, hoverContent, onSelectPosition }: Props) {
   const [centerSpot, setCenterSpot] = useState(false);
   const [hoveredCellKey, setHoveredCellKey] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -175,20 +177,20 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden border border-border/60 bg-background/70" data-testid="risk-heatmap-grid">
       <div ref={viewportRef} className="min-w-0 flex-1 overflow-auto">
-        {range.state !== "within" && range.state !== "missing" && <div className="sticky left-0 top-0 z-40 flex h-5 items-center justify-center gap-2 border-b border-amber-400/40 bg-amber-500/15 px-2 text-[9px] text-amber-200"><strong>{range.state === "above" ? "SPOT ABOVE RANGE ↑" : "SPOT BELOW RANGE ↓"}</strong><span className="font-mono">{formatCompact(spot)}</span><button type="button" className="underline" onClick={handleCenterSpot}>Center Spot</button></div>}
+        {range.state !== "within" && range.state !== "missing" && <div className="sticky left-0 top-0 z-40 flex h-5 items-center justify-center gap-2 border-b border-amber-400/40 bg-amber-500/15 px-2 text-[9px] text-amber-200"><strong>{range.state === "above" ? "SPOT ABOVE RANGE ↑" : "SPOT BELOW RANGE ↓"}</strong><span className="font-mono">{formatSpotPrice(spot)}</span><button type="button" className="underline" onClick={handleCenterSpot}>Center Spot</button></div>}
         <div style={{ display: "grid", gridTemplateColumns: template, minWidth } as CSSProperties}>
           <div className="sticky left-0 top-0 z-30 flex h-6 items-center border-b border-r border-border/60 bg-background px-1 text-[8px] text-muted-foreground">{transpose ? "EXP / STRIKE" : "STRIKE / EXP"}</div>
           {columnValues.map(column => {
             const strikeColumn = transpose ? Number(column) : null;
             const isSpotColumn = strikeColumn !== null && range.nearestStrike === strikeColumn;
-            const label = <button type="button" data-expiry-header={!transpose ? String(column) : undefined} aria-label={!transpose ? `Expiry ${String(column)} summary` : undefined} className={`sticky top-0 z-20 flex h-6 items-center justify-center truncate border-b border-r border-border/40 bg-background px-0.5 font-mono text-[8px] ${isSpotColumn ? "border-x-amber-300/70 text-amber-300" : "text-foreground/75"}`} title={String(column)}>{transpose ? formatPrice(strikeColumn) : String(column).slice(5)}{isSpotColumn ? ` · SPOT ${formatPrice(spot)}` : ""}</button>;
+            const label = <button type="button" data-expiry-header={!transpose ? String(column) : undefined} aria-label={!transpose ? `Expiry ${String(column)} summary` : undefined} className={`sticky top-0 z-20 flex h-6 items-center justify-center truncate border-b border-r border-border/40 bg-background px-0.5 font-mono text-[8px] ${isSpotColumn ? "border-x-amber-300/70 text-amber-300" : "text-foreground/75"}`} title={String(column)}>{transpose ? formatPrice(strikeColumn) : String(column).slice(5)}{isSpotColumn ? ` · SPOT ${formatSpotPrice(spot)}` : ""}</button>;
             return transpose ? <div key={String(column)} className="contents">{label}</div> : <ExpiryTooltip key={String(column)} expiry={String(column)} positions={cells.filter(cell => cell.expiry === String(column)).flatMap(cell => cell.positions)} preset={hoverPreset}>{label}</ExpiryTooltip>;
           })}
           {rowValues.flatMap(row => {
             const rowStrike = transpose ? null : Number(row);
             const isSpotRow = rowStrike !== null && range.nearestStrike === rowStrike;
             const zone = rowStrike === null ? "NEUTRAL" : zoneFor(rowStrike, spot, callPut);
-            const axisLabel = <button type="button" data-expiry-header={transpose ? String(row) : undefined} aria-label={transpose ? `Expiry ${String(row)} summary` : undefined} data-spot-row={isSpotRow ? "true" : undefined} style={{ height: rowHeight }} className={`sticky left-0 z-10 flex items-center justify-between overflow-hidden border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{rowStrike !== null && <span className="text-[7px]">{isSpotRow ? `SPOT ${formatPrice(spot)}` : !fitAll && zone !== "NEUTRAL" ? zone : ""}</span>}</button>;
+            const axisLabel = <button type="button" data-expiry-header={transpose ? String(row) : undefined} aria-label={transpose ? `Expiry ${String(row)} summary` : undefined} data-spot-row={isSpotRow ? "true" : undefined} style={{ height: rowHeight }} className={`sticky left-0 z-10 flex items-center justify-between overflow-hidden border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{rowStrike !== null && <span className="text-[7px]">{isSpotRow ? `SPOT ${formatSpotPrice(spot)}` : !fitAll && zone !== "NEUTRAL" ? zone : ""}</span>}</button>;
             const axis = transpose ? <ExpiryTooltip key={`axis-${String(row)}`} expiry={String(row)} positions={cells.filter(cell => cell.expiry === String(row)).flatMap(cell => cell.positions)} preset={hoverPreset}>{axisLabel}</ExpiryTooltip> : <div key={`axis-${String(row)}`} className="contents">{axisLabel}</div>;
             const buttons = columnValues.map(column => {
               const expiry = transpose ? String(row) : String(column);
@@ -197,10 +199,12 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
               const cell = cellMap.get(key);
               const status = cell ? worstStatus(cell.positions) : "LIVE";
               const important = cell?.value != null && (Math.abs(cell.value) >= importanceCutoff || key === highlightCellKey);
+              const lowImportance = cell?.value != null && Math.abs(cell.value) <= lowImportanceCutoff;
               const showLabel = cell && cell.value !== null && (
                 labelMode === "all"
                 || (labelMode === "held" && cell.held)
                 || (labelMode === "top" && important)
+                || (labelMode === "bottom" && lowImportance)
               );
               const topPositions = cell ? [...cell.positions].sort((a, b) => Math.abs(metricValue(b, metric) ?? 0) - Math.abs(metricValue(a, metric) ?? 0)) : [];
               const heldUnderlyings = new Set(cell?.positions
@@ -247,7 +251,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
         <span className="mt-1 font-mono text-[7px] text-foreground">{formatCompact(legendMaximum, metric)}</span>
         <div className="my-1 min-h-16 w-3 flex-1 border border-white/10" style={{ background: legendGradient }} />
         <span className="font-mono text-[7px] text-yellow-300">{formatCompact(legendMidpoint, metric)}</span><span className="mt-auto font-mono text-[7px] text-emerald-300">{formatCompact(legendMinimum, metric)}</span>
-        <button type="button" onClick={handleCenterSpot} className="mt-1 text-center text-[7px] leading-tight text-amber-300 underline">CENTER<br />SPOT {formatPrice(spot)}</button>
+        <button type="button" onClick={handleCenterSpot} className="mt-1 text-center text-[7px] leading-tight text-amber-300 underline">CENTER<br />SPOT {formatSpotPrice(spot)}</button>
         <span className="mt-1 text-center text-[6px] leading-tight text-cyan-200">THIN CYAN<br />LISTED</span>
         <span className="mt-1 text-center text-[6px] font-semibold leading-tight text-white">WHITE<br />HELD</span>
         <span className="mt-1 text-center font-mono text-[6px] font-bold leading-tight text-amber-100">X/G · C/P<br />CONTRACT</span>

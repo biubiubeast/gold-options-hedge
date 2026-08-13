@@ -17,6 +17,7 @@ import {
   enrichRiskPositions,
   formatCompact,
   formatPrice,
+  formatSpotPrice,
   generateMockPositions,
   percentile,
   positionLabel,
@@ -416,6 +417,7 @@ export default function Matrix() {
     activeCustomRange ? { ...activeCustomRange, basis: "custom" } : heldOnlyAutoRange,
   ), [activeCustomRange, cells, heldOnlyAutoRange, metric, scaleMode, sequentialMagnitude]);
   const importanceCutoff = useMemo(() => percentile(cells.map(cell => Math.abs(cell.value ?? 0)).filter(value => value > 0), 0.85), [cells]);
+  const lowImportanceCutoff = useMemo(() => percentile(cells.flatMap(cell => cell.value === null || !Number.isFinite(cell.value) ? [] : [Math.abs(cell.value)]), 0.15), [cells]);
   const heldFiltered = useMemo(() => filtered.filter(position => position.positionKind !== "listed"), [filtered]);
   const cards = useMemo(() => buildDecisionCards(heldFiltered), [heldFiltered]);
   const spot = displaySpots[spotUnderlying];
@@ -474,7 +476,7 @@ export default function Matrix() {
         {visibleFilters.expiryBucket && <NativeSelect className="min-w-[90px] flex-1" label="DTE" value={expiryBucket} onChange={value => setExpiryBucket(value as ExpiryBucket)} options={[{ value: "all", label: "ALL" }, { value: "expired", label: "EXP" }, { value: "0-2", label: "0–2" }, { value: "3-7", label: "3–7" }, { value: "8-30", label: "8–30" }, { value: "31+", label: "31+" }].filter(option => enabledOptions.expiryBucket[option.value as ExpiryBucket])} />}
         {visibleFilters.status && <NativeSelect className="min-w-[100px] flex-1" label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))].filter(option => enabledOptions.status[option.value as keyof typeof enabledOptions.status])} />}
         {visibleFilters.metric && <NativeSelect label="METRIC" value={metric} onChange={value => setMetric(value as HeatmapMetric)} options={metricOptions.map(([value, label]) => ({ value, label }))} />}
-        {visibleFilters.label && <NativeSelect label="LABEL" value={labelMode} onChange={value => setLabelMode(value as CellLabelMode)} options={[{ value: "none", label: "NONE" }, { value: "held", label: "HELD METRIC" }, { value: "top", label: "TOP 15%" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.label[option.value as keyof typeof enabledOptions.label])} />}
+        {visibleFilters.label && <NativeSelect label="LABEL" value={labelMode} onChange={value => setLabelMode(value as CellLabelMode)} options={[{ value: "none", label: "NONE" }, { value: "held", label: "HELD METRIC" }, { value: "top", label: "TOP 15%" }, { value: "bottom", label: "BOTTOM 15%" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.label[option.value as keyof typeof enabledOptions.label])} />}
         {visibleFilters.hover && <NativeSelect label="HOVER" value={hoverPreset} onChange={value => setHoverPreset(value as HoverDataPreset)} options={[{ value: "risk", label: "RISK" }, { value: "market", label: "MARKET" }, { value: "pnl", label: "PNL" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.hover[option.value as keyof typeof enabledOptions.hover])} />}
       </div>}
 
@@ -493,7 +495,7 @@ export default function Matrix() {
         {visibleFilters.cellSize && <div className="flex h-6 items-center border border-border text-[9px] text-muted-foreground"><button aria-label="Smaller cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.max(3, value - 1)); }}><Minus className="h-3 w-3" /></button><span className="w-8 text-center font-mono">{cellSize}px</span><button aria-label="Larger cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.min(28, value + 1)); }}><Plus className="h-3 w-3" /></button></div>}
         {visibleFilters.fitAll && <button type="button" onClick={() => setFitAll(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${fitAll ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ScanLine className="h-3 w-3" />Fit All</button>}
         {visibleFilters.fullscreen && <button type="button" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit heatmap fullscreen" : "Enter heatmap fullscreen"} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${isFullscreen ? "border-amber-300 bg-amber-300/15 text-amber-200" : "border-border text-muted-foreground"}`}>{isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</button>}
-        <span className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />{spotUnderlying} SPOT {formatPrice(spot)} · nearest {formatPrice(spotRangeState(strikes, spot).nearestStrike)}</span>
+        <span className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />{spotUnderlying} SPOT {formatSpotPrice(spot)} · nearest {formatPrice(spotRangeState(strikes, spot).nearestStrike)}</span>
       </div>}
 
       {dataset === "chain" && underlying !== "XAUT" && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">GLD FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · updated {new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed (actual lag varies) · cyan listed / white held</div>}
@@ -512,6 +514,7 @@ export default function Matrix() {
           metric={metric}
           scale={scale}
           importanceCutoff={importanceCutoff}
+          lowImportanceCutoff={lowImportanceCutoff}
           transpose={transpose}
           reverseStrikes={reverseStrikes}
           cellSize={cellSize}

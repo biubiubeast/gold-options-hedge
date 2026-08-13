@@ -7,6 +7,7 @@ import {
   enrichRiskPositions,
   exerciseControl,
   finiteOrNull,
+  formatSpotPrice,
   generateMockPositions,
   magnitudeHeatColor,
   metricValue,
@@ -63,6 +64,12 @@ describe("institutional risk heatmap acceptance", () => {
     expect(spotRangeState([200, 220, 240], 300)).toEqual({ state: "above", nearestStrike: 240 });
     expect(spotRangeState([200, 220, 240], 100)).toEqual({ state: "below", nearestStrike: 200 });
     expect(spotRangeState([200, 220, 240], 223).state).toBe("within");
+  });
+
+  it("formats every heatmap spot value with exactly two decimals", () => {
+    expect(formatSpotPrice(401)).toBe("401.00");
+    expect(formatSpotPrice(4366.6)).toBe("4,366.60");
+    expect(formatSpotPrice(null)).toBe("MISSING");
   });
 
   it("covers 0DTE, expired, adjusted, missing and stale without silent zeroes", () => {

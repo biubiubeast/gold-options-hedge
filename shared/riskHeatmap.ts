@@ -532,6 +532,11 @@ export function formatPrice(value: number | null): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0 });
 }
 
+export function formatSpotPrice(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "MISSING";
+  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function heatColor(normalized: number, centered: boolean): string {
   return magnitudeHeatColor(centered ? (Math.max(-1, Math.min(1, normalized)) + 1) / 2 : normalized);
 }

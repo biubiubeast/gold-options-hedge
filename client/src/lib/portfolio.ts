@@ -114,7 +114,7 @@ export type PortfolioSettings = {
     metric: Record<HeatmapMetric, boolean>;
     scale: Record<"quantile" | "log" | "symmetric", boolean>;
     spot: Record<"GLD" | "XAUT" | "XAU", boolean>;
-    label: Record<"none" | "held" | "top" | "all", boolean>;
+    label: Record<"none" | "held" | "top" | "bottom" | "all", boolean>;
     hover: Record<"risk" | "market" | "pnl" | "all", boolean>;
   };
   heatmapHiddenDynamicOptions: {
@@ -201,7 +201,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     },
     scale: { quantile: true, log: true, symmetric: true },
     spot: { GLD: true, XAUT: true, XAU: true },
-    label: { none: true, held: true, top: true, all: true },
+    label: { none: true, held: true, top: false, bottom: false, all: true },
     hover: { risk: true, market: true, pnl: true, all: true },
   },
   heatmapHiddenDynamicOptions: { venue: [], broker: [], account: [] },

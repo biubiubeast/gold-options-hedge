@@ -68,7 +68,7 @@ const fixedOptionGroups = [
   ["status", "Data Status", [["all", "ALL"], ["LIVE", "LIVE"], ["STALE", "STALE"], ["WARN", "WARN"], ["MISSING", "MISSING"], ["FAIL", "FAIL"]]],
   ["scale", "Color Scale", [["quantile", "QUANTILE"], ["log", "LOG"], ["symmetric", "ZERO-CENTER"]]],
   ["spot", "Spot", [["GLD", "GLD"], ["XAUT", "XAUT"], ["XAU", "XAU"]]],
-  ["label", "Label", [["none", "NONE"], ["held", "HELD METRIC"], ["top", "TOP 15%"], ["all", "ALL"]]],
+  ["label", "Label", [["none", "NONE"], ["held", "HELD METRIC"], ["top", "TOP 15%"], ["bottom", "BOTTOM 15%"], ["all", "ALL"]]],
   ["hover", "Hover Preset", [["risk", "RISK"], ["market", "MARKET"], ["pnl", "PNL"], ["all", "ALL"]]],
 ] as const;
 

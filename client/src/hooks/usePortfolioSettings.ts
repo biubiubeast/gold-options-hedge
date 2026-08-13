@@ -4,8 +4,8 @@ import {
 } from "@/lib/portfolio";
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY = "gold-options-portfolio-settings-v5";
-const LEGACY_STORAGE_KEYS = ["gold-options-portfolio-settings-v4", "gold-options-portfolio-settings-v3", "gold-options-portfolio-settings-v2"];
+const STORAGE_KEY = "gold-options-portfolio-settings-v6";
+const LEGACY_STORAGE_KEYS = ["gold-options-portfolio-settings-v5", "gold-options-portfolio-settings-v4", "gold-options-portfolio-settings-v3", "gold-options-portfolio-settings-v2"];
 const SETTINGS_EVENT = "gold-options-portfolio-settings-change";
 
 function loadSettings(): PortfolioSettings {
@@ -33,7 +33,7 @@ function loadSettings(): PortfolioSettings {
         metric: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.metric, ...saved.heatmapFilterOptions?.metric },
         scale: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.scale, ...saved.heatmapFilterOptions?.scale },
         spot: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.spot, ...saved.heatmapFilterOptions?.spot },
-        label: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.label, ...saved.heatmapFilterOptions?.label },
+        label: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.label, ...(current ? saved.heatmapFilterOptions?.label : {}) },
         hover: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.hover, ...saved.heatmapFilterOptions?.hover },
       },
       heatmapHiddenDynamicOptions: {
