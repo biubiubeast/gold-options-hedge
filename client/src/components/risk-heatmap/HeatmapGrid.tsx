@@ -19,7 +19,7 @@ import {
 import { cloneElement, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEventHandler, type ReactElement } from "react";
 
 export type HeatmapCellModel = { key: string; expiry: string; strike: number; positions: EnrichedRiskPosition[]; value: number | null; listed?: boolean; held?: boolean };
-export type CellLabelMode = "none" | "top" | "all";
+export type CellLabelMode = "none" | "held" | "top" | "all";
 export type HoverDataPreset = "risk" | "market" | "pnl" | "all";
 
 type Props = {
@@ -190,8 +190,16 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
               const cell = cellMap.get(key);
               const status = cell ? worstStatus(cell.positions) : "LIVE";
               const important = cell?.value != null && (Math.abs(cell.value) >= importanceCutoff || key === highlightCellKey);
-              const showLabel = cell && cell.value !== null && (labelMode === "all" || (labelMode === "top" && important));
+              const showLabel = cell && cell.value !== null && (
+                labelMode === "all"
+                || (labelMode === "held" && cell.held)
+                || (labelMode === "top" && important)
+              );
               const topPositions = cell ? [...cell.positions].sort((a, b) => Math.abs(metricValue(b, metric) ?? 0) - Math.abs(metricValue(a, metric) ?? 0)) : [];
+              const heldUnderlyings = new Set(cell?.positions
+                .filter(position => position.positionKind !== "listed")
+                .map(position => position.underlying) ?? []);
+              const heldMarker = heldUnderlyings.size > 1 ? "B" : heldUnderlyings.has("XAUT") ? "X" : heldUnderlyings.has("GLD") ? "G" : null;
               const isSyntheticSpot = range.state !== "within" && centerSpot && strike === Number(spot.toFixed(2));
               const spotLine = range.nearestStrike === strike;
               return <Tooltip key={key} delayDuration={80} open={hoveredCellKey === key} onOpenChange={open => setHoveredCellKey(open ? key : null)}><TooltipTrigger asChild><button
@@ -207,7 +215,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
                 onFocus={() => cell && setHoveredCellKey(key)}
                 onBlur={() => setHoveredCellKey(current => current === key ? null : current)}
                 aria-label={cell ? `${key} ${formatCompact(cell.value, metric)} ${cell.held ? "held" : "listed no position"} ${status}` : `${key} unavailable not listed`}
-              >{showLabel && <span className="font-semibold text-white drop-shadow-sm">{formatCompact(cell!.value, metric)}</span>}{cell?.held && <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 aspect-square h-[35%] min-h-px max-h-[6px] bg-amber-100" />}{cell && cell.positions.length > 1 && (labelMode !== "none" || cell.held) && <span className="absolute bottom-0 right-0 text-[6px] leading-none text-white/70">{cell.positions.length}</span>}{cell && status !== "LIVE" && (cell.held || labelMode !== "none") && <span className="absolute left-0 top-0 text-[6px] font-bold leading-none text-white">{statusAbbreviation(status)}</span>}{isSyntheticSpot && <span className="text-[7px] text-amber-200">SPOT</span>}</button></TooltipTrigger>
+              >{showLabel && <span className="block max-w-full truncate px-[5px] font-semibold text-white drop-shadow-sm">{formatCompact(cell!.value, metric)}</span>}{heldMarker && <span aria-hidden="true" title={heldMarker === "X" ? "XAUT held" : heldMarker === "G" ? "GLD held" : "GLD + XAUT held"} className="pointer-events-none absolute right-px top-1/2 -translate-y-1/2 font-mono text-[6px] font-black leading-none text-amber-100 drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]">{heldMarker}</span>}{cell && cell.positions.length > 1 && labelMode !== "none" && <span className="absolute bottom-0 right-0 text-[5px] leading-none text-white/60">{cell.positions.length}</span>}{cell && status !== "LIVE" && (cell.held || labelMode !== "none") && <span className="absolute left-0 top-0 text-[6px] font-bold leading-none text-white">{statusAbbreviation(status)}</span>}{isSyntheticSpot && <span className="text-[7px] text-amber-200">SPOT</span>}</button></TooltipTrigger>
                 {cell && <TooltipContent side="right" sideOffset={6} collisionPadding={12} className="z-[100] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 rounded-sm bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">Cell {METRIC_LABELS[metric]} </span><strong className="float-right font-mono text-primary">{cell.value === null && HELD_ONLY_HEATMAP_METRICS.has(metric) ? "NO POSITION · NOT COLORED" : formatCompact(cell.value, metric)}</strong></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} /></div>)}</div><p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、Greeks、数据质量与 Roll 原因</p></TooltipContent>}
               </Tooltip>;
             });
@@ -223,6 +231,8 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
         <button type="button" onClick={handleCenterSpot} className="mt-1 text-center text-[7px] leading-tight text-amber-300 underline">CENTER<br />SPOT {formatPrice(spot)}</button>
         <span className="mt-1 text-center text-[6px] leading-tight text-cyan-200">THIN CYAN<br />LISTED</span>
         <span className="mt-1 text-center text-[6px] font-semibold leading-tight text-amber-100">THIN GOLD<br />HELD</span>
+        <span className="mt-1 text-center font-mono text-[6px] font-bold leading-tight text-amber-100">G / X / B<br />HELD U</span>
+        <span className="mt-1 text-center font-mono text-[6px] leading-tight text-muted-foreground">S/W/M/F<br />DATA</span>
       </aside>
     </div>
   );
