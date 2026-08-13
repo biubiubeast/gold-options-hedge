@@ -55,6 +55,7 @@ export interface RiskPosition {
   totalThetaUSD: number | null;
   totalVegaUSD: number | null;
   MV: number | null;
+  entryPrice: number | null;
   entryCost: number | null;
   UPL: number | null;
   /** Optional precomputed signed underlying notional from the editable formula engine. */
@@ -722,6 +723,7 @@ export function generateMockPositions(count: 100 | 200, seed = 20260811, asOf: D
       totalThetaUSD: null,
       totalVegaUSD: null,
       MV: null,
+      entryPrice: fail ? null : entryPrice,
       entryCost: fail ? null : entryPrice * netQty * multiplier + Math.abs(netQty) * 0.65,
       UPL: null,
       quoteTime: missing ? null : new Date(asOf.getTime() - quoteMinutesAgo * 60_000).toISOString(),

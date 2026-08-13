@@ -130,3 +130,12 @@
 ::-webkit-scrollbar-thumb:hover {
   background: oklch(0.40 0.01 260);
 }
+
+/* Keep the thicker XAUT held-position outline neutral so metric colors stay comparable. */
+[data-xaut-held-border="true"] {
+  border-color: rgb(255 255 255) !important;
+}
+
+[data-held="true"] {
+  border-color: rgb(255 255 255) !important;
+}

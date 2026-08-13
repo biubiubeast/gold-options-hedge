@@ -4,8 +4,8 @@ import {
 } from "@/lib/portfolio";
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY = "gold-options-portfolio-settings-v4";
-const LEGACY_STORAGE_KEYS = ["gold-options-portfolio-settings-v3", "gold-options-portfolio-settings-v2"];
+const STORAGE_KEY = "gold-options-portfolio-settings-v5";
+const LEGACY_STORAGE_KEYS = ["gold-options-portfolio-settings-v4", "gold-options-portfolio-settings-v3", "gold-options-portfolio-settings-v2"];
 const SETTINGS_EVENT = "gold-options-portfolio-settings-change";
 
 function loadSettings(): PortfolioSettings {
@@ -19,6 +19,10 @@ function loadSettings(): PortfolioSettings {
       heatmapVisibleFilters: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleFilters,
         ...(current ? saved.heatmapVisibleFilters : {}),
+      },
+      visiblePages: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.visiblePages,
+        ...saved.visiblePages,
       },
       heatmapFilterOptions: {
         dataset: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.dataset, ...saved.heatmapFilterOptions?.dataset },
@@ -47,6 +51,10 @@ function loadSettings(): PortfolioSettings {
       heatmapDetailContent: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapDetailContent,
         ...saved.heatmapDetailContent,
+      },
+      heatmapVisibleSections: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections,
+        ...saved.heatmapVisibleSections,
       },
     };
     if (!current && saved.gldSpotScaleOverride === null) migrated.gldSpotScaleOverride = DEFAULT_PORTFOLIO_SETTINGS.gldSpotScaleOverride;

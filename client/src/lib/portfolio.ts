@@ -18,7 +18,7 @@ export type HeatmapDetailField =
   | "instrument" | "underlyingCallPut" | "expiryDte" | "strike" | "venueBrokerAccount" | "netQty"
   | "contractMultiplier" | "xauPerUnit" | "markBidAsk" | "markIv" | "bidAskIv" | "qtyNotional"
   | "unitDelta" | "totalDelta" | "unitGamma" | "totalGamma" | "unitTheta" | "totalTheta"
-  | "unitVega" | "totalVega" | "marketValue" | "entryCost" | "upl" | "source" | "quoteAsOf"
+  | "unitVega" | "totalVega" | "marketValue" | "entryPrice" | "entryCost" | "upl" | "source" | "quoteAsOf"
   | "dataStatus" | "deliverableSource" | "adjustedContract" | "rollPriority";
 
 export type PortfolioPosition = {
@@ -73,6 +73,15 @@ export type PortfolioPosition = {
 };
 
 export type PortfolioSettings = {
+  adminPasswordEnabled: boolean;
+  visiblePages: {
+    dashboard: boolean;
+    positions: boolean;
+    matrix: boolean;
+    formulas: boolean;
+    dataSources: boolean;
+    settings: boolean;
+  };
   marketAutoRefreshEnabled: boolean;
   marketAutoRefreshMinutes: number;
   heatmapVisibleFilters: {
@@ -120,6 +129,11 @@ export type PortfolioSettings = {
   };
   heatmapHoverContent: Record<HeatmapHoverField, boolean>;
   heatmapDetailContent: Record<HeatmapDetailField, boolean>;
+  heatmapVisibleSections: {
+    decisionCards: boolean;
+    dataError: boolean;
+    scenario: boolean;
+  };
   xautContractMultiplier: number;
   gldContractMultiplier: number;
   xautSpotScaleOverride: number | null;
@@ -129,6 +143,15 @@ export type PortfolioSettings = {
 };
 
 export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
+  adminPasswordEnabled: true,
+  visiblePages: {
+    dashboard: false,
+    positions: true,
+    matrix: true,
+    formulas: false,
+    dataSources: false,
+    settings: true,
+  },
   marketAutoRefreshEnabled: true,
   marketAutoRefreshMinutes: 60,
   heatmapVisibleFilters: {
@@ -145,12 +168,12 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     spot: false,
     label: true,
     hover: true,
-    range: false,
+    range: true,
     transpose: false,
-    reverseStrikes: false,
-    cellSize: false,
-    fitAll: false,
-    fullscreen: false,
+    reverseStrikes: true,
+    cellSize: true,
+    fitAll: true,
+    fullscreen: true,
   },
   heatmapFilterOptions: {
     dataset: { chain: true, live: true, mock100: true, mock200: true },
@@ -230,6 +253,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     unitVega: false,
     totalVega: false,
     marketValue: true,
+    entryPrice: true,
     entryCost: true,
     upl: true,
     source: true,
@@ -238,6 +262,11 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     deliverableSource: true,
     adjustedContract: true,
     rollPriority: false,
+  },
+  heatmapVisibleSections: {
+    decisionCards: false,
+    dataError: false,
+    scenario: false,
   },
   xautContractMultiplier: 1,
   gldContractMultiplier: 100,

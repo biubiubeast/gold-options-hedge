@@ -21,15 +21,16 @@ import { Button } from "./ui/button";
 import { LiveSpotBar } from "./LiveSpotBar";
 import { MarketRefreshButton } from "./MarketRefreshButton";
 import { AutoMarketRefresh } from "./AutoMarketRefresh";
+import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: ListPlus, label: "仓位管理", path: "/positions" },
-  { icon: Grid3X3, label: "风险热力图", path: "/matrix" },
-  { icon: Calculator, label: "公式管理", path: "/formulas" },
-  { icon: Database, label: "数据来源", path: "/data-sources" },
-  { icon: Settings, label: "设置", path: "/settings" },
-];
+  { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { key: "positions", icon: ListPlus, label: "仓位管理", path: "/positions" },
+  { key: "matrix", icon: Grid3X3, label: "风险热力图", path: "/matrix" },
+  { key: "formulas", icon: Calculator, label: "公式管理", path: "/formulas" },
+  { key: "dataSources", icon: Database, label: "数据来源", path: "/data-sources" },
+  { key: "settings", icon: Settings, label: "设置", path: "/settings" },
+] as const;
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
@@ -85,11 +86,13 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const [location, setLocation] = useLocation();
+  const { settings } = usePortfolioSettings();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeMenuItem = menuItems.find(item => item.path === location);
+  const visibleMenuItems = menuItems.filter(item => settings.visiblePages[item.key]);
   const isMobile = useIsMobile();
   const [pageZoom, setPageZoom] = useState(() => {
     const saved = Number(localStorage.getItem(PAGE_ZOOM_KEY));
@@ -184,7 +187,7 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">
-              {menuItems.map(item => {
+              {visibleMenuItems.map(item => {
                 const isActive = location === item.path;
                 return (
                   <SidebarMenuItem key={item.path}>

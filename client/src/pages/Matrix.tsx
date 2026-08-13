@@ -143,7 +143,7 @@ function PositionDetailDialog({ position, content, onClose }: { position: Enrich
     ["unitGamma", "Unit Gamma", position.unitGamma], ["totalGamma", "Total Gamma XAU", position.totalGammaXAU],
     ["unitTheta", "Unit Theta", position.unitTheta], ["totalTheta", "Total Theta USD/day", position.totalThetaUSD],
     ["unitVega", "Unit Vega", position.unitVega], ["totalVega", "Total Vega USD/vol", position.totalVegaUSD],
-    ["marketValue", "Market Value", position.MV], ["entryCost", "Entry Cost", position.entryCost], ["upl", "UPL", position.UPL],
+    ["marketValue", "Market Value", position.MV], ["entryPrice", "Entry Price", position.entryPrice], ["entryCost", "Entry Cost", position.entryCost], ["upl", "UPL", position.UPL],
     ["source", "Source", position.source], ["quoteAsOf", "Quote As-of", position.quoteTime], ["dataStatus", "Data Status", position.dataStatus],
     ["deliverableSource", "Deliverable Source", position.deliverableSource], ["adjustedContract", "Adjusted Contract", position.contractAdjusted ? "YES" : "NO"],
   ];
@@ -158,6 +158,7 @@ export default function Matrix() {
   const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
   const { settings } = usePortfolioSettings();
   const visibleFilters = settings.heatmapVisibleFilters;
+  const visibleSections = settings.heatmapVisibleSections;
 
   const [dataset, setDataset] = useState<DatasetMode>(initialDataset);
   const [underlying, setUnderlying] = useState<"all" | RiskUnderlying>("GLD");
@@ -178,7 +179,7 @@ export default function Matrix() {
   const [spotUnderlying, setSpotUnderlying] = useState<RiskUnderlying | "XAU">("GLD");
   const [highlightCellKey, setHighlightCellKey] = useState<string | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<EnrichedRiskPosition | null>(null);
-  const [cardsVisible, setCardsVisible] = useState(() => localStorage.getItem("heatmap-decision-cards-visible") !== "false");
+  const [cardsVisible, setCardsVisible] = useState(false);
   const [dataErrorHelp, setDataErrorHelp] = useState(false);
   const [customRanges, setCustomRanges] = useState<Partial<Record<HeatmapMetric, MetricRange>>>(() => {
     try {
@@ -293,8 +294,9 @@ export default function Matrix() {
     if (!visibleFilters.status && status !== "all") setStatus("all");
   }, [account, broker, callPut, dataset, expiryBucket, status, underlying, venue, visibleFilters]);
   useEffect(() => {
-    localStorage.setItem("heatmap-decision-cards-visible", String(cardsVisible));
-  }, [cardsVisible]);
+    if (!visibleSections.decisionCards) setCardsVisible(false);
+    if (!visibleSections.dataError) setDataErrorHelp(false);
+  }, [visibleSections.dataError, visibleSections.decisionCards]);
   useEffect(() => {
     localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify(customRanges));
   }, [customRanges]);
@@ -447,15 +449,15 @@ export default function Matrix() {
         </div>
         <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
           <span>As-of {dataset === "chain" ? new Date(underlying === "XAUT" ? xautChain?.timestamp ?? asOf : gldChain?.timestamp ?? asOf).toLocaleString("zh-CN", { hour12: false }) : asOf.toLocaleTimeString("zh-CN", { hour12: false })}</span>
-          <button type="button" onClick={() => setDataErrorHelp(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground"><Info className="h-3 w-3" />Largest Data Error</button>
-          <button type="button" onClick={() => setCardsVisible(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground">{cardsVisible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{cardsVisible ? "Hide Cards" : "Show Cards"}</button>
+          {visibleSections.dataError && <button type="button" onClick={() => setDataErrorHelp(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground"><Info className="h-3 w-3" />Largest Data Error</button>}
+          {visibleSections.decisionCards && <button type="button" onClick={() => setCardsVisible(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground">{cardsVisible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{cardsVisible ? "Hide Cards" : "Show Cards"}</button>}
           <MarketRefreshButton compact />
           {selectedPosition && <span className="max-w-64 truncate text-foreground">Selected: {positionLabel(selectedPosition)} · Roll {selectedPosition.rollPriority.total.toFixed(0)}</span>}
         </div>
       </div>
 
-      {dataErrorHelp && <div className="shrink-0 border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-[9px] leading-relaxed text-amber-100"><strong>Largest Data Error</strong> 只检查当前筛选中的真实持仓：先按严重度 FAIL &gt; MISSING &gt; STALE &gt; WARN &gt; LIVE 排序；严重度相同时选 Quote Age 最大的一条。它不是盈亏或风险值，而是最需要修复的数据质量问题。缺 Source、Mark、合约乘数或 Greeks 会触发 MISSING；报价超过 15 分钟触发 STALE。</div>}
-      {cardsVisible && <DecisionCards cards={cards} onLocate={locateCell} />}
+      {visibleSections.dataError && dataErrorHelp && <div className="shrink-0 border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-[9px] leading-relaxed text-amber-100"><strong>Largest Data Error</strong> 只检查当前筛选中的真实持仓：先按严重度 FAIL &gt; MISSING &gt; STALE &gt; WARN &gt; LIVE 排序；严重度相同时选 Quote Age 最大的一条。它不是盈亏或风险值，而是最需要修复的数据质量问题。缺 Source、Mark、合约乘数或 Greeks 会触发 MISSING；报价超过 15 分钟触发 STALE。</div>}
+      {visibleSections.decisionCards && cardsVisible && <DecisionCards cards={cards} onLocate={locateCell} />}
 
       {Object.values(visibleFilters).some(Boolean) && <div className="flex min-h-7 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1 py-0.5">
         {visibleFilters.dataset && <NativeSelect className="min-w-[130px] flex-1" label="DATA" value={dataset} onChange={value => setDataset(value as DatasetMode)} options={[
@@ -494,7 +496,7 @@ export default function Matrix() {
         <span className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />{spotUnderlying} SPOT {formatPrice(spot)} · nearest {formatPrice(spotRangeState(strikes, spot).nearestStrike)}</span>
       </div>}
 
-      {dataset === "chain" && underlying !== "XAUT" && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">GLD FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · updated {new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed (actual lag varies) · cyan listed / gold held</div>}
+      {dataset === "chain" && underlying !== "XAUT" && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">GLD FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · updated {new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed (actual lag varies) · cyan listed / white held</div>}
       {dataset === "chain" && underlying !== "GLD" && xautChain && <div className="shrink-0 border border-violet-400/30 bg-violet-500/5 px-2 py-0.5 font-mono text-[8px] text-violet-100">XAUT FULL CHAIN · {xautChain.contractCount} tradable contracts · {xautChain.expiryCount} expiries · {xautChain.strikeCount} strikes · {xautChain.source} · updated {new Date(xautChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(xautChain.delaySeconds)}s</div>}
       {HELD_ONLY_HEATMAP_METRICS.has(metric) && <div className="shrink-0 border border-amber-300/25 bg-amber-300/5 px-2 py-0.5 font-mono text-[8px] text-amber-100">POSITION-ONLY METRIC · only held cells are colored and included in the default min/max · listed contracts remain hoverable but uncolored</div>}
       {filtered.length === 0 ? (
@@ -527,7 +529,7 @@ export default function Matrix() {
       )}
 
       <ExpiryPanel positions={heldFiltered} gldSpot={displaySpots.GLD} />
-      <ScenarioStrip positions={heldFiltered} spots={displaySpots} />
+      {visibleSections.scenario && <ScenarioStrip positions={heldFiltered} spots={displaySpots} />}
       <PositionDetailDialog position={selectedPosition} content={settings.heatmapDetailContent} onClose={() => setSelectedPosition(null)} />
     </div>
   );

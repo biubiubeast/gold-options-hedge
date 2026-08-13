@@ -8,7 +8,7 @@ import { MARKET_REFRESH_EVENT, readLastMarketRefreshAt } from "@/lib/marketRefre
 import { trpc } from "@/lib/trpc";
 import { DEFAULT_PORTFOLIO_SETTINGS, type PortfolioSettings } from "@/lib/portfolio";
 import { METRIC_LABELS, type HeatmapMetric } from "@shared/riskHeatmap";
-import { CheckCircle2, Clock3, Database, Filter, MessageSquareText, RefreshCw, RotateCcw, Scale, ShieldAlert, SlidersHorizontal } from "lucide-react";
+import { CheckCircle2, Clock3, Database, Eye, Filter, LockKeyhole, MessageSquareText, RefreshCw, RotateCcw, Scale, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -43,6 +43,21 @@ const heldCellContentLabels: Array<[keyof PortfolioSettings["heatmapHeldCellCont
   ["underlying", "Underlying · X/G", "X=XAUT、G=GLD、B=同格包含两个标的"],
   ["callPut", "Option Type · C/P", "C=Call、P=Put、C/P=同格同时包含 Call 与 Put"],
   ["dataStatus", "Data Status · L/S/W/M/F", "L=LIVE、S=STALE、W=WARN、M=MISSING、F=FAIL"],
+];
+
+const pageEntryLabels: Array<[keyof PortfolioSettings["visiblePages"], string, string]> = [
+  ["dashboard", "Dashboard", "总持仓汇总与风险数据"],
+  ["positions", "仓位管理", "默认显示且无需管理员密码"],
+  ["matrix", "风险热力图", "默认显示且无需管理员密码"],
+  ["formulas", "公式管理", "公式说明、编辑与恢复"],
+  ["dataSources", "数据来源", "行情 API 与延迟说明"],
+  ["settings", "设置", "本页入口；页面本身受管理员门禁保护"],
+];
+
+const heatmapSectionLabels: Array<[keyof PortfolioSettings["heatmapVisibleSections"], string, string]> = [
+  ["decisionCards", "Show Cards / 决策卡", "显示顶部 Show/Hide Cards 按钮；默认隐藏"],
+  ["dataError", "Largest Data Error", "显示顶部数据质量说明按钮；默认隐藏"],
+  ["scenario", "情景分析", "显示热力图底部 XAU / IV / Day Shock 分析；默认隐藏"],
 ];
 
 const fixedOptionGroups = [
@@ -81,7 +96,7 @@ const detailContentLabels: Array<[keyof PortfolioSettings["heatmapDetailContent"
   ["unitGamma", "Unit Gamma", "默认隐藏"], ["totalGamma", "Total Gamma", "默认隐藏"],
   ["unitTheta", "Unit Theta", "默认隐藏"], ["totalTheta", "Total Theta", "默认隐藏"],
   ["unitVega", "Unit Vega", "默认隐藏"], ["totalVega", "Total Vega", "默认隐藏"],
-  ["marketValue", "Market Value", "当前市值"], ["entryCost", "Entry Cost", "入场成本"], ["upl", "UPL", "未实现盈亏"],
+  ["marketValue", "Market Value", "当前市值"], ["entryPrice", "Entry Price", "单张平均入场价格"], ["entryCost", "Entry Cost", "入场成本"], ["upl", "UPL", "未实现盈亏"],
   ["source", "Source", "行情来源"], ["quoteAsOf", "Quote As-of", "行情时间"], ["dataStatus", "Data Status", "数据质量"],
   ["deliverableSource", "Deliverable Source", "交割规格来源"], ["adjustedContract", "Adjusted Contract", "是否调整合约"],
   ["rollPriority", "Roll Priority", "评分及各项原因"],
@@ -142,6 +157,18 @@ export default function Settings() {
         <p className="mt-1 text-sm text-muted-foreground">控制全站市场刷新、合约口径与风险估值参数。保存后当前浏览器的所有页面立即生效。</p>
       </div>
 
+      <Card className="glass-card">
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-4 w-4 text-primary" />管理员门禁与页面入口</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-4 rounded-md border border-amber-300/25 bg-amber-300/[0.03] p-3">
+            <div><p className="text-sm font-medium">启用管理员页面密码</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">启用后，除“风险热力图、仓位管理”外的页面每次打开或刷新都要输入 8888。关闭仅作用于当前浏览器，不替代网站的 Basic Auth 登录。</p></div>
+            <Switch checked={draft.adminPasswordEnabled} onCheckedChange={checked => setDraft(current => ({ ...current, adminPasswordEnabled: checked }))} aria-label="启用管理员页面密码" />
+          </div>
+          <div><p className="mb-2 flex items-center gap-2 text-xs font-semibold"><Eye className="h-3.5 w-3.5" />左侧导航入口显示</p><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{pageEntryLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`page-entry-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] text-muted-foreground">{description}</p></div><Switch id={`page-entry-${key}`} checked={draft.visiblePages[key]} onCheckedChange={checked => setDraft(current => ({ ...current, visiblePages: { ...current.visiblePages, [key]: checked } }))} aria-label={`显示 ${label} 页面入口`} /></div>)}</div></div>
+          <p className="text-[11px] text-muted-foreground">隐藏入口不会删除页面或数据；已知网址仍可访问，并继续遵守管理员门禁。默认只显示风险热力图、仓位管理和设置。</p>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="glass-card">
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><RefreshCw className="h-4 w-4 text-primary" />市场数据自动更新</CardTitle></CardHeader>
@@ -182,9 +209,14 @@ export default function Settings() {
       </div>
 
       <Card className="glass-card">
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Eye className="h-4 w-4 text-primary" />风险热力图模块显示</CardTitle></CardHeader>
+        <CardContent><p className="mb-4 text-xs text-muted-foreground">控制交易屏幕上较占空间的分析模块。三个模块默认都隐藏，打开后保存即可生效。</p><div className="grid gap-2 md:grid-cols-3">{heatmapSectionLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`heatmap-section-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div><Switch id={`heatmap-section-${key}`} checked={draft.heatmapVisibleSections[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapVisibleSections: { ...current.heatmapVisibleSections, [key]: checked } }))} aria-label={`热力图显示 ${label}`} /></div>)}</div></CardContent>
+      </Card>
+
+      <Card className="glass-card">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Filter className="h-4 w-4 text-primary" />热力图筛选器显示设置</CardTitle></CardHeader>
         <CardContent>
-          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">默认只显示 Underlying、C/P、Metric、Label、Hover。隐藏业务筛选器后，该条件自动恢复为非限制状态；隐藏视图控制不会改变当前热力图计算。</p>
+          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">默认显示 Underlying、C/P、Metric、Label、Hover，以及色标上下限、Strike 排序、方格尺寸、Fit All、Fullscreen。隐藏业务筛选器后，该条件自动恢复为非限制状态；隐藏视图控制不会改变当前热力图计算。</p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {heatmapFilterLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3">
               <div className="min-w-0"><Label htmlFor={`heatmap-filter-${key}`} className="text-xs font-medium">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div>
