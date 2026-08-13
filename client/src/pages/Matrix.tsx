@@ -495,6 +495,7 @@ export default function Matrix() {
           labelMode={labelMode}
           hoverPreset={hoverPreset}
           sequentialMagnitude={sequentialMagnitude}
+          heldCellContent={settings.heatmapHeldCellContent}
           onSelectPosition={setSelectedPosition}
         />
       )}

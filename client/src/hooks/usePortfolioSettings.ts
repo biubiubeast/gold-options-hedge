@@ -19,6 +19,10 @@ function loadSettings(): PortfolioSettings {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleFilters,
         ...saved.heatmapVisibleFilters,
       },
+      heatmapHeldCellContent: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.heatmapHeldCellContent,
+        ...saved.heatmapHeldCellContent,
+      },
     };
     if (!current && saved.gldSpotScaleOverride === null) migrated.gldSpotScaleOverride = DEFAULT_PORTFOLIO_SETTINGS.gldSpotScaleOverride;
     return migrated;

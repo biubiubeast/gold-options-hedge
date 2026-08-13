@@ -67,6 +67,11 @@ export type PortfolioSettings = {
     expiryBucket: boolean;
     status: boolean;
   };
+  heatmapHeldCellContent: {
+    underlying: boolean;
+    callPut: boolean;
+    dataStatus: boolean;
+  };
   xautContractMultiplier: number;
   gldContractMultiplier: number;
   xautSpotScaleOverride: number | null;
@@ -87,6 +92,11 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     callPut: true,
     expiryBucket: true,
     status: true,
+  },
+  heatmapHeldCellContent: {
+    underlying: true,
+    callPut: true,
+    dataStatus: true,
   },
   xautContractMultiplier: 1,
   gldContractMultiplier: 100,
