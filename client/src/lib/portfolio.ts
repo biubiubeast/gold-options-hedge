@@ -57,6 +57,16 @@ export type PortfolioPosition = {
 export type PortfolioSettings = {
   marketAutoRefreshEnabled: boolean;
   marketAutoRefreshMinutes: number;
+  heatmapVisibleFilters: {
+    dataset: boolean;
+    underlying: boolean;
+    venue: boolean;
+    broker: boolean;
+    account: boolean;
+    callPut: boolean;
+    expiryBucket: boolean;
+    status: boolean;
+  };
   xautContractMultiplier: number;
   gldContractMultiplier: number;
   xautSpotScaleOverride: number | null;
@@ -68,6 +78,16 @@ export type PortfolioSettings = {
 export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   marketAutoRefreshEnabled: true,
   marketAutoRefreshMinutes: 60,
+  heatmapVisibleFilters: {
+    dataset: true,
+    underlying: true,
+    venue: true,
+    broker: true,
+    account: true,
+    callPut: true,
+    expiryBucket: true,
+    status: true,
+  },
   xautContractMultiplier: 1,
   gldContractMultiplier: 100,
   xautSpotScaleOverride: null,

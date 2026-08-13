@@ -12,7 +12,14 @@ function loadSettings(): PortfolioSettings {
   try {
     const current = localStorage.getItem(STORAGE_KEY);
     const saved = JSON.parse(current || localStorage.getItem(LEGACY_STORAGE_KEY) || "{}") as Partial<PortfolioSettings>;
-    const migrated = { ...DEFAULT_PORTFOLIO_SETTINGS, ...saved };
+    const migrated = {
+      ...DEFAULT_PORTFOLIO_SETTINGS,
+      ...saved,
+      heatmapVisibleFilters: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleFilters,
+        ...saved.heatmapVisibleFilters,
+      },
+    };
     if (!current && saved.gldSpotScaleOverride === null) migrated.gldSpotScaleOverride = DEFAULT_PORTFOLIO_SETTINGS.gldSpotScaleOverride;
     return migrated;
   } catch {

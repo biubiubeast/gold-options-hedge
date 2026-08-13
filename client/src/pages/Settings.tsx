@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import { MARKET_REFRESH_EVENT, readLastMarketRefreshAt } from "@/lib/marketRefreshStatus";
 import { DEFAULT_PORTFOLIO_SETTINGS, type PortfolioSettings } from "@/lib/portfolio";
-import { CheckCircle2, Clock3, Database, RefreshCw, RotateCcw, Scale, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Clock3, Database, Filter, RefreshCw, RotateCcw, Scale, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -14,6 +14,17 @@ function numeric(value: string, fallback: number, minimum = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= minimum ? parsed : fallback;
 }
+
+const heatmapFilterLabels: Array<[keyof PortfolioSettings["heatmapVisibleFilters"], string, string]> = [
+  ["dataset", "Data / 数据集", "真实仓位、完整期权链或压力测试数据"],
+  ["underlying", "Underlying", "GLD、XAUT 或全部标的"],
+  ["venue", "Venue", "交易场所或行情场所"],
+  ["broker", "Broker", "经纪商维度"],
+  ["account", "Account", "账户维度"],
+  ["callPut", "Call / Put", "Call、Put 或 Combined"],
+  ["expiryBucket", "DTE / Expiry Bucket", "按剩余期限区间筛选"],
+  ["status", "Data Status", "LIVE、STALE、WARN、MISSING、FAIL"],
+];
 
 export default function Settings() {
   const { settings, setSettings, resetSettings } = usePortfolioSettings();
@@ -97,6 +108,19 @@ export default function Settings() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="glass-card">
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Filter className="h-4 w-4 text-primary" />热力图筛选器显示设置</CardTitle></CardHeader>
+        <CardContent>
+          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">选择 POSITION RISK HEATMAP 第一行展示哪些业务筛选器。隐藏某个筛选器后，该条件会自动恢复为非限制状态；Data 恢复为完整期权链，避免隐藏条件继续影响结果。</p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {heatmapFilterLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3">
+              <div className="min-w-0"><Label htmlFor={`heatmap-filter-${key}`} className="text-xs font-medium">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div>
+              <Switch id={`heatmap-filter-${key}`} checked={draft.heatmapVisibleFilters[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapVisibleFilters: { ...current.heatmapVisibleFilters, [key]: checked } }))} aria-label={`热力图显示 ${label}`} />
+            </div>)}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="glass-card">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Database className="h-4 w-4 text-primary" />参数优先级与作用范围</CardTitle></CardHeader>

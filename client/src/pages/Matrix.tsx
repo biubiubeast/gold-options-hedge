@@ -154,6 +154,7 @@ export default function Matrix() {
   const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
   const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
   const { settings } = usePortfolioSettings();
+  const visibleFilters = settings.heatmapVisibleFilters;
 
   const [dataset, setDataset] = useState<DatasetMode>(initialDataset);
   const [underlying, setUnderlying] = useState<"all" | RiskUnderlying>("GLD");
@@ -258,6 +259,16 @@ export default function Matrix() {
     if (underlying === "GLD") setSpotUnderlying("GLD");
     else if (underlying === "XAUT") setSpotUnderlying("XAUT");
   }, [underlying]);
+  useEffect(() => {
+    if (!visibleFilters.dataset && dataset !== "chain") setDataset("chain");
+    if (!visibleFilters.underlying && underlying !== "all") setUnderlying("all");
+    if (!visibleFilters.venue && venue !== "all") setVenue("all");
+    if (!visibleFilters.broker && broker !== "all") setBroker("all");
+    if (!visibleFilters.account && account !== "all") setAccount("all");
+    if (!visibleFilters.callPut && callPut !== "combined") setCallPut("combined");
+    if (!visibleFilters.expiryBucket && expiryBucket !== "all") setExpiryBucket("all");
+    if (!visibleFilters.status && status !== "all") setStatus("all");
+  }, [account, broker, callPut, dataset, expiryBucket, status, underlying, venue, visibleFilters]);
   useEffect(() => {
     localStorage.setItem("heatmap-decision-cards-visible", String(cardsVisible));
   }, [cardsVisible]);
@@ -423,21 +434,21 @@ export default function Matrix() {
       {dataErrorHelp && <div className="shrink-0 border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-[9px] leading-relaxed text-amber-100"><strong>Largest Data Error</strong> 只检查当前筛选中的真实持仓：先按严重度 FAIL &gt; MISSING &gt; STALE &gt; WARN &gt; LIVE 排序；严重度相同时选 Quote Age 最大的一条。它不是盈亏或风险值，而是最需要修复的数据质量问题。缺 Source、Mark、合约乘数或 Greeks 会触发 MISSING；报价超过 15 分钟触发 STALE。</div>}
       {cardsVisible && <DecisionCards cards={cards} onLocate={locateCell} />}
 
-      <div className="grid h-7 shrink-0 grid-cols-[1.15fr_repeat(7,minmax(80px,1fr))] items-center gap-1 border border-border/60 bg-card/35 px-1">
-        <NativeSelect label="DATA" value={dataset} onChange={value => setDataset(value as DatasetMode)} options={[
+      {Object.values(visibleFilters).some(Boolean) && <div className="flex min-h-7 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1 py-0.5">
+        {visibleFilters.dataset && <NativeSelect className="min-w-[130px] flex-1" label="DATA" value={dataset} onChange={value => setDataset(value as DatasetMode)} options={[
           { value: "live", label: "LIVE / IMPORTED" },
           { value: "chain", label: "FULL OPTION CHAIN" },
           { value: "mock100", label: "MOCK 100" },
           { value: "mock200", label: "MOCK 200" },
-        ]} />
-        <NativeSelect label="U" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "all", label: "ALL" }]} />
-        <NativeSelect label="VENUE" value={venue} onChange={setVenue} options={[{ value: "all", label: "ALL" }, ...filterOptions.venue.map(value => ({ value, label: value }))]} />
-        <NativeSelect label="BROKER" value={broker} onChange={setBroker} options={[{ value: "all", label: "ALL" }, ...filterOptions.broker.map(value => ({ value, label: value }))]} />
-        <NativeSelect label="ACCOUNT" value={account} onChange={setAccount} options={[{ value: "all", label: "ALL" }, ...filterOptions.account.map(value => ({ value, label: value }))]} />
-        <NativeSelect label="C/P" value={callPut} onChange={value => setCallPut(value as typeof callPut)} options={[{ value: "combined", label: "COMBINED" }, { value: "call", label: "CALL" }, { value: "put", label: "PUT" }]} />
-        <NativeSelect label="DTE" value={expiryBucket} onChange={value => setExpiryBucket(value as ExpiryBucket)} options={[{ value: "all", label: "ALL" }, { value: "expired", label: "EXP" }, { value: "0-2", label: "0–2" }, { value: "3-7", label: "3–7" }, { value: "8-30", label: "8–30" }, { value: "31+", label: "31+" }]} />
-        <NativeSelect label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))]} />
-      </div>
+        ]} />}
+        {visibleFilters.underlying && <NativeSelect className="min-w-[90px] flex-1" label="U" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "all", label: "ALL" }]} />}
+        {visibleFilters.venue && <NativeSelect className="min-w-[100px] flex-1" label="VENUE" value={venue} onChange={setVenue} options={[{ value: "all", label: "ALL" }, ...filterOptions.venue.map(value => ({ value, label: value }))]} />}
+        {visibleFilters.broker && <NativeSelect className="min-w-[100px] flex-1" label="BROKER" value={broker} onChange={setBroker} options={[{ value: "all", label: "ALL" }, ...filterOptions.broker.map(value => ({ value, label: value }))]} />}
+        {visibleFilters.account && <NativeSelect className="min-w-[110px] flex-1" label="ACCOUNT" value={account} onChange={setAccount} options={[{ value: "all", label: "ALL" }, ...filterOptions.account.map(value => ({ value, label: value }))]} />}
+        {visibleFilters.callPut && <NativeSelect className="min-w-[100px] flex-1" label="C/P" value={callPut} onChange={value => setCallPut(value as typeof callPut)} options={[{ value: "combined", label: "COMBINED" }, { value: "call", label: "CALL" }, { value: "put", label: "PUT" }]} />}
+        {visibleFilters.expiryBucket && <NativeSelect className="min-w-[90px] flex-1" label="DTE" value={expiryBucket} onChange={value => setExpiryBucket(value as ExpiryBucket)} options={[{ value: "all", label: "ALL" }, { value: "expired", label: "EXP" }, { value: "0-2", label: "0–2" }, { value: "3-7", label: "3–7" }, { value: "8-30", label: "8–30" }, { value: "31+", label: "31+" }]} />}
+        {visibleFilters.status && <NativeSelect className="min-w-[100px] flex-1" label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))]} />}
+      </div>}
 
       <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1">
         <NativeSelect label="METRIC" value={metric} onChange={value => setMetric(value as HeatmapMetric)} options={metricOptions.map(([value, label]) => ({ value, label }))} />
