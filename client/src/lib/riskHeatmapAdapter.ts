@@ -84,6 +84,7 @@ export function buildLiveRiskPositions(args: {
       MV: market.available ? finiteOrNull(calculated.currentValue) : null,
       entryCost: finiteOrNull(position.importedEntryCost) ?? finiteOrNull(calculated.entryCost),
       UPL: market.available ? finiteOrNull(calculated.pnl) : null,
+      notionalSizeUSD: finiteOrNull(calculated.notionalSize),
       quoteTime: market.quoteTime,
       positionTime,
       source: market.source || null,

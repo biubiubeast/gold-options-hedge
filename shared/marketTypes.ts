@@ -135,6 +135,14 @@ export const DEFAULT_FORMULAS = [
     defaultExpression: "markPrice * quantity * contractMultiplier",
   },
   {
+    name: "notional_size",
+    category: "valuation",
+    expression: "quantity * contractMultiplier * underlyingPrice",
+    description: "Signed 标的名义金额（USD/USDT）= Net Qty × 实际合约乘数/Deliverable × 标的现价。正数为净多、负数为净空；热力图颜色使用其绝对值。它不是期权 Market Value。",
+    usedIn: "仓位管理 Notional USD、矩阵 Qty/Notional metric、方格/Expiry Hover 与完整详情",
+    defaultExpression: "quantity * contractMultiplier * underlyingPrice",
+  },
+  {
     name: "pnl",
     category: "valuation",
     expression: "currentValue - entryCost",

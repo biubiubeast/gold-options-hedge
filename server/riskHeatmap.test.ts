@@ -83,10 +83,24 @@ describe("institutional risk heatmap acceptance", () => {
     expect(scale.bins.length).toBeGreaterThanOrEqual(6);
   });
 
-  it("maps zero-to-high absolute delta from blue to red without losing signed values", () => {
+  it("maps low-to-high absolute values from green through yellow to red", () => {
     const scale = buildHeatScale([0, 0.05, 0.5, 0.8, 1000], "quantile", false);
-    expect(magnitudeHeatColor(scale.normalize(0))).toContain("3 7 18");
+    expect(magnitudeHeatColor(scale.normalize(0))).toContain("22 163 74");
+    expect(magnitudeHeatColor(0.5)).toContain("250 204 21");
     expect(magnitudeHeatColor(scale.normalize(scale.clipHigh))).toContain("239 68 68");
     expect(aggregateMetric(enrichRiskPositions(generateMockPositions(100, 7, asOf), spots, asOf), "totalDelta")).not.toBeNull();
+  });
+
+  it("persists comparable custom bounds and calculates Qty and underlying notional", () => {
+    const scale = buildHeatScale([1, 5, 100], "quantile", false, { min: 0, max: 20 });
+    expect(scale.custom).toBe(true);
+    expect(scale.clipLow).toBe(0);
+    expect(scale.clipHigh).toBe(20);
+    expect(scale.normalize(10)).toBe(0.5);
+    const enriched = enrichRiskPositions(generateMockPositions(100, 7, asOf), spots, asOf);
+    const position = enriched.find(item => item.contractMultiplier !== null)!;
+    expect(metricValue(position, "qty")).toBe(position.netQty);
+    expect(metricValue(position, "notionalSize")).toBeCloseTo(position.netQty * position.contractMultiplier! * spots[position.underlying]);
+    expect(aggregateMetric([position], "notionalSize")).toBe(position.notionalSizeUSD);
   });
 });

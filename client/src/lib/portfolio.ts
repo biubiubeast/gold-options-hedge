@@ -365,11 +365,18 @@ export function calculatePosition(args: {
     formulas,
     market.markPrice * quantity * contractMultiplier,
   );
+  const notionalSize = calculate(
+    "notional_size",
+    baseVariables,
+    formulas,
+    quantity * contractMultiplier * underlyingPrice,
+  );
   const pnl = calculate("pnl", { ...baseVariables, entryCost, currentValue }, formulas, currentValue - entryCost);
 
   return {
     entryCost,
     currentValue,
+    notionalSize,
     pnl,
     contractMultiplier,
     spotScale,

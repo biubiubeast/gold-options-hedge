@@ -14,6 +14,8 @@ export type HeatmapMetric =
   | "bidIV"
   | "askIV"
   | "ivSpread"
+  | "qty"
+  | "notionalSize"
   | "MV"
   | "UPL"
   | "DTE"
@@ -55,6 +57,8 @@ export interface RiskPosition {
   MV: number | null;
   entryCost: number | null;
   UPL: number | null;
+  /** Optional precomputed signed underlying notional from the editable formula engine. */
+  notionalSizeUSD?: number | null;
   quoteTime: string | null;
   positionTime: string | null;
   source: string | null;
@@ -88,6 +92,8 @@ export interface RollPriority {
 
 export interface EnrichedRiskPosition extends RiskPosition {
   dte: number;
+  /** Signed underlying notional: netQty × contractMultiplier × underlying spot. */
+  notionalSizeUSD: number | null;
   distanceToStrike: number | null;
   spreadPct: number | null;
   intrinsicValue: number | null;
@@ -110,6 +116,7 @@ export interface HeatScale {
   clipHigh: number;
   p99Abs: number;
   bins: HeatLegendBin[];
+  custom: boolean;
   normalize: (value: number) => number;
 }
 
@@ -166,6 +173,8 @@ export const METRIC_LABELS: Record<HeatmapMetric, string> = {
   bidIV: "Bid IV",
   askIV: "Ask IV",
   ivSpread: "Ask−Bid IV Spread",
+  qty: "Qty / Position Size",
+  notionalSize: "Notional Size USD",
   MV: "Market Value",
   UPL: "UPL",
   DTE: "DTE",
@@ -223,6 +232,8 @@ export function metricValue(position: EnrichedRiskPosition, metric: HeatmapMetri
     case "bidIV": return position.bidIV;
     case "askIV": return position.askIV;
     case "ivSpread": return position.ivSpread;
+    case "qty": return position.netQty;
+    case "notionalSize": return position.notionalSizeUSD;
     case "MV": return position.MV;
     case "UPL": return position.UPL;
     case "DTE": return Number.isFinite(position.dte) ? position.dte : null;
@@ -393,6 +404,11 @@ export function enrichRiskPositions(positions: RiskPosition[], spots: Record<Ris
     return {
       ...enrichedBase,
       dte,
+      notionalSizeUSD: position.positionKind === "listed"
+        ? 0
+        : finiteOrNull(position.notionalSizeUSD) ?? (spot > 0 && position.contractMultiplier !== null
+          ? position.netQty * position.contractMultiplier * spot
+          : null),
       distanceToStrike: spot > 0 ? (spot - position.strike) / spot : null,
       spreadPct,
       intrinsicValue,
@@ -403,10 +419,36 @@ export function enrichRiskPositions(positions: RiskPosition[], spots: Record<Ris
   });
 }
 
-export function buildHeatScale(values: Array<number | null>, mode: ColorScaleMode, centered: boolean): HeatScale {
+export function buildHeatScale(
+  values: Array<number | null>,
+  mode: ColorScaleMode,
+  centered: boolean,
+  customRange?: { min: number; max: number } | null,
+): HeatScale {
   const valid = values.filter((value): value is number => value !== null && Number.isFinite(value));
+  const customMin = finiteOrNull(customRange?.min);
+  const customMax = finiteOrNull(customRange?.max);
+  if (customMin !== null && customMax !== null && customMax > customMin) {
+    const normalize = (input: number) => !Number.isFinite(input)
+      ? 0
+      : Math.max(0, Math.min(1, (input - customMin) / (customMax - customMin)));
+    const boundaries = Array.from({ length: 7 }, (_, index) => customMin + (customMax - customMin) * index / 6);
+    return {
+      mode,
+      centered: false,
+      custom: true,
+      clipLow: customMin,
+      clipHigh: customMax,
+      p99Abs: Math.max(Math.abs(customMin), Math.abs(customMax)),
+      bins: boundaries.slice(0, -1).map((from, index) => {
+        const to = boundaries[index + 1];
+        return { from, to, label: `${formatCompact(from)}…${formatCompact(to)}`, normalized: normalize((from + to) / 2) };
+      }),
+      normalize,
+    };
+  }
   if (valid.length === 0) {
-    return { mode, centered, clipLow: 0, clipHigh: 0, p99Abs: 0, bins: [], normalize: () => 0 };
+    return { mode, centered, custom: false, clipLow: 0, clipHigh: 0, p99Abs: 0, bins: [], normalize: () => 0 };
   }
   const clipLow = percentile(valid, 0.01);
   const clipHigh = percentile(valid, 0.99);
@@ -444,7 +486,7 @@ export function buildHeatScale(values: Array<number | null>, mode: ColorScaleMod
     const midpoint = (from + to) / 2;
     return { from, to, label: `${formatCompact(from)}…${formatCompact(to)}`, normalized: normalize(midpoint) };
   });
-  return { mode, centered, clipLow, clipHigh, p99Abs, bins, normalize };
+  return { mode, centered, custom: false, clipLow, clipHigh, p99Abs, bins, normalize };
 }
 
 export function formatCompact(value: number | null, metric?: HeatmapMetric): string {
@@ -467,24 +509,15 @@ export function formatPrice(value: number | null): string {
 }
 
 export function heatColor(normalized: number, centered: boolean): string {
-  if (centered) {
-    const magnitude = Math.min(1, Math.abs(normalized));
-    const from = [3, 7, 18] as const;
-    const target = normalized < 0 ? [30, 64, 97] as const : [239, 68, 68] as const;
-    const channel = (index: 0 | 1 | 2) => Math.round(from[index] + (target[index] - from[index]) * magnitude);
-    return `rgb(${channel(0)} ${channel(1)} ${channel(2)} / ${0.88 + magnitude * 0.12})`;
-  }
-  return magnitudeHeatColor(normalized);
+  return magnitudeHeatColor(centered ? (Math.max(-1, Math.min(1, normalized)) + 1) / 2 : normalized);
 }
 
-/** Unified risk palette: zero/low = blue-black, P99/high = red. */
+/** Comparable traffic-light palette: low = green, midpoint = yellow, high = red. */
 export function magnitudeHeatColor(normalized: number): string {
   const value = Math.min(1, Math.max(0, normalized));
   const stops = [
-    [0, 3, 7, 18],
-    [0.25, 11, 31, 54],
-    [0.55, 31, 74, 106],
-    [0.78, 127, 51, 71],
+    [0, 22, 163, 74],
+    [0.5, 250, 204, 21],
     [1, 239, 68, 68],
   ] as const;
   const upperIndex = stops.findIndex(stop => stop[0] >= value);
@@ -492,7 +525,7 @@ export function magnitudeHeatColor(normalized: number): string {
   const lower = stops[Math.max(0, (upperIndex < 0 ? stops.length - 1 : upperIndex) - 1)];
   const ratio = upper[0] === lower[0] ? 0 : (value - lower[0]) / (upper[0] - lower[0]);
   const channel = (from: number, to: number) => Math.round(from + (to - from) * ratio);
-  return `rgb(${channel(lower[1], upper[1])} ${channel(lower[2], upper[2])} ${channel(lower[3], upper[3])} / ${0.88 + value * 0.12})`;
+  return `rgb(${channel(lower[1], upper[1])} ${channel(lower[2], upper[2])} ${channel(lower[3], upper[3])} / 0.96)`;
 }
 
 export function exerciseControl(position: EnrichedRiskPosition, spot: number): ExerciseControl {

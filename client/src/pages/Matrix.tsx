@@ -32,6 +32,10 @@ import { useEffect, useMemo, useState } from "react";
 type DatasetMode = "chain" | "live" | "mock100" | "mock200";
 type ExpiryBucket = "all" | "expired" | "0-2" | "3-7" | "8-30" | "31+";
 type SelectOption = { value: string; label: string };
+type MetricRange = { min: number; max: number };
+
+const RANGE_STORAGE_KEY = "heatmap-metric-custom-ranges-v1";
+const percentageMetrics = new Set<HeatmapMetric>(["markIV", "bidIV", "askIV", "ivSpread", "distanceToStrike"]);
 
 const metricOptions = Object.entries(METRIC_LABELS) as Array<[HeatmapMetric, string]>;
 const statusSeverity: Record<DataStatus, number> = { LIVE: 0, WARN: 1, STALE: 2, MISSING: 3, FAIL: 4 };
@@ -133,6 +137,7 @@ function PositionDetailDialog({ position, onClose }: { position: EnrichedRiskPos
     ["Contract Multiplier", position.contractMultiplier], ["XAU per unit", position.underlying === "GLD" ? position.gldOzPerShare : position.underlyingOzPerUnit],
     ["Mark / Bid / Ask", `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)}`], ["Mark IV", formatCompact(position.markIV, "markIV")],
     ["Bid IV / Ask IV / Spread", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")} / ${formatCompact(position.ivSpread, "ivSpread")}`],
+    ["Qty / Notional USD", `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`],
     ["Unit Delta", position.unitDelta], ["Unit Gamma", position.unitGamma], ["Unit Theta", position.unitTheta], ["Unit Vega", position.unitVega],
     ["Total Delta XAU", position.totalDeltaXAU], ["Total Gamma XAU", position.totalGammaXAU], ["Total Theta USD/day", position.totalThetaUSD], ["Total Vega USD/vol", position.totalVegaUSD],
     ["Market Value", position.MV], ["Entry Cost", position.entryCost], ["UPL", position.UPL],
@@ -170,6 +175,16 @@ export default function Matrix() {
   const [selectedPosition, setSelectedPosition] = useState<EnrichedRiskPosition | null>(null);
   const [cardsVisible, setCardsVisible] = useState(() => localStorage.getItem("heatmap-decision-cards-visible") !== "false");
   const [dataErrorHelp, setDataErrorHelp] = useState(false);
+  const [customRanges, setCustomRanges] = useState<Partial<Record<HeatmapMetric, MetricRange>>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(RANGE_STORAGE_KEY) ?? "{}") as Partial<Record<HeatmapMetric, MetricRange>>;
+    } catch {
+      return {};
+    }
+  });
+  const [rangeMinDraft, setRangeMinDraft] = useState("");
+  const [rangeMaxDraft, setRangeMaxDraft] = useState("");
+  const [rangeError, setRangeError] = useState("");
   const [nativeFullscreen, setNativeFullscreen] = useState(false);
   const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
   const isFullscreen = nativeFullscreen || pseudoFullscreen;
@@ -246,6 +261,16 @@ export default function Matrix() {
     localStorage.setItem("heatmap-decision-cards-visible", String(cardsVisible));
   }, [cardsVisible]);
   useEffect(() => {
+    localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify(customRanges));
+  }, [customRanges]);
+  useEffect(() => {
+    const saved = customRanges[metric];
+    const factor = percentageMetrics.has(metric) ? 100 : 1;
+    setRangeMinDraft(saved ? String(saved.min * factor) : "");
+    setRangeMaxDraft(saved ? String(saved.max * factor) : "");
+    setRangeError("");
+  }, [customRanges, metric]);
+  useEffect(() => {
     const syncFullscreen = () => {
       const active = document.fullscreenElement !== null;
       setNativeFullscreen(active);
@@ -293,6 +318,25 @@ export default function Matrix() {
     && (status === "all" || position.dataStatus === status),
   ), [account, broker, callPut, enriched, expiryBucket, status, underlying, venue]);
 
+  const applyCustomRange = () => {
+    const factor = percentageMetrics.has(metric) ? 100 : 1;
+    const min = Number(rangeMinDraft) / factor;
+    const max = Number(rangeMaxDraft) / factor;
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+      setRangeError("MIN 必须小于 MAX");
+      return;
+    }
+    setCustomRanges(current => ({ ...current, [metric]: { min, max } }));
+    setRangeError("");
+  };
+  const resetCustomRange = () => {
+    setCustomRanges(current => {
+      const next = { ...current };
+      delete next[metric];
+      return next;
+    });
+  };
+
   const { cells, expiries, strikes } = useMemo(() => {
     const grouped = new Map<string, EnrichedRiskPosition[]>();
     for (const position of filtered) {
@@ -317,12 +361,15 @@ export default function Matrix() {
     };
   }, [filtered, metric]);
   const sequentialMagnitude = metric === "unitDelta" || metric === "totalDelta"
-    || metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread";
+    || metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread"
+    || metric === "qty" || metric === "notionalSize";
+  const activeCustomRange = customRanges[metric] ?? null;
   const scale = useMemo(() => buildHeatScale(
     cells.map(cell => cell.value === null ? null : sequentialMagnitude ? Math.abs(cell.value) : cell.value),
     scaleMode,
     !sequentialMagnitude && CENTERED_METRICS.has(metric),
-  ), [cells, metric, scaleMode, sequentialMagnitude]);
+    activeCustomRange,
+  ), [activeCustomRange, cells, metric, scaleMode, sequentialMagnitude]);
   const importanceCutoff = useMemo(() => percentile(cells.map(cell => Math.abs(cell.value ?? 0)).filter(value => value > 0), 0.85), [cells]);
   const heldFiltered = useMemo(() => filtered.filter(position => position.positionKind !== "listed"), [filtered]);
   const cards = useMemo(() => buildDecisionCards(heldFiltered), [heldFiltered]);
@@ -389,6 +436,11 @@ export default function Matrix() {
         <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "XAU", label: "XAU" }]} />
         <NativeSelect label="LABEL" value={labelMode} onChange={value => setLabelMode(value as CellLabelMode)} options={[{ value: "none", label: "NONE" }, { value: "top", label: "TOP 15%" }, { value: "all", label: "ALL" }]} />
         <NativeSelect label="HOVER" value={hoverPreset} onChange={value => setHoverPreset(value as HoverDataPreset)} options={[{ value: "risk", label: "RISK" }, { value: "market", label: "MARKET" }, { value: "pnl", label: "PNL" }, { value: "all", label: "ALL" }]} />
+        <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MIN{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale minimum" inputMode="decimal" value={rangeMinDraft} onChange={event => setRangeMinDraft(event.target.value)} placeholder="AUTO" className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
+        <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MAX{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale maximum" inputMode="decimal" value={rangeMaxDraft} onChange={event => setRangeMaxDraft(event.target.value)} placeholder="AUTO" className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
+        <button type="button" onClick={applyCustomRange} className="h-6 border border-border px-1.5 text-[8px] text-muted-foreground hover:text-foreground">Apply Range</button>
+        {activeCustomRange && <button type="button" onClick={resetCustomRange} className="h-6 border border-emerald-400/60 px-1.5 text-[8px] text-emerald-300">Custom ✓ / Reset</button>}
+        {rangeError && <span role="alert" className="text-[8px] text-red-300">{rangeError}</span>}
         <button type="button" onClick={() => setTranspose(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${transpose ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowLeftRight className="h-3 w-3" />Transpose</button>
         <button type="button" onClick={() => setReverseStrikes(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${reverseStrikes ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowUpDown className="h-3 w-3" />Strike {reverseStrikes ? "↓" : "↑"}</button>
         <div className="flex h-6 items-center border border-border text-[9px] text-muted-foreground"><button aria-label="Smaller cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.max(3, value - 1)); }}><Minus className="h-3 w-3" /></button><span className="w-8 text-center font-mono">{cellSize}px</span><button aria-label="Larger cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.min(28, value + 1)); }}><Plus className="h-3 w-3" /></button></div>

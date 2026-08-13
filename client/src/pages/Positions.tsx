@@ -12,6 +12,8 @@ import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { PositionExcelPreview } from "@shared/positionExcel";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
+import { calculatePosition, getPositionMarketData, type PortfolioPosition } from "@/lib/portfolio";
+import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 
 interface PositionForm {
   underlying: "XAUT" | "GLD";
@@ -75,6 +77,10 @@ function downloadBase64(base64: string, mimeType: string, fileName: string) {
 export default function Positions() {
   const utils = trpc.useUtils();
   const { data: positions, isLoading } = trpc.positions.list.useQuery();
+  const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
+  const { data: formulas } = trpc.formulas.list.useQuery();
+  const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
+  const { settings } = usePortfolioSettings();
   const exportExcelQuery = trpc.positions.exportExcel.useQuery(undefined, { enabled: false });
   const previewMutation = trpc.positions.previewExcel.useMutation({ onError: error => toast.error(error.message) });
   const importMutation = trpc.positions.importExcel.useMutation({
@@ -190,6 +196,14 @@ export default function Positions() {
     downloadBase64(result.data.base64, result.data.mimeType, result.data.fileName);
     toast.success("已按 期权持仓_XAUT_GLD 模板导出");
   };
+  const notionalSize = (position: NonNullable<typeof positions>[number]) => {
+    const xautSpot = Number(spotPrices?.xaut?.price);
+    const gldSpot = Number(spotPrices?.gld?.price);
+    const xauSpot = Number(spotPrices?.gold?.price);
+    if (![xautSpot, gldSpot, xauSpot].every(Number.isFinite)) return null;
+    const market = getPositionMarketData({ position: position as PortfolioPosition, xautTickers, gldSpot, formulas, settings });
+    return calculatePosition({ position: position as PortfolioPosition, market, xautSpot, gldSpot, xauSpot, formulas, settings }).notionalSize;
+  };
 
   if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
@@ -282,8 +296,8 @@ export default function Positions() {
       <Card className="glass-card">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table className="min-w-[1900px]">
-              <TableHeader><TableRow><TableHead>Source / Venue</TableHead><TableHead>Instrument</TableHead><TableHead>U</TableHead><TableHead>Expiry</TableHead><TableHead>Strike</TableHead><TableHead>C/P</TableHead><TableHead>Qty</TableHead><TableHead>Multiplier</TableHead><TableHead>Mark</TableHead><TableHead>Mark IV</TableHead><TableHead>Bid / Ask</TableHead><TableHead>Entry</TableHead><TableHead>MV</TableHead><TableHead>Entry Cost</TableHead><TableHead>UPL</TableHead><TableHead>Unit Δ</TableHead><TableHead>Total Δ XAU</TableHead><TableHead>Γ XAU</TableHead><TableHead>Θ USD/d</TableHead><TableHead>Vega USD/v</TableHead><TableHead>As-of / Source</TableHead><TableHead>Status</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
+            <Table className="min-w-[2050px]">
+              <TableHeader><TableRow><TableHead>Source / Venue</TableHead><TableHead>Instrument</TableHead><TableHead>U</TableHead><TableHead>Expiry</TableHead><TableHead>Strike</TableHead><TableHead>C/P</TableHead><TableHead>Qty</TableHead><TableHead>Multiplier</TableHead><TableHead>Notional USD</TableHead><TableHead>Mark</TableHead><TableHead>Mark IV</TableHead><TableHead>Bid / Ask</TableHead><TableHead>Entry</TableHead><TableHead>MV</TableHead><TableHead>Entry Cost</TableHead><TableHead>UPL</TableHead><TableHead>Unit Δ</TableHead><TableHead>Total Δ XAU</TableHead><TableHead>Γ XAU</TableHead><TableHead>Θ USD/d</TableHead><TableHead>Vega USD/v</TableHead><TableHead>As-of / Source</TableHead><TableHead>Status</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
               <TableBody>{positions?.length ? positions.map(position => (
                 <TableRow key={position.id} className="hover:bg-secondary/30">
                   <TableCell className="max-w-48"><p className="truncate text-xs" title={position.sourceAccount ?? ""}>{position.sourceAccount ?? "LOCAL-HEDGE"}</p><p className="truncate text-[10px] text-muted-foreground">{position.venue ?? "MANUAL"}</p></TableCell>
@@ -292,6 +306,7 @@ export default function Positions() {
                   <TableCell className="font-mono text-xs">{position.expiry}</TableCell><TableCell className="font-mono">{position.strike}</TableCell>
                   <TableCell><Badge variant="outline" className={position.optionType === "call" ? "text-green-400" : "text-red-400"}>{position.optionType.toUpperCase()}</Badge></TableCell>
                   <TableCell className="font-mono">{position.quantity}</TableCell><TableCell className="font-mono text-xs">{position.contractMultiplier ?? (position.underlying === "GLD" ? "100" : "1")} × {position.multiplierXau ?? "—"} XAU</TableCell>
+                  <TableCell className="font-mono" title="Signed Qty × contract multiplier × current underlying spot">{notionalSize(position) === null ? "—" : `$${money(notionalSize(position))}`}</TableCell>
                   <TableCell className="font-mono">{position.importedMarkPrice ?? "—"}</TableCell>
                   <TableCell className="font-mono">{position.markIv ? `${(Number(position.markIv) * 100).toFixed(2)}%` : "—"}</TableCell>
                   <TableCell className="font-mono text-xs">{position.bid1Price ?? "—"} / {position.ask1Price ?? "—"}</TableCell>
@@ -304,10 +319,10 @@ export default function Positions() {
                   <TableCell><Badge variant="outline" className={position.dataStatus === "STALE" ? "border-amber-500/40 text-amber-300" : ""}>{position.dataStatus ?? (position.importSource ? "STALE" : "WARN")}</Badge></TableCell>
                   <TableCell className="text-right"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(position)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { if (window.confirm(`确认删除 ${position.underlying} ${position.strike} ${position.optionType.toUpperCase()}？`)) deleteMutation.mutate({ id: position.id }); }}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell>
                 </TableRow>
-              )) : <TableRow><TableCell colSpan={23} className="py-12 text-center text-muted-foreground"><FileSpreadsheet className="mx-auto mb-2 h-8 w-8 opacity-50" />上传持仓 Excel，或添加第一条仓位</TableCell></TableRow>}</TableBody>
+              )) : <TableRow><TableCell colSpan={24} className="py-12 text-center text-muted-foreground"><FileSpreadsheet className="mx-auto mb-2 h-8 w-8 opacity-50" />上传持仓 Excel，或添加第一条仓位</TableCell></TableRow>}</TableBody>
             </Table>
           </div>
-          <div className="flex items-center gap-2 border-t border-border/50 px-3 py-2 text-[11px] text-muted-foreground"><Info className="h-3.5 w-3.5" />“更新市场数据”会持久化 Mark、IV、Bid/Ask、Greeks、MV、UPL、Source 与 As-of；之后导出的 Excel 主表及 Market_Data_实时明细均使用这些最新值。</div>
+          <div className="flex items-center gap-2 border-t border-border/50 px-3 py-2 text-[11px] text-muted-foreground"><Info className="h-3.5 w-3.5" />Notional USD = signed Net Qty × actual contract multiplier × current underlying spot；它是标的名义金额，不是期权 MV。“更新市场数据”会持久化 Mark、IV、Bid/Ask、Greeks、MV、UPL、Source 与 As-of。</div>
         </CardContent>
       </Card>
     </div>
