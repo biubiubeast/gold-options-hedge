@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  aggregateHeatmapCellMetric,
   aggregateMetric,
   buildHeatScale,
   calculateScenario,
@@ -102,5 +103,19 @@ describe("institutional risk heatmap acceptance", () => {
     expect(metricValue(position, "qty")).toBe(position.netQty);
     expect(metricValue(position, "notionalSize")).toBeCloseTo(position.netQty * position.contractMultiplier! * spots[position.underlying]);
     expect(aggregateMetric([position], "notionalSize")).toBe(position.notionalSizeUSD);
+  });
+
+  it("excludes listed-only contracts from held Qty and Notional heat ranges", () => {
+    const source = generateMockPositions(2, 31, asOf);
+    const held = enrichRiskPositions([{ ...source[0], id: "held", netQty: 4, positionKind: "held" }], spots, asOf)[0];
+    const listed = enrichRiskPositions([{ ...source[1], id: "listed", netQty: 0, positionKind: "listed" }], spots, asOf)[0];
+    expect(aggregateHeatmapCellMetric([listed], "qty")).toBeNull();
+    expect(aggregateHeatmapCellMetric([listed], "notionalSize")).toBeNull();
+    expect(aggregateHeatmapCellMetric([held, listed], "qty")).toBe(4);
+    const scale = buildHeatScale([4, 7], "quantile", false, { min: 4, max: 7, basis: "held" });
+    expect(scale.rangeBasis).toBe("held");
+    expect(scale.custom).toBe(false);
+    expect(scale.clipLow).toBe(4);
+    expect(scale.clipHigh).toBe(7);
   });
 });

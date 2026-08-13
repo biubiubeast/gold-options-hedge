@@ -162,9 +162,12 @@ export const appRouter = router({
       mode: z.enum(["replace", "upsert"]),
       positions: z.array(importedPositionSchema).min(1).max(2_000),
     })).mutation(({ ctx, input }) => db.importPositions(ctx.user.id, input.positions, input.mode)),
-    refreshMarketData: protectedProcedure.mutation(async ({ ctx }) => {
+    refreshMarketData: protectedProcedure.input(z.object({
+      gldMultiplierXau: z.number().positive().nullable().optional(),
+      xautMultiplierXau: z.number().positive().nullable().optional(),
+    }).optional()).mutation(async ({ ctx, input }) => {
       const positions = await db.getPositionsByUser(ctx.user.id);
-      return refreshPositionMarketData(ctx.user.id, positions);
+      return refreshPositionMarketData(ctx.user.id, positions, input);
     }),
     exportExcel: protectedProcedure.query(async ({ ctx }) => {
       const positions = await db.getPositionsByUser(ctx.user.id);

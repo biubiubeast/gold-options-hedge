@@ -1,6 +1,7 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   CENTERED_METRICS,
+  HELD_ONLY_HEATMAP_METRICS,
   METRIC_LABELS,
   formatCompact,
   formatPrice,
@@ -158,8 +159,9 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
     const normalized = scale.normalize(sequentialMagnitude ? Math.abs(value) : value);
     return sequentialMagnitude ? magnitudeHeatColor(normalized) : heatColor(normalized, centered);
   };
-  const legendMaximum = scale.centered && !scale.custom ? scale.p99Abs : scale.clipHigh;
-  const legendMinimum = scale.custom ? scale.clipLow : scale.centered ? -scale.p99Abs : 0;
+  const fixedRange = scale.rangeBasis !== "distribution";
+  const legendMaximum = scale.centered && !fixedRange ? scale.p99Abs : scale.clipHigh;
+  const legendMinimum = fixedRange ? scale.clipLow : scale.centered ? -scale.p99Abs : 0;
   const legendMidpoint = (legendMinimum + legendMaximum) / 2;
   const legendGradient = "linear-gradient(to top, rgb(22 163 74), rgb(250 204 21), rgb(239 68 68))";
 
@@ -205,8 +207,8 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
                 onFocus={() => cell && setHoveredCellKey(key)}
                 onBlur={() => setHoveredCellKey(current => current === key ? null : current)}
                 aria-label={cell ? `${key} ${formatCompact(cell.value, metric)} ${cell.held ? "held" : "listed no position"} ${status}` : `${key} unavailable not listed`}
-              >{showLabel && <span className="font-semibold text-white drop-shadow-sm">{formatCompact(cell!.value, metric)}</span>}{cell?.held && <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 h-1 w-1 bg-amber-100" />}{cell && cell.positions.length > 1 && (labelMode !== "none" || cell.held) && <span className="absolute bottom-0 right-0 text-[6px] leading-none text-white/70">{cell.positions.length}</span>}{cell && status !== "LIVE" && (cell.held || labelMode !== "none") && <span className="absolute left-0 top-0 text-[6px] font-bold leading-none text-white">{statusAbbreviation(status)}</span>}{isSyntheticSpot && <span className="text-[7px] text-amber-200">SPOT</span>}</button></TooltipTrigger>
-                {cell && <TooltipContent side="right" sideOffset={6} collisionPadding={12} className="z-[100] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 rounded-sm bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">Cell {METRIC_LABELS[metric]} </span><strong className="float-right font-mono text-primary">{formatCompact(cell.value, metric)}</strong></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} /></div>)}</div><p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、Greeks、数据质量与 Roll 原因</p></TooltipContent>}
+              >{showLabel && <span className="font-semibold text-white drop-shadow-sm">{formatCompact(cell!.value, metric)}</span>}{cell?.held && <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 aspect-square h-[35%] min-h-px max-h-[6px] bg-amber-100" />}{cell && cell.positions.length > 1 && (labelMode !== "none" || cell.held) && <span className="absolute bottom-0 right-0 text-[6px] leading-none text-white/70">{cell.positions.length}</span>}{cell && status !== "LIVE" && (cell.held || labelMode !== "none") && <span className="absolute left-0 top-0 text-[6px] font-bold leading-none text-white">{statusAbbreviation(status)}</span>}{isSyntheticSpot && <span className="text-[7px] text-amber-200">SPOT</span>}</button></TooltipTrigger>
+                {cell && <TooltipContent side="right" sideOffset={6} collisionPadding={12} className="z-[100] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 rounded-sm bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">Cell {METRIC_LABELS[metric]} </span><strong className="float-right font-mono text-primary">{cell.value === null && HELD_ONLY_HEATMAP_METRICS.has(metric) ? "NO POSITION · NOT COLORED" : formatCompact(cell.value, metric)}</strong></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} /></div>)}</div><p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、Greeks、数据质量与 Roll 原因</p></TooltipContent>}
               </Tooltip>;
             });
             return [axis, ...buttons];
@@ -214,7 +216,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
         </div>
       </div>
       <aside className="flex w-[62px] shrink-0 flex-col items-center border-l border-border/60 bg-card/50 px-1 py-2" aria-label="vertical heatmap legend">
-        <span className="text-center text-[7px] uppercase leading-tight text-muted-foreground">{sequentialMagnitude ? "ABS VALUE" : scale.centered ? "SIGNED" : "RAW VALUE"}<br />{scale.custom ? "CUSTOM" : "P99 CLIP"}</span>
+        <span className="text-center text-[7px] uppercase leading-tight text-muted-foreground">{sequentialMagnitude ? "ABS VALUE" : scale.centered ? "SIGNED" : "RAW VALUE"}<br />{scale.rangeBasis === "held" ? "HELD RANGE" : scale.custom ? "CUSTOM" : "P99 CLIP"}</span>
         <span className="mt-1 font-mono text-[7px] text-foreground">{formatCompact(legendMaximum, metric)}</span>
         <div className="my-1 min-h-16 w-3 flex-1 border border-white/10" style={{ background: legendGradient }} />
         <span className="font-mono text-[7px] text-yellow-300">{formatCompact(legendMidpoint, metric)}</span><span className="mt-auto font-mono text-[7px] text-emerald-300">{formatCompact(legendMinimum, metric)}</span>

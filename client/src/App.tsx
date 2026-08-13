@@ -10,6 +10,7 @@ import Matrix from "@/pages/Matrix";
 import NotFound from "@/pages/NotFound";
 import OptionDetail from "@/pages/OptionDetail";
 import Positions from "@/pages/Positions";
+import Settings from "@/pages/Settings";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -25,6 +26,7 @@ function Router() {
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/formulas" component={Formulas} />
         <Route path="/data-sources" component={DataSources} />
+        <Route path="/settings" component={Settings} />
         <Route path="/option/:id" component={OptionDetail} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

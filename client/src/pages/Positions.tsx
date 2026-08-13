@@ -173,7 +173,15 @@ export default function Positions() {
     setOpen(true);
   };
 
-  const handleNew = () => { setEditId(null); setForm(defaultForm); setOpen(true); };
+  const handleNew = () => {
+    setEditId(null);
+    setForm({
+      ...defaultForm,
+      multiplierXau: String(settings.xautSpotScaleOverride ?? 1),
+      contractMultiplier: String(settings.xautContractMultiplier),
+    });
+    setOpen(true);
+  };
 
   const handleFile = async (file?: File) => {
     if (!file) return;
@@ -263,7 +271,7 @@ export default function Positions() {
             <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
               <DialogHeader><DialogTitle>{editId ? "编辑仓位" : "添加新仓位"}</DialogTitle><DialogDescription>核心合约信息为必填；账户、快照和 Unit Greeks 可展开补充。</DialogDescription></DialogHeader>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <div><Label>Underlying *</Label><Select value={form.underlying} onValueChange={(value: "XAUT" | "GLD") => setForm({ ...form, underlying: value, currency: value === "XAUT" ? "USDT" : "USD", contractMultiplier: value === "XAUT" ? "1" : "100" })}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="XAUT">XAUT</SelectItem><SelectItem value="GLD">GLD</SelectItem></SelectContent></Select></div>
+                <div><Label>Underlying *</Label><Select value={form.underlying} onValueChange={(value: "XAUT" | "GLD") => setForm({ ...form, underlying: value, currency: value === "XAUT" ? "USDT" : "USD", contractMultiplier: String(value === "XAUT" ? settings.xautContractMultiplier : settings.gldContractMultiplier), multiplierXau: String(value === "XAUT" ? settings.xautSpotScaleOverride ?? 1 : settings.gldSpotScaleOverride ?? 0.092) })}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="XAUT">XAUT</SelectItem><SelectItem value="GLD">GLD</SelectItem></SelectContent></Select></div>
                 <div><Label>Call / Put *</Label><Select value={form.optionType} onValueChange={(value: "call" | "put") => setForm({ ...form, optionType: value })}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="call">Call</SelectItem><SelectItem value="put">Put</SelectItem></SelectContent></Select></div>
                 <div><Label>Expiry *</Label><Input type="date" value={form.expiry} onChange={event => setForm({ ...form, expiry: event.target.value })} className="mt-1" /></div>
                 <div><Label>Strike *</Label><Input type="number" step="0.01" value={form.strike} onChange={event => setForm({ ...form, strike: event.target.value })} className="mt-1" /></div>

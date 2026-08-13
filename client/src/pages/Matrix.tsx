@@ -9,8 +9,9 @@ import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import {
   CENTERED_METRICS,
+  HELD_ONLY_HEATMAP_METRICS,
   METRIC_LABELS,
-  aggregateMetric,
+  aggregateHeatmapCellMetric,
   buildHeatScale,
   enrichRiskPositions,
   formatCompact,
@@ -350,7 +351,7 @@ export default function Matrix() {
       expiry: cellPositions[0].expiry,
       strike: cellPositions[0].strike,
       positions: cellPositions,
-      value: aggregateMetric(cellPositions, metric),
+      value: aggregateHeatmapCellMetric(cellPositions, metric),
       listed: cellPositions.some(position => position.positionKind === "listed"),
       held: cellPositions.some(position => position.positionKind !== "listed"),
     }));
@@ -364,12 +365,20 @@ export default function Matrix() {
     || metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread"
     || metric === "qty" || metric === "notionalSize";
   const activeCustomRange = customRanges[metric] ?? null;
+  const heldOnlyAutoRange = useMemo(() => {
+    if (!HELD_ONLY_HEATMAP_METRICS.has(metric) || activeCustomRange) return null;
+    const values = cells
+      .filter(cell => cell.held && cell.value !== null && Number.isFinite(cell.value))
+      .map(cell => Math.abs(cell.value!));
+    if (!values.length) return null;
+    return { min: Math.min(...values), max: Math.max(...values), basis: "held" as const };
+  }, [activeCustomRange, cells, metric]);
   const scale = useMemo(() => buildHeatScale(
     cells.map(cell => cell.value === null ? null : sequentialMagnitude ? Math.abs(cell.value) : cell.value),
     scaleMode,
     !sequentialMagnitude && CENTERED_METRICS.has(metric),
-    activeCustomRange,
-  ), [activeCustomRange, cells, metric, scaleMode, sequentialMagnitude]);
+    activeCustomRange ? { ...activeCustomRange, basis: "custom" } : heldOnlyAutoRange,
+  ), [activeCustomRange, cells, heldOnlyAutoRange, metric, scaleMode, sequentialMagnitude]);
   const importanceCutoff = useMemo(() => percentile(cells.map(cell => Math.abs(cell.value ?? 0)).filter(value => value > 0), 0.85), [cells]);
   const heldFiltered = useMemo(() => filtered.filter(position => position.positionKind !== "listed"), [filtered]);
   const cards = useMemo(() => buildDecisionCards(heldFiltered), [heldFiltered]);
@@ -436,8 +445,8 @@ export default function Matrix() {
         <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "XAU", label: "XAU" }]} />
         <NativeSelect label="LABEL" value={labelMode} onChange={value => setLabelMode(value as CellLabelMode)} options={[{ value: "none", label: "NONE" }, { value: "top", label: "TOP 15%" }, { value: "all", label: "ALL" }]} />
         <NativeSelect label="HOVER" value={hoverPreset} onChange={value => setHoverPreset(value as HoverDataPreset)} options={[{ value: "risk", label: "RISK" }, { value: "market", label: "MARKET" }, { value: "pnl", label: "PNL" }, { value: "all", label: "ALL" }]} />
-        <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MIN{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale minimum" inputMode="decimal" value={rangeMinDraft} onChange={event => setRangeMinDraft(event.target.value)} placeholder="AUTO" className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
-        <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MAX{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale maximum" inputMode="decimal" value={rangeMaxDraft} onChange={event => setRangeMaxDraft(event.target.value)} placeholder="AUTO" className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
+        <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MIN{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale minimum" inputMode="decimal" value={rangeMinDraft} onChange={event => setRangeMinDraft(event.target.value)} placeholder={heldOnlyAutoRange ? formatCompact(heldOnlyAutoRange.min, metric) : "AUTO"} className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
+        <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MAX{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale maximum" inputMode="decimal" value={rangeMaxDraft} onChange={event => setRangeMaxDraft(event.target.value)} placeholder={heldOnlyAutoRange ? formatCompact(heldOnlyAutoRange.max, metric) : "AUTO"} className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
         <button type="button" onClick={applyCustomRange} className="h-6 border border-border px-1.5 text-[8px] text-muted-foreground hover:text-foreground">Apply Range</button>
         {activeCustomRange && <button type="button" onClick={resetCustomRange} className="h-6 border border-emerald-400/60 px-1.5 text-[8px] text-emerald-300">Custom ✓ / Reset</button>}
         {rangeError && <span role="alert" className="text-[8px] text-red-300">{rangeError}</span>}
@@ -451,6 +460,7 @@ export default function Matrix() {
 
       {dataset === "chain" && underlying !== "XAUT" && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">GLD FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · updated {new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed (actual lag varies) · cyan listed / gold held</div>}
       {dataset === "chain" && underlying !== "GLD" && xautChain && <div className="shrink-0 border border-violet-400/30 bg-violet-500/5 px-2 py-0.5 font-mono text-[8px] text-violet-100">XAUT FULL CHAIN · {xautChain.contractCount} tradable contracts · {xautChain.expiryCount} expiries · {xautChain.strikeCount} strikes · {xautChain.source} · updated {new Date(xautChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(xautChain.delaySeconds)}s</div>}
+      {HELD_ONLY_HEATMAP_METRICS.has(metric) && <div className="shrink-0 border border-amber-300/25 bg-amber-300/5 px-2 py-0.5 font-mono text-[8px] text-amber-100">POSITION-ONLY METRIC · only held cells are colored and included in the default min/max · listed contracts remain hoverable but uncolored</div>}
       {filtered.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center border border-dashed border-border text-sm text-muted-foreground">
           <p>当前筛选没有有效 position。</p>

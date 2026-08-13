@@ -55,6 +55,8 @@ export type PortfolioPosition = {
 };
 
 export type PortfolioSettings = {
+  marketAutoRefreshEnabled: boolean;
+  marketAutoRefreshMinutes: number;
   xautContractMultiplier: number;
   gldContractMultiplier: number;
   xautSpotScaleOverride: number | null;
@@ -64,10 +66,12 @@ export type PortfolioSettings = {
 };
 
 export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
+  marketAutoRefreshEnabled: true,
+  marketAutoRefreshMinutes: 60,
   xautContractMultiplier: 1,
   gldContractMultiplier: 100,
   xautSpotScaleOverride: null,
-  gldSpotScaleOverride: null,
+  gldSpotScaleOverride: 0.092,
   gldFallbackIv: 0.2,
   riskFreeRate: 0.045,
 };

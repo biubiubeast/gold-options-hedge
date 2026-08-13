@@ -13,13 +13,14 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, PanelLeft, Grid3X3, ListPlus, Calculator, Database, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { LayoutDashboard, PanelLeft, Grid3X3, ListPlus, Calculator, Database, Settings, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { LiveSpotBar } from "./LiveSpotBar";
 import { MarketRefreshButton } from "./MarketRefreshButton";
+import { AutoMarketRefresh } from "./AutoMarketRefresh";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -27,6 +28,7 @@ const menuItems = [
   { icon: Grid3X3, label: "矩阵视图", path: "/matrix" },
   { icon: Calculator, label: "公式管理", path: "/formulas" },
   { icon: Database, label: "数据来源", path: "/data-sources" },
+  { icon: Settings, label: "设置", path: "/settings" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -154,6 +156,7 @@ function DashboardLayoutContent({
 
   return (
     <>
+      <AutoMarketRefresh />
       <div className="relative" ref={sidebarRef}>
         <Sidebar
           collapsible="icon"

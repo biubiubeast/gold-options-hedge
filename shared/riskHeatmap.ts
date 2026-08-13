@@ -112,6 +112,7 @@ export interface HeatLegendBin {
 export interface HeatScale {
   mode: ColorScaleMode;
   centered: boolean;
+  rangeBasis: "distribution" | "custom" | "held";
   clipLow: number;
   clipHigh: number;
   p99Abs: number;
@@ -193,6 +194,12 @@ export const CENTERED_METRICS = new Set<HeatmapMetric>([
   "distanceToStrike",
 ]);
 
+/** These metrics describe an owned position, not a listed option contract. */
+export const HELD_ONLY_HEATMAP_METRICS = new Set<HeatmapMetric>([
+  "qty",
+  "notionalSize",
+]);
+
 export function finiteOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -253,6 +260,13 @@ export function aggregateMetric(positions: EnrichedRiskPosition[], metric: Heatm
   if (metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread" || metric === "rollPriority") return Math.max(...values);
   if (metric === "DTE") return Math.min(...values);
   return values.reduce((sum, value) => sum + value, 0);
+}
+
+export function aggregateHeatmapCellMetric(positions: EnrichedRiskPosition[], metric: HeatmapMetric): number | null {
+  const eligible = HELD_ONLY_HEATMAP_METRICS.has(metric)
+    ? positions.filter(position => position.positionKind !== "listed")
+    : positions;
+  return aggregateMetric(eligible, metric);
 }
 
 export function quoteAgeSeconds(position: RiskPosition, asOf: Date = new Date()): number | null {
@@ -423,20 +437,25 @@ export function buildHeatScale(
   values: Array<number | null>,
   mode: ColorScaleMode,
   centered: boolean,
-  customRange?: { min: number; max: number } | null,
+  rangeOverride?: { min: number; max: number; basis?: "custom" | "held" } | null,
 ): HeatScale {
   const valid = values.filter((value): value is number => value !== null && Number.isFinite(value));
-  const customMin = finiteOrNull(customRange?.min);
-  const customMax = finiteOrNull(customRange?.max);
-  if (customMin !== null && customMax !== null && customMax > customMin) {
+  const customMin = finiteOrNull(rangeOverride?.min);
+  const customMax = finiteOrNull(rangeOverride?.max);
+  if (customMin !== null && customMax !== null && customMax >= customMin) {
+    const spread = customMax - customMin;
     const normalize = (input: number) => !Number.isFinite(input)
       ? 0
-      : Math.max(0, Math.min(1, (input - customMin) / (customMax - customMin)));
-    const boundaries = Array.from({ length: 7 }, (_, index) => customMin + (customMax - customMin) * index / 6);
+      : spread === 0
+        ? 0.5
+        : Math.max(0, Math.min(1, (input - customMin) / spread));
+    const boundaries = Array.from({ length: 7 }, (_, index) => customMin + spread * index / 6);
+    const rangeBasis = rangeOverride?.basis ?? "custom";
     return {
       mode,
       centered: false,
-      custom: true,
+      rangeBasis,
+      custom: rangeBasis === "custom",
       clipLow: customMin,
       clipHigh: customMax,
       p99Abs: Math.max(Math.abs(customMin), Math.abs(customMax)),
@@ -448,7 +467,7 @@ export function buildHeatScale(
     };
   }
   if (valid.length === 0) {
-    return { mode, centered, custom: false, clipLow: 0, clipHigh: 0, p99Abs: 0, bins: [], normalize: () => 0 };
+    return { mode, centered, rangeBasis: "distribution", custom: false, clipLow: 0, clipHigh: 0, p99Abs: 0, bins: [], normalize: () => 0 };
   }
   const clipLow = percentile(valid, 0.01);
   const clipHigh = percentile(valid, 0.99);
@@ -486,7 +505,7 @@ export function buildHeatScale(
     const midpoint = (from + to) / 2;
     return { from, to, label: `${formatCompact(from)}…${formatCompact(to)}`, normalized: normalize(midpoint) };
   });
-  return { mode, centered, custom: false, clipLow, clipHigh, p99Abs, bins, normalize };
+  return { mode, centered, rangeBasis: "distribution", custom: false, clipLow, clipHigh, p99Abs, bins, normalize };
 }
 
 export function formatCompact(value: number | null, metric?: HeatmapMetric): string {

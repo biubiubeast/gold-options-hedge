@@ -60,7 +60,11 @@ function statusFor(quote: NormalizedQuote): PositionRecord["dataStatus"] {
   return "LIVE";
 }
 
-export async function refreshPositionMarketData(userId: number, positions: PositionRecord[]) {
+export async function refreshPositionMarketData(
+  userId: number,
+  positions: PositionRecord[],
+  scaleOverrides?: { gldMultiplierXau?: number | null; xautMultiplierXau?: number | null },
+) {
   clearMarketDataCache();
   const gldPositions = positions.filter(position => position.underlying === "GLD");
   const [xautTickers, gldQuotes, xautSpot, gldSpot, xauSpot] = await Promise.all([
@@ -106,7 +110,10 @@ export async function refreshPositionMarketData(userId: number, positions: Posit
     const contractMultiplier = numberOrNull(position.contractMultiplier) ?? (position.underlying === "GLD" ? 100 : 1);
     const underlyingPrice = position.underlying === "GLD" ? (gldSpot?.price ?? 0) : (xautSpot?.price ?? 0);
     const xauPrice = xauSpot?.price ?? xautSpot?.price ?? 0;
-    const multiplierXau = numberOrNull(position.multiplierXau) ?? (underlyingPrice > 0 && xauPrice > 0 ? underlyingPrice / xauPrice : position.underlying === "XAUT" ? 1 : null);
+    const configuredScale = position.underlying === "GLD" ? scaleOverrides?.gldMultiplierXau : scaleOverrides?.xautMultiplierXau;
+    const multiplierXau = numberOrNull(position.multiplierXau)
+      ?? numberOrNull(configuredScale)
+      ?? (underlyingPrice > 0 && xauPrice > 0 ? underlyingPrice / xauPrice : position.underlying === "XAUT" ? 1 : null);
     const entryValue = Number(position.entryPrice) * quantity * contractMultiplier;
     const entryCost = entryValue + Number(position.fee);
     const marketValue = quote.markPrice * quantity * contractMultiplier;
