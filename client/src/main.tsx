@@ -17,6 +17,9 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
+      fetch(url, options) {
+        return globalThis.fetch(url, { ...options, cache: "no-store" });
+      },
     }),
   ],
 });
