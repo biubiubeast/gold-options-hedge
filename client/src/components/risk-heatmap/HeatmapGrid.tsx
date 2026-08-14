@@ -91,6 +91,10 @@ function TooltipPosition({ position, metric, preset, content }: { position: Enri
   return <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[10px]">{rows.map(([label, value]) => <div key={label} className="contents"><span className="text-muted-foreground">{label}</span><span className="text-right font-mono">{value}</span></div>)}</div>;
 }
 
+function SpotPriceTooltip({ spot, children }: { spot: number; children: ReactElement }) {
+  return <Tooltip delayDuration={80}><TooltipTrigger asChild>{children}</TooltipTrigger><TooltipContent side="right" sideOffset={4} className="z-[120] border border-amber-300/40 bg-popover px-2 py-1 text-[10px] text-popover-foreground shadow-xl"><span className="text-muted-foreground">Spot price </span><strong className="font-mono text-amber-300">{formatSpotPrice(spot)}</strong></TooltipContent></Tooltip>;
+}
+
 function ExpiryTooltip({ expiry, positions, preset, children }: { expiry: string; positions: EnrichedRiskPosition[]; preset: HoverDataPreset; children: ReactElement<{ onClick?: MouseEventHandler }> }) {
   const [open, setOpen] = useState(false);
   const held = positions.filter(position => position.positionKind !== "listed");
@@ -131,7 +135,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
   const viewportRef = useRef<HTMLDivElement>(null);
   const centeredOnceRef = useRef<string | null>(null);
   const range = useMemo(() => spotRangeState(strikes, spot), [spot, strikes]);
-  const atmStrikes = useMemo(() => new Set(nearestStrikeLevels(strikes, spot, 2)), [spot, strikes]);
+  const atmStrikes = useMemo(() => new Set(nearestStrikeLevels(strikes, spot)), [spot, strikes]);
   useEffect(() => setCenterSpot(false), [spot, strikes]);
   const displayStrikes = useMemo(() => {
     const values = !centerSpot || range.state === "within" || !Number.isFinite(spot)
@@ -178,22 +182,22 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden border border-border/60 bg-background/70" data-testid="risk-heatmap-grid">
       <div ref={viewportRef} className="min-w-0 flex-1 overflow-auto">
-        {range.state !== "within" && range.state !== "missing" && <div className="sticky left-0 top-0 z-40 flex h-5 items-center justify-center gap-2 border-b border-amber-400/40 bg-amber-500/15 px-2 text-[9px] text-amber-200"><strong>{range.state === "above" ? "SPOT ABOVE RANGE ↑" : "SPOT BELOW RANGE ↓"}</strong><span className="font-mono">{formatSpotPrice(spot)}</span><button type="button" className="underline" onClick={handleCenterSpot}>Center Spot</button></div>}
+        {range.state !== "within" && range.state !== "missing" && <div className="sticky left-0 top-0 z-40 flex h-5 items-center justify-center gap-2 border-b border-amber-400/40 bg-amber-500/15 px-2 text-[9px] text-amber-200"><strong>{range.state === "above" ? "SPOT ABOVE RANGE ↑" : "SPOT BELOW RANGE ↓"}</strong><SpotPriceTooltip spot={spot}><span className="font-mono">ATM</span></SpotPriceTooltip><button type="button" className="underline" onClick={handleCenterSpot}>Center ATM</button></div>}
         <div style={{ display: "grid", gridTemplateColumns: template, minWidth } as CSSProperties}>
           <div className="sticky left-0 top-0 z-30 flex h-6 items-center border-b border-r border-border/60 bg-background px-1 text-[8px] text-muted-foreground">{transpose ? "EXP / STRIKE" : "STRIKE / EXP"}</div>
           {columnValues.map(column => {
             const strikeColumn = transpose ? Number(column) : null;
             const isSpotColumn = strikeColumn !== null && range.nearestStrike === strikeColumn;
             const isAtmColumn = strikeColumn !== null && atmStrikes.has(strikeColumn);
-            const label = <button type="button" data-expiry-header={!transpose ? String(column) : undefined} aria-label={!transpose ? `Expiry ${String(column)} summary` : undefined} className={`sticky top-0 z-20 flex h-6 items-center justify-center truncate border-b border-r border-border/40 bg-background px-0.5 font-mono text-[8px] ${isSpotColumn ? "border-x-amber-300/70 text-amber-300" : "text-foreground/75"}`} title={String(column)}>{transpose ? formatPrice(strikeColumn) : String(column).slice(5)}{isAtmColumn ? " · ATM" : ""}{isSpotColumn ? ` · ${formatSpotPrice(spot)}` : ""}</button>;
-            return transpose ? <div key={String(column)} className="contents">{label}</div> : <ExpiryTooltip key={String(column)} expiry={String(column)} positions={cells.filter(cell => cell.expiry === String(column)).flatMap(cell => cell.positions)} preset={hoverPreset}>{label}</ExpiryTooltip>;
+            const label = <button type="button" data-expiry-header={!transpose ? String(column) : undefined} aria-label={!transpose ? `Expiry ${String(column)} summary` : undefined} data-spot-column={isSpotColumn ? "true" : undefined} className={`sticky top-0 z-20 flex h-6 items-center justify-center truncate border-b border-r border-border/40 bg-background px-0.5 font-mono text-[8px] ${isSpotColumn ? "border-x-amber-300/70 text-amber-300" : "text-foreground/75"}`} title={String(column)}>{transpose ? formatPrice(strikeColumn) : String(column).slice(5)}{isAtmColumn ? " · ATM" : ""}</button>;
+            return transpose ? <div key={String(column)} className="contents">{isSpotColumn ? <SpotPriceTooltip spot={spot}>{label}</SpotPriceTooltip> : label}</div> : <ExpiryTooltip key={String(column)} expiry={String(column)} positions={cells.filter(cell => cell.expiry === String(column)).flatMap(cell => cell.positions)} preset={hoverPreset}>{label}</ExpiryTooltip>;
           })}
           {rowValues.flatMap(row => {
             const rowStrike = transpose ? null : Number(row);
             const isSpotRow = rowStrike !== null && range.nearestStrike === rowStrike;
             const zone = rowStrike === null ? "NEUTRAL" : zoneFor(rowStrike, spot, callPut, atmStrikes);
-            const axisLabel = <button type="button" data-expiry-header={transpose ? String(row) : undefined} aria-label={transpose ? `Expiry ${String(row)} summary` : undefined} data-spot-row={isSpotRow ? "true" : undefined} style={{ height: rowHeight }} className={`sticky left-0 z-10 flex items-center justify-between overflow-hidden border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{rowStrike !== null && <span className="text-[7px]">{isSpotRow ? `${zone === "ATM" ? "ATM · " : ""}${formatSpotPrice(spot)}` : !fitAll && zone !== "NEUTRAL" ? zone : ""}</span>}</button>;
-            const axis = transpose ? <ExpiryTooltip key={`axis-${String(row)}`} expiry={String(row)} positions={cells.filter(cell => cell.expiry === String(row)).flatMap(cell => cell.positions)} preset={hoverPreset}>{axisLabel}</ExpiryTooltip> : <div key={`axis-${String(row)}`} className="contents">{axisLabel}</div>;
+            const axisLabel = <button type="button" data-expiry-header={transpose ? String(row) : undefined} aria-label={transpose ? `Expiry ${String(row)} summary` : undefined} data-spot-row={isSpotRow ? "true" : undefined} style={{ height: rowHeight }} className={`sticky left-0 z-10 flex items-center justify-between overflow-hidden border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{rowStrike !== null && <span className="text-[7px]">{isSpotRow ? "ATM" : !fitAll && zone !== "NEUTRAL" ? zone : ""}</span>}</button>;
+            const axis = transpose ? <ExpiryTooltip key={`axis-${String(row)}`} expiry={String(row)} positions={cells.filter(cell => cell.expiry === String(row)).flatMap(cell => cell.positions)} preset={hoverPreset}>{axisLabel}</ExpiryTooltip> : <div key={`axis-${String(row)}`} className="contents">{isSpotRow ? <SpotPriceTooltip spot={spot}>{axisLabel}</SpotPriceTooltip> : axisLabel}</div>;
             const buttons = columnValues.map(column => {
               const expiry = transpose ? String(row) : String(column);
               const strike = transpose ? Number(column) : Number(row);
@@ -253,7 +257,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
         <span className="mt-1 font-mono text-[7px] text-foreground">{formatCompact(legendMaximum, metric)}</span>
         <div className="my-1 min-h-16 w-3 flex-1 border border-white/10" style={{ background: legendGradient }} />
         <span className="font-mono text-[7px] text-yellow-300">{formatCompact(legendMidpoint, metric)}</span><span className="mt-auto font-mono text-[7px] text-emerald-300">{formatCompact(legendMinimum, metric)}</span>
-        <button type="button" onClick={handleCenterSpot} className="mt-1 text-center text-[7px] leading-tight text-amber-300 underline">CENTER<br />SPOT {formatSpotPrice(spot)}</button>
+        <SpotPriceTooltip spot={spot}><button type="button" onClick={handleCenterSpot} className="mt-1 text-center text-[7px] leading-tight text-amber-300 underline">CENTER<br />ATM</button></SpotPriceTooltip>
         <span className="mt-1 text-center text-[6px] leading-tight text-cyan-200">THIN CYAN<br />LISTED</span>
         <span className="mt-1 text-center text-[6px] font-semibold leading-tight text-white">WHITE<br />HELD</span>
         <span className="mt-1 text-center font-mono text-[6px] font-bold leading-tight text-amber-100">X/G · C/P<br />CONTRACT</span>

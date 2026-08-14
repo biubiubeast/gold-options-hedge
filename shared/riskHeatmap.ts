@@ -293,7 +293,7 @@ export function spotRangeState(strikes: number[], spot: number): SpotRangeState 
 }
 
 /** Return exactly the closest listed strike levels to spot (ties: lower first). */
-export function nearestStrikeLevels(strikes: number[], spot: number, count = 2): number[] {
+export function nearestStrikeLevels(strikes: number[], spot: number, count = 1): number[] {
   if (!Number.isFinite(spot) || spot <= 0 || count <= 0) return [];
   return [...new Set(strikes.filter(strike => Number.isFinite(strike)))]
     .sort((left, right) => Math.abs(left - spot) - Math.abs(right - spot) || left - right)
