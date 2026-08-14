@@ -563,9 +563,12 @@ export function normalizeCboeGldOption(raw: any, timestamp: number, spot = 0): G
 
 export async function getGldOptionChain(): Promise<GldOptionChain> {
   return cached("cboe-gld-full-chain", 30_000, async () => {
-    const data = await fetchJson<any>(CBOE_GLD_CHAIN_URL);
+    const [data, canonicalSpot] = await Promise.all([
+      fetchJson<any>(CBOE_GLD_CHAIN_URL),
+      getGldPrice().catch(() => null),
+    ]);
     const timestamp = parseCboeTimestamp(data.timestamp) || Date.now();
-    const spot = toNumber(data.data?.current_price);
+    const spot = canonicalSpot?.price ?? toNumber(data.data?.current_price);
     const quotes = (Array.isArray(data.data?.options) ? data.data.options : [])
       .map((raw: any) => normalizeCboeGldOption(raw, timestamp, spot))
       .filter((quote: GldOptionQuote | null): quote is GldOptionQuote => quote !== null);

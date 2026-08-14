@@ -7,6 +7,7 @@ import { getPositionMarketData, type MarketSnapshot, type PortfolioPosition } fr
 import { buildChainRiskPositions, buildGldChainRiskPositions, buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import { resolveHeatmapSpots } from "@/lib/spotSelection";
 import type { PortfolioSettings } from "@/lib/portfolio";
 import {
   CENTERED_METRICS,
@@ -230,10 +231,9 @@ export default function Matrix() {
     }) as MarketSnapshot,
   })), [activeGldQuotes, formulas, positions, settings, spotPrices?.gld?.price, xautTickers]);
 
-  const liveSpots = useMemo(() => ({
-    xaut: dataset === "chain" && xautChain?.spot ? xautChain.spot : spotPrices?.xaut?.price ?? 0,
-    gld: dataset === "chain" && gldChain?.spot ? gldChain.spot : spotPrices?.gld?.price ?? 0,
-    xau: spotPrices?.gold?.price ?? spotPrices?.xaut?.price ?? 0,
+  const liveSpots = useMemo(() => resolveHeatmapSpots(spotPrices, {
+    xaut: dataset === "chain" ? xautChain?.spot : null,
+    gld: dataset === "chain" ? gldChain?.spot : null,
   }), [dataset, gldChain?.spot, spotPrices, xautChain?.spot]);
   const displaySpots = useMemo(() => dataset === "live" || dataset === "chain"
     ? { GLD: liveSpots.gld, XAUT: liveSpots.xaut, XAU: liveSpots.xau }
@@ -495,7 +495,7 @@ export default function Matrix() {
         {visibleFilters.cellSize && <div className="flex h-6 items-center border border-border text-[9px] text-muted-foreground"><button aria-label="Smaller cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.max(3, value - 1)); }}><Minus className="h-3 w-3" /></button><span className="w-8 text-center font-mono">{cellSize}px</span><button aria-label="Larger cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.min(28, value + 1)); }}><Plus className="h-3 w-3" /></button></div>}
         {visibleFilters.fitAll && <button type="button" onClick={() => setFitAll(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${fitAll ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ScanLine className="h-3 w-3" />Fit All</button>}
         {visibleFilters.fullscreen && <button type="button" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit heatmap fullscreen" : "Enter heatmap fullscreen"} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${isFullscreen ? "border-amber-300 bg-amber-300/15 text-amber-200" : "border-border text-muted-foreground"}`}>{isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</button>}
-        <span className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />{spotUnderlying} SPOT {formatSpotPrice(spot)} · nearest {formatPrice(spotRangeState(strikes, spot).nearestStrike)}</span>
+        <span className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />{spotUnderlying}{spotUnderlying === "XAUT" ? "" : " SPOT"} {formatSpotPrice(spot)} · nearest {formatPrice(spotRangeState(strikes, spot).nearestStrike)}</span>
       </div>}
 
       {dataset === "chain" && underlying !== "XAUT" && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">GLD FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · updated {new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed (actual lag varies) · cyan listed / white held</div>}

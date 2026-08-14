@@ -292,6 +292,14 @@ export function spotRangeState(strikes: number[], spot: number): SpotRangeState 
   };
 }
 
+/** Return exactly the closest listed strike levels to spot (ties: lower first). */
+export function nearestStrikeLevels(strikes: number[], spot: number, count = 2): number[] {
+  if (!Number.isFinite(spot) || spot <= 0 || count <= 0) return [];
+  return [...new Set(strikes.filter(strike => Number.isFinite(strike)))]
+    .sort((left, right) => Math.abs(left - spot) - Math.abs(right - spot) || left - right)
+    .slice(0, count);
+}
+
 function statusSeverity(status: DataStatus): number {
   return ({ LIVE: 0, WARN: 1, STALE: 2, MISSING: 3, FAIL: 4 })[status];
 }

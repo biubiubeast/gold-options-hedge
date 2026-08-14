@@ -11,6 +11,7 @@ import {
   generateMockPositions,
   magnitudeHeatColor,
   metricValue,
+  nearestStrikeLevels,
   spotRangeState,
 } from "../shared/riskHeatmap";
 
@@ -64,6 +65,12 @@ describe("institutional risk heatmap acceptance", () => {
     expect(spotRangeState([200, 220, 240], 300)).toEqual({ state: "above", nearestStrike: 240 });
     expect(spotRangeState([200, 220, 240], 100)).toEqual({ state: "below", nearestStrike: 200 });
     expect(spotRangeState([200, 220, 240], 223).state).toBe("within");
+  });
+
+  it("marks only the two closest listed strikes as ATM", () => {
+    const xautStrikes = Array.from({ length: 17 }, (_, index) => 4250 + index * 10);
+    expect(nearestStrikeLevels(xautStrikes, 4337, 2)).toEqual([4340, 4330]);
+    expect(nearestStrikeLevels([395, 397, 399, 401, 403], 399.52, 2)).toEqual([399, 401]);
   });
 
   it("formats every heatmap spot value with exactly two decimals", () => {

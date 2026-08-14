@@ -9,6 +9,7 @@ import {
   heatColor,
   magnitudeHeatColor,
   metricValue,
+  nearestStrikeLevels,
   positionLabel,
   spotRangeState,
   worstStatus,
@@ -47,10 +48,9 @@ type Props = {
   onSelectPosition: (position: EnrichedRiskPosition) => void;
 };
 
-function zoneFor(strike: number, spot: number, callPut: Props["callPut"]): "ITM" | "ATM" | "OTM" | "NEUTRAL" {
+function zoneFor(strike: number, spot: number, callPut: Props["callPut"], atmStrikes: ReadonlySet<number>): "ITM" | "ATM" | "OTM" | "NEUTRAL" {
   if (spot <= 0) return "NEUTRAL";
-  const distance = (spot - strike) / spot;
-  if (Math.abs(distance) <= 0.02) return "ATM";
+  if (atmStrikes.has(strike)) return "ATM";
   if (callPut === "combined") return "NEUTRAL";
   return (callPut === "call" ? strike < spot : strike > spot) ? "ITM" : "OTM";
 }
@@ -131,6 +131,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
   const viewportRef = useRef<HTMLDivElement>(null);
   const centeredOnceRef = useRef<string | null>(null);
   const range = useMemo(() => spotRangeState(strikes, spot), [spot, strikes]);
+  const atmStrikes = useMemo(() => new Set(nearestStrikeLevels(strikes, spot, 2)), [spot, strikes]);
   useEffect(() => setCenterSpot(false), [spot, strikes]);
   const displayStrikes = useMemo(() => {
     const values = !centerSpot || range.state === "within" || !Number.isFinite(spot)
@@ -183,14 +184,15 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
           {columnValues.map(column => {
             const strikeColumn = transpose ? Number(column) : null;
             const isSpotColumn = strikeColumn !== null && range.nearestStrike === strikeColumn;
-            const label = <button type="button" data-expiry-header={!transpose ? String(column) : undefined} aria-label={!transpose ? `Expiry ${String(column)} summary` : undefined} className={`sticky top-0 z-20 flex h-6 items-center justify-center truncate border-b border-r border-border/40 bg-background px-0.5 font-mono text-[8px] ${isSpotColumn ? "border-x-amber-300/70 text-amber-300" : "text-foreground/75"}`} title={String(column)}>{transpose ? formatPrice(strikeColumn) : String(column).slice(5)}{isSpotColumn ? ` · SPOT ${formatSpotPrice(spot)}` : ""}</button>;
+            const isAtmColumn = strikeColumn !== null && atmStrikes.has(strikeColumn);
+            const label = <button type="button" data-expiry-header={!transpose ? String(column) : undefined} aria-label={!transpose ? `Expiry ${String(column)} summary` : undefined} className={`sticky top-0 z-20 flex h-6 items-center justify-center truncate border-b border-r border-border/40 bg-background px-0.5 font-mono text-[8px] ${isSpotColumn ? "border-x-amber-300/70 text-amber-300" : "text-foreground/75"}`} title={String(column)}>{transpose ? formatPrice(strikeColumn) : String(column).slice(5)}{isAtmColumn ? " · ATM" : ""}{isSpotColumn ? ` · ${formatSpotPrice(spot)}` : ""}</button>;
             return transpose ? <div key={String(column)} className="contents">{label}</div> : <ExpiryTooltip key={String(column)} expiry={String(column)} positions={cells.filter(cell => cell.expiry === String(column)).flatMap(cell => cell.positions)} preset={hoverPreset}>{label}</ExpiryTooltip>;
           })}
           {rowValues.flatMap(row => {
             const rowStrike = transpose ? null : Number(row);
             const isSpotRow = rowStrike !== null && range.nearestStrike === rowStrike;
-            const zone = rowStrike === null ? "NEUTRAL" : zoneFor(rowStrike, spot, callPut);
-            const axisLabel = <button type="button" data-expiry-header={transpose ? String(row) : undefined} aria-label={transpose ? `Expiry ${String(row)} summary` : undefined} data-spot-row={isSpotRow ? "true" : undefined} style={{ height: rowHeight }} className={`sticky left-0 z-10 flex items-center justify-between overflow-hidden border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{rowStrike !== null && <span className="text-[7px]">{isSpotRow ? `SPOT ${formatSpotPrice(spot)}` : !fitAll && zone !== "NEUTRAL" ? zone : ""}</span>}</button>;
+            const zone = rowStrike === null ? "NEUTRAL" : zoneFor(rowStrike, spot, callPut, atmStrikes);
+            const axisLabel = <button type="button" data-expiry-header={transpose ? String(row) : undefined} aria-label={transpose ? `Expiry ${String(row)} summary` : undefined} data-spot-row={isSpotRow ? "true" : undefined} style={{ height: rowHeight }} className={`sticky left-0 z-10 flex items-center justify-between overflow-hidden border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{rowStrike !== null && <span className="text-[7px]">{isSpotRow ? `${zone === "ATM" ? "ATM · " : ""}${formatSpotPrice(spot)}` : !fitAll && zone !== "NEUTRAL" ? zone : ""}</span>}</button>;
             const axis = transpose ? <ExpiryTooltip key={`axis-${String(row)}`} expiry={String(row)} positions={cells.filter(cell => cell.expiry === String(row)).flatMap(cell => cell.positions)} preset={hoverPreset}>{axisLabel}</ExpiryTooltip> : <div key={`axis-${String(row)}`} className="contents">{axisLabel}</div>;
             const buttons = columnValues.map(column => {
               const expiry = transpose ? String(row) : String(column);
@@ -226,7 +228,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
               const spotLine = range.nearestStrike === strike;
               return <Tooltip key={key} delayDuration={80} open={hoveredCellKey === key} onOpenChange={open => setHoveredCellKey(open ? key : null)}><TooltipTrigger asChild><button
                 type="button" data-cell-key={key} data-held={cell?.held ? "true" : "false"} data-xaut-held={xautHeld ? "true" : "false"} data-spot-synthetic={isSyntheticSpot ? "true" : undefined}
-                className={`relative overflow-hidden border border-solid px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${zoneClass[zoneFor(strike, spot, callPut)]} ${cell ? "border-cyan-300/45" : "border-border/[0.07] opacity-30"} ${cell?.held ? "z-[3] border-white" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""} ${isSyntheticSpot ? "bg-amber-400/15" : ""}`}
+                className={`relative overflow-hidden border border-solid px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${zoneClass[zoneFor(strike, spot, callPut, atmStrikes)]} ${cell ? "border-cyan-300/45" : "border-border/[0.07] opacity-30"} ${cell?.held ? "z-[3] border-white" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""} ${isSyntheticSpot ? "bg-amber-400/15" : ""}`}
                 style={{
                   height: rowHeight,
                   containerType: "size",
