@@ -4,11 +4,13 @@ type SpotBundle = {
   xaut?: SpotPrice | null;
   gld?: SpotPrice | null;
   gold?: SpotPrice | null;
+  btc?: SpotPrice | null;
 };
 
 type ChainSpotFallbacks = {
   xaut?: number | null;
   gld?: number | null;
+  btc?: number | null;
 };
 
 function firstPositive(...values: Array<number | null | undefined>): number {
@@ -27,6 +29,7 @@ export function resolveHeatmapSpots(
   return {
     xaut: firstPositive(spotPrices?.xaut?.price, chainSpots.xaut),
     gld: firstPositive(spotPrices?.gld?.price, chainSpots.gld),
+    btc: firstPositive(spotPrices?.btc?.price, chainSpots.btc),
     xau: firstPositive(spotPrices?.gold?.price, spotPrices?.xaut?.price),
   };
 }

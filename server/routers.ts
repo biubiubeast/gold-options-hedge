@@ -11,6 +11,10 @@ import {
   getXautOptionChain,
   getXautOptionTickers,
   getXautSpotPrice,
+  getBtcOptionInstruments,
+  getBtcOptionChain,
+  getBtcOptionTickers,
+  getBtcSpotPrice,
 } from "./marketData";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
 import { validateFormula } from "@shared/formulaEngine";
@@ -26,7 +30,7 @@ const numericString = z.string().trim().refine(value => {
 }, "必须是有效数字");
 
 const positionFields = {
-  underlying: z.enum(["XAUT", "GLD"]),
+  underlying: z.enum(["XAUT", "GLD", "BTC"]),
   expiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式必须为 YYYY-MM-DD"),
   strike: numericString.refine(value => Number(value) > 0, "行权价必须大于 0"),
   optionType: z.enum(["call", "put"]),
@@ -177,6 +181,7 @@ export const appRouter = router({
     refreshMarketData: protectedProcedure.input(z.object({
       gldMultiplierXau: z.number().positive().nullable().optional(),
       xautMultiplierXau: z.number().positive().nullable().optional(),
+      btcMultiplierXau: z.number().positive().nullable().optional(),
     }).optional()).mutation(async ({ ctx, input }) => {
       const positions = await db.getPositionsByUser(ctx.user.id);
       return refreshPositionMarketData(ctx.user.id, positions, input);
@@ -196,6 +201,9 @@ export const appRouter = router({
     xautTickers: publicProcedure.query(getXautOptionTickers),
     xautInstruments: publicProcedure.query(getXautOptionInstruments),
     xautSpot: publicProcedure.query(getXautSpotPrice),
+    btcTickers: publicProcedure.query(getBtcOptionTickers),
+    btcInstruments: publicProcedure.query(getBtcOptionInstruments),
+    btcSpot: publicProcedure.query(getBtcSpotPrice),
     gldPrice: publicProcedure.query(getGldPrice),
     goldPrice: publicProcedure.query(getGoldPrice),
     gldOptionQuotes: publicProcedure
@@ -210,9 +218,10 @@ export const appRouter = router({
       .query(({ input }) => getGldOptionQuotes(input.expiries, input.contracts)),
     gldOptionChain: protectedProcedure.query(getGldOptionChain),
     xautOptionChain: protectedProcedure.query(getXautOptionChain),
+    btcOptionChain: protectedProcedure.query(getBtcOptionChain),
     spotPrices: publicProcedure.query(async () => {
-      const [xaut, gld, gold] = await Promise.all([getXautSpotPrice(), getGldPrice(), getGoldPrice()]);
-      return { xaut, gld, gold };
+      const [xaut, gld, gold, btc] = await Promise.all([getXautSpotPrice(), getGldPrice(), getGoldPrice(), getBtcSpotPrice()]);
+      return { xaut, gld, gold, btc };
     }),
     sources: publicProcedure.query(getMarketSources),
   }),

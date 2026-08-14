@@ -7,6 +7,8 @@ import {
   getGoldPrice,
   getXautOptionTickers,
   getXautSpotPrice,
+  getBtcOptionTickers,
+  getBtcSpotPrice,
   type GldOptionQuote,
 } from "./marketData";
 
@@ -24,7 +26,7 @@ function bybitExpiry(expiry: string): string {
   return `${day}${months[month - 1]}${String(year).slice(2)}`;
 }
 
-function findXautTicker(position: PositionRecord, tickers: Awaited<ReturnType<typeof getXautOptionTickers>>) {
+function findBybitTicker(position: PositionRecord, tickers: Awaited<ReturnType<typeof getXautOptionTickers>>) {
   const expiryToken = bybitExpiry(position.expiry);
   const strike = Number(position.strike);
   const typeToken = position.optionType === "call" ? "C" : "P";
@@ -63,17 +65,19 @@ function statusFor(quote: NormalizedQuote): PositionRecord["dataStatus"] {
 export async function refreshPositionMarketData(
   userId: number,
   positions: PositionRecord[],
-  scaleOverrides?: { gldMultiplierXau?: number | null; xautMultiplierXau?: number | null },
+  scaleOverrides?: { gldMultiplierXau?: number | null; xautMultiplierXau?: number | null; btcMultiplierXau?: number | null },
 ) {
   clearMarketDataCache();
   const gldPositions = positions.filter(position => position.underlying === "GLD");
-  const [xautTickers, gldQuotes, xautSpot, gldSpot, xauSpot] = await Promise.all([
+  const [xautTickers, btcTickers, gldQuotes, xautSpot, btcSpot, gldSpot, xauSpot] = await Promise.all([
     getXautOptionTickers(),
+    getBtcOptionTickers(),
     getGldOptionQuotes(
       [...new Set(gldPositions.map(position => position.expiry))],
       gldPositions.map(position => ({ expiry: position.expiry, strike: Number(position.strike), optionType: position.optionType })),
     ),
     getXautSpotPrice(),
+    getBtcSpotPrice(),
     getGldPrice(),
     getGoldPrice(),
   ]);
@@ -85,8 +89,8 @@ export async function refreshPositionMarketData(
 
   for (const position of positions) {
     let quote: NormalizedQuote | null = null;
-    if (position.underlying === "XAUT") {
-      const ticker = findXautTicker(position, xautTickers);
+    if (position.underlying === "XAUT" || position.underlying === "BTC") {
+      const ticker = findBybitTicker(position, position.underlying === "BTC" ? btcTickers : xautTickers);
       if (ticker) quote = {
         markPrice: Number(ticker.markPrice), markIv: Number(ticker.markIv), bid: Number(ticker.bid1Price), ask: Number(ticker.ask1Price),
         delta: Number(ticker.delta), gamma: Number(ticker.gamma), theta: Number(ticker.theta), vega: Number(ticker.vega),
@@ -108,9 +112,9 @@ export async function refreshPositionMarketData(
     sources.add(quote.source);
     const quantity = Number(position.quantity);
     const contractMultiplier = numberOrNull(position.contractMultiplier) ?? (position.underlying === "GLD" ? 100 : 1);
-    const underlyingPrice = position.underlying === "GLD" ? (gldSpot?.price ?? 0) : (xautSpot?.price ?? 0);
+    const underlyingPrice = position.underlying === "GLD" ? (gldSpot?.price ?? 0) : position.underlying === "BTC" ? (btcSpot?.price ?? 0) : (xautSpot?.price ?? 0);
     const xauPrice = xauSpot?.price ?? xautSpot?.price ?? 0;
-    const configuredScale = position.underlying === "GLD" ? scaleOverrides?.gldMultiplierXau : scaleOverrides?.xautMultiplierXau;
+    const configuredScale = position.underlying === "GLD" ? scaleOverrides?.gldMultiplierXau : position.underlying === "BTC" ? scaleOverrides?.btcMultiplierXau : scaleOverrides?.xautMultiplierXau;
     const multiplierXau = numberOrNull(position.multiplierXau)
       ?? numberOrNull(configuredScale)
       ?? (underlyingPrice > 0 && xauPrice > 0 ? underlyingPrice / xauPrice : position.underlying === "XAUT" ? 1 : null);
@@ -134,5 +138,5 @@ export async function refreshPositionMarketData(
     } });
   }
   const updated = await updatePositionsMarketData(userId, updates);
-  return { updated, missing, total: positions.length, refreshedAt, sources: [...sources], spots: { xaut: xautSpot, gld: gldSpot, xau: xauSpot } };
+  return { updated, missing, total: positions.length, refreshedAt, sources: [...sources], spots: { xaut: xautSpot, btc: btcSpot, gld: gldSpot, xau: xauSpot } };
 }

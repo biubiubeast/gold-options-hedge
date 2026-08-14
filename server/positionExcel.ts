@@ -50,10 +50,11 @@ function excelDate(value: unknown): string | null {
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString().slice(0, 10) : null;
 }
 
-function normalizeUnderlying(value: unknown, instrument: string): "XAUT" | "GLD" | null {
+function normalizeUnderlying(value: unknown, instrument: string): "XAUT" | "GLD" | "BTC" | null {
   const text = `${cleanText(value)} ${instrument}`.toUpperCase();
   if (text.includes("XAUT")) return "XAUT";
   if (text.includes("GLD") || text.includes("SPDR GOLD SHARES")) return "GLD";
+  if (/\bBTC\b|BITCOIN/.test(text)) return "BTC";
   return null;
 }
 
@@ -65,7 +66,7 @@ function normalizeCallPut(value: unknown, instrument: string): "call" | "put" | 
 }
 
 function inferContractMultiplier(args: {
-  underlying: "XAUT" | "GLD";
+  underlying: "XAUT" | "GLD" | "BTC";
   netQty: number;
   markPrice: number | null;
   marketValue: number | null;
@@ -82,7 +83,7 @@ function inferContractMultiplier(args: {
   return args.underlying === "GLD" ? 100 : 1;
 }
 
-function asTotal(row: ExcelJS.Row, column: (header: string) => number, underlying: "XAUT" | "GLD"): PositionExcelTotal {
+function asTotal(row: ExcelJS.Row, column: (header: string) => number, underlying: "XAUT" | "GLD" | "BTC"): PositionExcelTotal {
   const value = (header: string) => numberOrNull(rawCellValue(row.getCell(column(header))));
   return {
     underlying,
@@ -125,7 +126,7 @@ export async function parsePositionWorkbook(buffer: Buffer, fileName: string): P
       if (!instrument && !cleanText(explicitUnderlying)) continue;
       const underlying = normalizeUnderlying(explicitUnderlying, instrument);
       if (!underlying) {
-        errors.push(`第 ${rowNumber} 行：无法识别 Underlying（仅支持 GLD/XAUT）`);
+        errors.push(`第 ${rowNumber} 行：无法识别 Underlying（支持 GLD/XAUT/BTC）`);
         continue;
       }
       if (instrument.toLowerCase() === "total") {
@@ -245,8 +246,10 @@ export async function parsePositionWorkbook(buffer: Buffer, fileName: string): P
       totalRows: totals.length,
       xautRows: positions.filter(position => position.underlying === "XAUT").length,
       gldRows: positions.filter(position => position.underlying === "GLD").length,
+      btcRows: positions.filter(position => position.underlying === "BTC").length,
       xautNetQty: positions.filter(position => position.underlying === "XAUT").reduce((sum, position) => sum + Number(position.quantity), 0),
       gldNetQty: positions.filter(position => position.underlying === "GLD").reduce((sum, position) => sum + Number(position.quantity), 0),
+      btcNetQty: positions.filter(position => position.underlying === "BTC").reduce((sum, position) => sum + Number(position.quantity), 0),
     },
   };
 }
@@ -261,17 +264,20 @@ export async function createPositionWorkbook(positions: PositionRecord[]): Promi
   const sheet = workbook.addWorksheet("期权持仓_XAUT_GLD", { views: [{ state: "frozen", xSplit: 3, ySplit: 2 }] });
   sheet.properties.defaultRowHeight = 18;
   sheet.mergeCells("A1:B1");
-  sheet.getCell("A1").value = "期权持仓明细（XAUT + GLD，统一口径）";
+  sheet.getCell("A1").value = "期权持仓明细（XAUT + GLD + BTC，统一口径）";
   const latestMarketDate = positions.map(position => position.marketQuoteTime?.slice(0, 10)).filter(Boolean).sort().at(-1);
   const latestDate = latestMarketDate ?? positions.map(position => position.referenceDate).filter(Boolean).sort().at(-1) ?? new Date().toISOString().slice(0, 10);
   sheet.getCell("C1").value = isoToDate(latestDate);
   sheet.getCell("C1").numFmt = "yyyy/mm/dd";
   sheet.getRow(2).values = [...POSITION_EXCEL_HEADERS];
   const ordered = [...positions].sort((a, b) =>
-    (a.underlying === b.underlying ? 0 : a.underlying === "XAUT" ? -1 : 1)
+    (["XAUT", "GLD", "BTC"].indexOf(a.underlying) - ["XAUT", "GLD", "BTC"].indexOf(b.underlying))
     || a.expiry.localeCompare(b.expiry)
     || Number(a.strike) - Number(b.strike));
-  const detailStart = 5;
+  const totalUnderlyings = positions.some(position => position.underlying === "BTC")
+    ? (["XAUT", "GLD", "BTC"] as const)
+    : (["XAUT", "GLD"] as const);
+  const detailStart = 3 + totalUnderlyings.length;
   const value = (position: PositionRecord, key: keyof PositionRecord) => numberValue(position[key]);
 
   for (let index = 0; index < ordered.length; index += 1) {
@@ -331,7 +337,7 @@ export async function createPositionWorkbook(positions: PositionRecord[]): Promi
     sheet.getCell(`W${rowNumber}`).value = { formula: `IFERROR(V${rowNumber}/U${rowNumber},0)`, result: upl !== null && entryCost !== 0 ? upl / entryCost : 0 };
   }
 
-  for (const [offset, underlying] of (["XAUT", "GLD"] as const).entries()) {
+  for (const [offset, underlying] of totalUnderlyings.entries()) {
     const rowNumber = 3 + offset;
     const detail = ordered.filter(position => position.underlying === underlying);
     const sum = (key: keyof PositionRecord) => detail.reduce((total, position) => total + (numberValue(position[key]) ?? 0), 0);
@@ -390,7 +396,7 @@ export async function createPositionWorkbook(positions: PositionRecord[]): Promi
   const titleStyle: Partial<ExcelJS.Style> = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F33" } }, font: { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 11 }, alignment: { horizontal: "center", vertical: "middle" } };
   sheet.getCell("A1").style = titleStyle;
   sheet.getRow(2).eachCell(cell => { cell.style = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F4E78" } }, font: { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 10 }, alignment: { vertical: "middle", wrapText: true }, border: { bottom: { style: "thin", color: { argb: "FFD9E2F3" } } } }; });
-  for (const rowNumber of [3, 4]) sheet.getRow(rowNumber).eachCell(cell => { cell.style = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF17365D" } }, font: { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 9 }, alignment: { vertical: "middle" } }; });
+  for (let rowNumber = 3; rowNumber < detailStart; rowNumber += 1) sheet.getRow(rowNumber).eachCell(cell => { cell.style = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF17365D" } }, font: { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 9 }, alignment: { vertical: "middle" } }; });
   for (let rowNumber = detailStart; rowNumber < detailStart + ordered.length; rowNumber += 1) {
     sheet.getRow(rowNumber).eachCell((cell, columnNumber) => {
       const fill = columnNumber >= 6 && columnNumber <= 17 ? "FFDDEBF7" : columnNumber >= 24 && columnNumber <= 27 ? "FFE2F0D9" : rowNumber % 2 ? "FFF4F7FB" : "FFFFFFFF";

@@ -19,7 +19,7 @@ function numeric(value: string, fallback: number, minimum = 0) {
 
 const heatmapFilterLabels: Array<[keyof PortfolioSettings["heatmapVisibleFilters"], string, string]> = [
   ["dataset", "Data / 数据集", "真实仓位、完整期权链或压力测试数据"],
-  ["underlying", "Underlying", "GLD、XAUT 或全部标的"],
+  ["underlying", "Underlying", "GLD、XAUT、BTC 或全部标的"],
   ["venue", "Venue", "交易场所或行情场所"],
   ["broker", "Broker", "经纪商维度"],
   ["account", "Account", "账户维度"],
@@ -28,7 +28,7 @@ const heatmapFilterLabels: Array<[keyof PortfolioSettings["heatmapVisibleFilters
   ["status", "Data Status", "LIVE、STALE、WARN、MISSING、FAIL"],
   ["metric", "Metric", "热力图颜色所代表的指标"],
   ["scale", "Color Scale", "Quantile、Log、Zero-centered"],
-  ["spot", "Spot 标记", "GLD、XAUT 或 XAU Spot"],
+  ["spot", "Spot 标记", "GLD、XAUT、BTC 或 XAU Spot"],
   ["label", "Label", "方格内数值标签模式"],
   ["hover", "Hover", "Hover 弹窗的数据预设"],
   ["range", "色标上下限", "MIN、MAX 和自定义范围按钮"],
@@ -40,7 +40,7 @@ const heatmapFilterLabels: Array<[keyof PortfolioSettings["heatmapVisibleFilters
 ];
 
 const heldCellContentLabels: Array<[keyof PortfolioSettings["heatmapHeldCellContent"], string, string]> = [
-  ["underlying", "Underlying · X/G", "X=XAUT、G=GLD、B=同格包含两个标的"],
+  ["underlying", "Underlying · X/G/B", "X=XAUT、G=GLD、B=BTC、M=同格包含多个标的"],
   ["callPut", "Option Type · C/P", "C=Call、P=Put、C/P=同格同时包含 Call 与 Put"],
   ["dataStatus", "Data Status · L/S/W/M/F", "L=LIVE、S=STALE、W=WARN、M=MISSING、F=FAIL"],
 ];
@@ -69,18 +69,18 @@ const heatmapSectionLabels: Array<[keyof PortfolioSettings["heatmapVisibleSectio
   ["decisionCards", "Show Cards / 决策卡", "显示顶部 Show/Hide Cards 按钮；默认隐藏"],
   ["dataError", "Largest Data Error", "显示顶部数据质量说明按钮；默认隐藏"],
   ["scenario", "情景分析", "显示热力图底部 XAU / IV / Day Shock 分析；默认隐藏"],
-  ["chainStatusBanner", "期权链状态提示", "显示筛选区下方 GLD / XAUT FULL CHAIN 行情来源与更新时间；默认隐藏"],
+  ["chainStatusBanner", "期权链状态提示", "显示筛选区下方 GLD / XAUT / BTC FULL CHAIN 行情来源与更新时间；默认隐藏"],
   ["positionOnlyMetricBanner", "Position-only Metric 提示", "显示 Qty、Notional、MV 等仅按持仓着色的口径说明；默认隐藏"],
 ];
 
 const fixedOptionGroups = [
   ["dataset", "Data / 数据集", [["chain", "完整期权链"], ["live", "持仓行情"], ["mock100", "Mock 100"], ["mock200", "Mock 200"]]],
-  ["underlying", "Underlying", [["GLD", "GLD"], ["XAUT", "XAUT"], ["all", "ALL"]]],
+  ["underlying", "Underlying", [["GLD", "GLD"], ["XAUT", "XAUT"], ["BTC", "BTC"], ["all", "ALL"]]],
   ["callPut", "C/P", [["call", "CALL"], ["put", "PUT"], ["combined", "COMBINED"]]],
   ["expiryBucket", "DTE", [["all", "ALL"], ["expired", "EXPIRED"], ["0-2", "0–2"], ["3-7", "3–7"], ["8-30", "8–30"], ["31+", "31+"]]],
   ["status", "Data Status", [["all", "ALL"], ["LIVE", "LIVE"], ["STALE", "STALE"], ["WARN", "WARN"], ["MISSING", "MISSING"], ["FAIL", "FAIL"]]],
   ["scale", "Color Scale", [["quantile", "QUANTILE"], ["log", "LOG"], ["symmetric", "ZERO-CENTER"]]],
-  ["spot", "Spot", [["GLD", "GLD"], ["XAUT", "XAUT"], ["XAU", "XAU"]]],
+  ["spot", "Spot", [["GLD", "GLD"], ["XAUT", "XAUT"], ["BTC", "BTC"], ["XAU", "XAU"]]],
   ["label", "Label", [["none", "NONE"], ["held", "HELD METRIC"], ["top", "TOP 15%"], ["bottom", "BOTTOM 15%"], ["all", "ALL"]]],
   ["hover", "Hover Preset", [["risk", "RISK"], ["market", "MARKET"], ["pnl", "PNL"], ["all", "ALL"]]],
 ] as const;
@@ -95,6 +95,16 @@ const hoverContentLabels: Array<[keyof PortfolioSettings["heatmapHoverContent"],
   ["markIv", "Mark / IV", "Mark 价格与 IV"], ["bidAsk", "Bid / Ask", "盘口价格"],
   ["bidAskIv", "Bid IV / Ask IV", "盘口隐含波动率"], ["ivSpread", "IV Spread", "Ask IV − Bid IV"],
   ["sourceQuote", "Source / Quote As-of", "行情来源和时间"], ["openInterestVolume", "OI / Volume", "未平仓量与成交量"],
+  ["mvEntry", "MV / Entry", "市场价值与成本"], ["upl", "UPL", "未实现盈亏"],
+];
+
+const expiryHoverContentLabels: Array<[keyof PortfolioSettings["heatmapExpiryHoverContent"], string, string]> = [
+  ["heldListed", "Held / Listed", "持仓与上市合约数量"], ["totalDelta", "Total Delta", "Expiry 持仓合计 XAU Delta"],
+  ["totalGamma", "Total Gamma", "默认隐藏"], ["totalTheta", "Total Theta", "默认隐藏"], ["totalVega", "Total Vega", "默认隐藏"],
+  ["maxRoll", "Max Roll", "默认隐藏"], ["worstStatus", "Worst Status", "最严重数据状态"],
+  ["averageIv", "Average IV", "Mark / Bid / Ask IV 平均值"], ["openInterestVolume", "OI / Volume", "合约链聚合盘口统计"],
+  ["staleMissing", "Stale / Missing", "旧报价和缺失数据数量"], ["latestQuote", "Latest Quote", "最新行情时间"],
+  ["netGrossQty", "Net / Gross Qty", "Expiry 持仓数量汇总"], ["grossNotional", "Gross Notional", "Expiry 总名义金额"],
   ["mvEntry", "MV / Entry", "市场价值与成本"], ["upl", "UPL", "未实现盈亏"],
 ];
 
@@ -219,7 +229,9 @@ export default function Settings() {
             </div>
             <div><Label htmlFor="gld-contract">GLD Contract Multiplier</Label><Input id="gld-contract" className="mt-1" type="number" min="0.0001" step="1" value={draft.gldContractMultiplier} onChange={event => setDraft(current => ({ ...current, gldContractMultiplier: Number(event.target.value) }))} /><p className="mt-1 text-[11px] text-muted-foreground">仅用于缺失 deliverable 的 fallback；标准值 100 shares。</p></div>
             <div><Label htmlFor="xaut-contract">XAUT Contract Multiplier</Label><Input id="xaut-contract" className="mt-1" type="number" min="0.0001" step="0.01" value={draft.xautContractMultiplier} onChange={event => setDraft(current => ({ ...current, xautContractMultiplier: Number(event.target.value) }))} /><p className="mt-1 text-[11px] text-muted-foreground">实际合约规格优先，默认 fallback 为 1。</p></div>
+            <div><Label htmlFor="btc-contract">BTC Contract Multiplier</Label><Input id="btc-contract" className="mt-1" type="number" min="0.00000001" step="0.01" value={draft.btcContractMultiplier} onChange={event => setDraft(current => ({ ...current, btcContractMultiplier: Number(event.target.value) }))} /><p className="mt-1 text-[11px] text-muted-foreground">Bybit BTC 期权数量以 BTC 计；默认 fallback 为 1。</p></div>
             <div><Label htmlFor="xaut-xau-scale">XAUT/XAU override</Label><Input id="xaut-xau-scale" className="mt-1" type="number" min="0.000001" step="0.0001" placeholder="留空按现价自动" value={draft.xautSpotScaleOverride ?? ""} onChange={event => setDraft(current => ({ ...current, xautSpotScaleOverride: event.target.value === "" ? null : Number(event.target.value) }))} /></div>
+            <div><Label htmlFor="btc-xau-scale">BTC/XAU override</Label><Input id="btc-xau-scale" className="mt-1" type="number" min="0.000001" step="0.0001" placeholder="留空按 BTC÷XAU 自动" value={draft.btcSpotScaleOverride ?? ""} onChange={event => setDraft(current => ({ ...current, btcSpotScaleOverride: event.target.value === "" ? null : Number(event.target.value) }))} /></div>
             <div><Label htmlFor="gld-fallback-iv">GLD fallback IV</Label><Input id="gld-fallback-iv" className="mt-1" type="number" min="0.0001" step="0.01" value={draft.gldFallbackIv} onChange={event => setDraft(current => ({ ...current, gldFallbackIv: Number(event.target.value) }))} /></div>
             <div className="sm:col-span-2"><Label htmlFor="risk-free-rate">Risk-free Rate</Label><Input id="risk-free-rate" className="mt-1" type="number" step="0.001" value={draft.riskFreeRate} onChange={event => setDraft(current => ({ ...current, riskFreeRate: Number(event.target.value) }))} /></div>
           </CardContent>
@@ -296,6 +308,14 @@ export default function Settings() {
         <CardContent>
           <p className="mb-4 text-xs text-muted-foreground">选择鼠标移到方格时显示的字段。Greeks / Risk 默认只显示 Unit Delta 和 Total Delta。</p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{hoverContentLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`hover-content-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] text-muted-foreground">{description}</p></div><Switch id={`hover-content-${key}`} checked={draft.heatmapHoverContent[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapHoverContent: { ...current.heatmapHoverContent, [key]: checked } }))} aria-label={`Hover 显示 ${label}`} /></div>)}</div>
+        </CardContent>
+      </Card>
+
+      <Card className="glass-card">
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><MessageSquareText className="h-4 w-4 text-cyan-300" />Expiry Hover 弹窗内容</CardTitle></CardHeader>
+        <CardContent>
+          <p className="mb-4 text-xs text-muted-foreground">控制鼠标移到 Expiry 表头时的综合数据。默认隐藏 Roll、Theta、Vega、Gamma，其余字段可独立开关。</p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{expiryHoverContentLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`expiry-hover-content-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] text-muted-foreground">{description}</p></div><Switch id={`expiry-hover-content-${key}`} checked={draft.heatmapExpiryHoverContent[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapExpiryHoverContent: { ...current.heatmapExpiryHoverContent, [key]: checked } }))} aria-label={`Expiry Hover 显示 ${label}`} /></div>)}</div>
         </CardContent>
       </Card>
 

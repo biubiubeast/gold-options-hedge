@@ -16,6 +16,7 @@ export default function OptionDetail() {
   const { data: position, isLoading } = trpc.positions.get.useQuery({ id: positionId }, { enabled: positionId > 0 });
   const { data: formulas } = trpc.formulas.list.useQuery();
   const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
+  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, { refetchInterval: 10_000 });
   const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
   const { data: gldQuotes } = trpc.market.gldOptionQuotes.useQuery(
     {
@@ -41,6 +42,7 @@ export default function OptionDetail() {
   const market = getPositionMarketData({
     position,
     xautTickers,
+    btcTickers,
     gldQuotes,
     gldSpot: spotPrices?.gld?.price ?? 0,
     formulas,
@@ -50,6 +52,7 @@ export default function OptionDetail() {
     position,
     market,
     xautSpot: spotPrices?.xaut?.price ?? 0,
+    btcSpot: spotPrices?.btc?.price ?? 0,
     gldSpot: spotPrices?.gld?.price ?? 0,
     xauSpot: spotPrices?.gold?.price ?? 0,
     formulas,

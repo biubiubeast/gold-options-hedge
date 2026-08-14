@@ -139,7 +139,7 @@ function PositionDetailDialog({ position, content, onClose }: { position: Enrich
     ["expiryDte", "Expiry / DTE", `${position.expiry} / ${position.dte}d`], ["strike", "Strike", formatPrice(position.strike)],
     ["venueBrokerAccount", "Venue / Broker / Account", `${position.venue} / ${position.broker} / ${position.account}`], ["netQty", "Net Qty", position.netQty],
     ["contractMultiplier", "Contract Multiplier", position.contractMultiplier], ["xauPerUnit", "XAU per unit", position.underlying === "GLD" ? position.gldOzPerShare : position.underlyingOzPerUnit],
-    ["markBidAsk", "Mark / Bid / Ask", `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)}`], ["markIv", "Mark IV", formatCompact(position.markIV, "markIV")],
+    ["markBidAsk", "Mark / Bid / Ask · Size · $ Notional", `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)} · ${formatCompact(position.bidSize)} / ${formatCompact(position.askSize)} · $${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`], ["markIv", "Mark IV", formatCompact(position.markIV, "markIV")],
     ["bidAskIv", "Bid IV / Ask IV / Spread", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")} / ${formatCompact(position.ivSpread, "ivSpread")}`],
     ["qtyNotional", "Qty / Notional USD", `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`],
     ["unitDelta", "Unit Delta", position.unitDelta], ["totalDelta", "Total Delta XAU", position.totalDeltaXAU],
@@ -158,6 +158,7 @@ export default function Matrix() {
   const { data: positions, isLoading } = trpc.positions.list.useQuery();
   const { data: formulas } = trpc.formulas.list.useQuery();
   const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
+  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, { refetchInterval: 10_000 });
   const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
   const { settings } = usePortfolioSettings();
   const visibleFilters = settings.heatmapVisibleFilters;
@@ -199,12 +200,17 @@ export default function Matrix() {
   const isFullscreen = nativeFullscreen || pseudoFullscreen;
 
   const { data: gldChain, isFetching: chainFetching } = trpc.market.gldOptionChain.useQuery(undefined, {
-    enabled: dataset === "chain" && underlying !== "XAUT",
+    enabled: dataset === "chain" && (underlying === "GLD" || underlying === "all"),
     staleTime: 25_000,
     refetchOnWindowFocus: false,
   });
   const { data: xautChain, isFetching: xautChainFetching } = trpc.market.xautOptionChain.useQuery(undefined, {
-    enabled: dataset === "chain" && underlying !== "GLD",
+    enabled: dataset === "chain" && (underlying === "XAUT" || underlying === "all"),
+    staleTime: 8_000,
+    refetchOnWindowFocus: false,
+  });
+  const { data: btcChain, isFetching: btcChainFetching } = trpc.market.btcOptionChain.useQuery(undefined, {
+    enabled: dataset === "chain" && (underlying === "BTC" || underlying === "all"),
     staleTime: 8_000,
     refetchOnWindowFocus: false,
   });
@@ -225,21 +231,23 @@ export default function Matrix() {
     market: getPositionMarketData({
       position: position as PortfolioPosition,
       xautTickers,
+      btcTickers,
       gldQuotes: activeGldQuotes,
       gldSpot: spotPrices?.gld?.price ?? 0,
       formulas,
       settings,
     }) as MarketSnapshot,
-  })), [activeGldQuotes, formulas, positions, settings, spotPrices?.gld?.price, xautTickers]);
+  })), [activeGldQuotes, btcTickers, formulas, positions, settings, spotPrices?.gld?.price, xautTickers]);
 
   const liveSpots = useMemo(() => resolveHeatmapSpots(spotPrices, {
     xaut: dataset === "chain" ? xautChain?.spot : null,
     gld: dataset === "chain" ? gldChain?.spot : null,
-  }), [dataset, gldChain?.spot, spotPrices, xautChain?.spot]);
+    btc: dataset === "chain" ? btcChain?.spot : null,
+  }), [btcChain?.spot, dataset, gldChain?.spot, spotPrices, xautChain?.spot]);
   const displaySpots = useMemo(() => dataset === "live" || dataset === "chain"
-    ? { GLD: liveSpots.gld, XAUT: liveSpots.xaut, XAU: liveSpots.xau }
-    : { GLD: 247.3, XAUT: 3358, XAU: 3358 }, [dataset, liveSpots]);
-  const asOf = useMemo(() => new Date(), [dataset, gldQuotes, positions, spotPrices, xautTickers]);
+    ? { GLD: liveSpots.gld, XAUT: liveSpots.xaut, BTC: liveSpots.btc, XAU: liveSpots.xau }
+    : { GLD: 247.3, XAUT: 3358, BTC: 95_000, XAU: 3358 }, [dataset, liveSpots]);
+  const asOf = useMemo(() => new Date(), [btcTickers, dataset, gldQuotes, positions, spotPrices, xautTickers]);
   const riskPositions = useMemo(() => {
     if (dataset === "mock100") return generateMockPositions(100, 20260811, asOf);
     if (dataset === "mock200") return generateMockPositions(200, 20260811, asOf);
@@ -248,13 +256,15 @@ export default function Matrix() {
     const heldKeys = new Set(held.map(position => `${position.underlying}|${position.expiry}|${position.strike}|${position.callPut}`));
     const gldOzPerShare = liveSpots.xau > 0 && liveSpots.gld > 0 ? liveSpots.gld / liveSpots.xau : null;
     const xautPerUnit = liveSpots.xau > 0 && liveSpots.xaut > 0 ? liveSpots.xaut / liveSpots.xau : null;
+    const btcPerUnit = liveSpots.xau > 0 && liveSpots.btc > 0 ? liveSpots.btc / liveSpots.xau : null;
     const listed = [
       ...buildGldChainRiskPositions(gldChain?.quotes ?? [], gldOzPerShare),
       ...buildChainRiskPositions(xautChain?.quotes ?? [], "XAUT", xautPerUnit),
+      ...buildChainRiskPositions(btcChain?.quotes ?? [], "BTC", btcPerUnit),
     ].filter(position => !heldKeys.has(`${position.underlying}|${position.expiry}|${position.strike}|${position.callPut}`));
     return [...held, ...listed];
-  }, [asOf, dataset, formulas, gldChain?.quotes, liveSpots, liveViews, settings, xautChain?.quotes]);
-  const enriched = useMemo(() => enrichRiskPositions(riskPositions, displaySpots, asOf), [asOf, displaySpots, riskPositions]);
+  }, [asOf, btcChain?.quotes, dataset, formulas, gldChain?.quotes, liveSpots, liveViews, settings, xautChain?.quotes]);
+  const enriched = useMemo(() => enrichRiskPositions(riskPositions, displaySpots, asOf, formulas), [asOf, displaySpots, formulas, riskPositions]);
 
   const filterOptions = useMemo(() => ({
     venue: [...new Set(enriched.map(position => position.venue))].sort().filter(value => !settings.heatmapHiddenDynamicOptions.venue.includes(value)),
@@ -266,6 +276,7 @@ export default function Matrix() {
   useEffect(() => {
     if (underlying === "GLD") setSpotUnderlying("GLD");
     else if (underlying === "XAUT") setSpotUnderlying("XAUT");
+    else if (underlying === "BTC") setSpotUnderlying("BTC");
   }, [underlying]);
   useEffect(() => {
     const fallback = <T extends string>(current: T, enabled: Record<string, boolean>, setValue: (value: T) => void) => {
@@ -401,7 +412,8 @@ export default function Matrix() {
   }, [filtered, metric]);
   const sequentialMagnitude = metric === "unitDelta" || metric === "totalDelta"
     || metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread"
-    || metric === "qty" || metric === "notionalSize";
+    || metric === "qty" || metric === "notionalSize" || metric === "bidDollarNotional"
+    || metric === "askDollarNotional" || metric === "bidAskDollarNotional";
   const activeCustomRange = customRanges[metric] ?? null;
   const heldOnlyAutoRange = useMemo(() => {
     if (!HELD_ONLY_HEATMAP_METRICS.has(metric) || activeCustomRange) return null;
@@ -438,20 +450,21 @@ export default function Matrix() {
   };
 
   const waitingForChain = dataset === "chain" && (
-    (underlying !== "XAUT" && chainFetching && !gldChain)
-    || (underlying !== "GLD" && xautChainFetching && !xautChain)
+    ((underlying === "GLD" || underlying === "all") && chainFetching && !gldChain)
+    || ((underlying === "XAUT" || underlying === "all") && xautChainFetching && !xautChain)
+    || ((underlying === "BTC" || underlying === "all") && btcChainFetching && !btcChain)
   );
-  if ((isLoading && (dataset === "live" || dataset === "chain")) || waitingForChain) return <div className="flex h-64 flex-col items-center justify-center gap-2"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="text-xs text-muted-foreground">读取 {underlying === "all" ? "GLD + XAUT" : underlying} 完整期权链…</p></div>;
+  if ((isLoading && (dataset === "live" || dataset === "chain")) || waitingForChain) return <div className="flex h-64 flex-col items-center justify-center gap-2"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="text-xs text-muted-foreground">读取 {underlying === "all" ? "GLD + XAUT + BTC" : underlying} 完整期权链…</p></div>;
 
   return (
     <div className={`matrix-fullscreen-shell flex h-[calc(100vh-5.5rem)] min-h-[560px] flex-col gap-1 overflow-hidden ${isFullscreen ? "matrix-pseudo-fullscreen" : ""}`} data-testid="institutional-risk-heatmap" data-fullscreen={isFullscreen ? "true" : "false"}>
       <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-1">
         <div className="flex min-w-0 items-baseline gap-2">
           <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">风险热力图</h1>
-          <span className="font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held · {filtered.length} instruments · {cells.length} cells{gldChain && underlying !== "XAUT" ? ` · ${gldChain.contractCount} GLD` : ""}{xautChain && underlying !== "GLD" ? ` · ${xautChain.contractCount} XAUT` : ""}</span>
+          <span className="font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held · {filtered.length} instruments · {cells.length} cells{gldChain && (underlying === "GLD" || underlying === "all") ? ` · ${gldChain.contractCount} GLD` : ""}{xautChain && (underlying === "XAUT" || underlying === "all") ? ` · ${xautChain.contractCount} XAUT` : ""}{btcChain && (underlying === "BTC" || underlying === "all") ? ` · ${btcChain.contractCount} BTC` : ""}</span>
         </div>
         <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
-          <span>As-of {dataset === "chain" ? new Date(underlying === "XAUT" ? xautChain?.timestamp ?? asOf : gldChain?.timestamp ?? asOf).toLocaleString("zh-CN", { hour12: false }) : asOf.toLocaleTimeString("zh-CN", { hour12: false })}</span>
+          <span>As-of {dataset === "chain" ? new Date(underlying === "XAUT" ? xautChain?.timestamp ?? asOf : underlying === "BTC" ? btcChain?.timestamp ?? asOf : gldChain?.timestamp ?? asOf).toLocaleString("zh-CN", { hour12: false }) : asOf.toLocaleTimeString("zh-CN", { hour12: false })}</span>
           {visibleSections.dataError && <button type="button" onClick={() => setDataErrorHelp(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground"><Info className="h-3 w-3" />Largest Data Error</button>}
           {visibleSections.decisionCards && <button type="button" onClick={() => setCardsVisible(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground">{cardsVisible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{cardsVisible ? "Hide Cards" : "Show Cards"}</button>}
           {settings.pageMarketRefreshButtons.matrix && <MarketRefreshButton compact />}
@@ -469,7 +482,7 @@ export default function Matrix() {
           { value: "mock100", label: "MOCK 100" },
           { value: "mock200", label: "MOCK 200" },
         ].filter(option => enabledOptions.dataset[option.value as DatasetMode])} />}
-        {visibleFilters.underlying && <NativeSelect className="min-w-[90px] flex-1" label="UNDERLYING" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.underlying[option.value as keyof typeof enabledOptions.underlying])} />}
+        {visibleFilters.underlying && <NativeSelect className="min-w-[90px] flex-1" label="UNDERLYING" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "BTC", label: "BTC" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.underlying[option.value as keyof typeof enabledOptions.underlying])} />}
         {visibleFilters.venue && <NativeSelect className="min-w-[100px] flex-1" label="VENUE" value={venue} onChange={setVenue} options={[{ value: "all", label: "ALL" }, ...filterOptions.venue.map(value => ({ value, label: value }))]} />}
         {visibleFilters.broker && <NativeSelect className="min-w-[100px] flex-1" label="BROKER" value={broker} onChange={setBroker} options={[{ value: "all", label: "ALL" }, ...filterOptions.broker.map(value => ({ value, label: value }))]} />}
         {visibleFilters.account && <NativeSelect className="min-w-[110px] flex-1" label="ACCOUNT" value={account} onChange={setAccount} options={[{ value: "all", label: "ALL" }, ...filterOptions.account.map(value => ({ value, label: value }))]} />}
@@ -483,7 +496,7 @@ export default function Matrix() {
 
       {Object.entries(visibleFilters).some(([key, visible]) => visible && !["dataset", "underlying", "venue", "broker", "account", "callPut", "expiryBucket", "status", "metric", "label", "hover"].includes(key)) && <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1">
         {visibleFilters.scale && <NativeSelect label="SCALE" value={scaleMode} onChange={value => setScaleMode(value as ColorScaleMode)} options={[{ value: "quantile", label: "QUANTILE" }, { value: "log", label: "LOG" }, { value: "symmetric", label: "ZERO-CENTER" }].filter(option => enabledOptions.scale[option.value as keyof typeof enabledOptions.scale])} />}
-        {visibleFilters.spot && <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "XAU", label: "XAU" }].filter(option => enabledOptions.spot[option.value as keyof typeof enabledOptions.spot])} />}
+        {visibleFilters.spot && <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "BTC", label: "BTC" }, { value: "XAU", label: "XAU" }].filter(option => enabledOptions.spot[option.value as keyof typeof enabledOptions.spot])} />}
         {visibleFilters.range && <>
         <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MIN{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale minimum" inputMode="decimal" value={rangeMinDraft} onChange={event => setRangeMinDraft(event.target.value)} placeholder={heldOnlyAutoRange ? formatCompact(heldOnlyAutoRange.min, metric) : "AUTO"} className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
         <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MAX{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale maximum" inputMode="decimal" value={rangeMaxDraft} onChange={event => setRangeMaxDraft(event.target.value)} placeholder={heldOnlyAutoRange ? formatCompact(heldOnlyAutoRange.max, metric) : "AUTO"} className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
@@ -499,8 +512,9 @@ export default function Matrix() {
         <Tooltip delayDuration={80}><TooltipTrigger asChild><span data-testid="spot-atm-marker" className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />ATM</span></TooltipTrigger><TooltipContent side="bottom" sideOffset={4} className="border border-amber-300/40 bg-popover px-2 py-1 text-[10px] text-popover-foreground shadow-xl"><span className="text-muted-foreground">{spotUnderlying} Spot price </span><strong className="font-mono text-amber-300">{formatSpotPrice(spot)}</strong><span className="ml-2 text-muted-foreground">Nearest Strike </span><strong className="font-mono">{formatPrice(spotRangeState(strikes, spot).nearestStrike)}</strong></TooltipContent></Tooltip>
       </div>}
 
-      {visibleSections.chainStatusBanner && dataset === "chain" && underlying !== "XAUT" && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">GLD FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · updated {new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed (actual lag varies) · cyan listed / white held</div>}
-      {visibleSections.chainStatusBanner && dataset === "chain" && underlying !== "GLD" && xautChain && <div className="shrink-0 border border-violet-400/30 bg-violet-500/5 px-2 py-0.5 font-mono text-[8px] text-violet-100">XAUT FULL CHAIN · {xautChain.contractCount} tradable contracts · {xautChain.expiryCount} expiries · {xautChain.strikeCount} strikes · {xautChain.source} · updated {new Date(xautChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(xautChain.delaySeconds)}s</div>}
+      {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "GLD" || underlying === "all") && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">GLD FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · updated {new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed (actual lag varies) · cyan listed / white held</div>}
+      {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "XAUT" || underlying === "all") && xautChain && <div className="shrink-0 border border-violet-400/30 bg-violet-500/5 px-2 py-0.5 font-mono text-[8px] text-violet-100">XAUT FULL CHAIN · {xautChain.contractCount} tradable contracts · {xautChain.expiryCount} expiries · {xautChain.strikeCount} strikes · {xautChain.source} · updated {new Date(xautChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(xautChain.delaySeconds)}s</div>}
+      {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "BTC" || underlying === "all") && btcChain && <div className="shrink-0 border border-orange-400/30 bg-orange-500/5 px-2 py-0.5 font-mono text-[8px] text-orange-100">BTC FULL CHAIN · {btcChain.contractCount} tradable contracts · {btcChain.expiryCount} expiries · {btcChain.strikeCount} strikes · {btcChain.source} · updated {new Date(btcChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(btcChain.delaySeconds)}s</div>}
       {visibleSections.positionOnlyMetricBanner && HELD_ONLY_HEATMAP_METRICS.has(metric) && <div className="shrink-0 border border-amber-300/25 bg-amber-300/5 px-2 py-0.5 font-mono text-[8px] text-amber-100">POSITION-ONLY METRIC · only held cells are colored and included in the default min/max · listed contracts remain hoverable but uncolored</div>}
       {filtered.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center border border-dashed border-border text-sm text-muted-foreground">
@@ -528,6 +542,7 @@ export default function Matrix() {
           sequentialMagnitude={sequentialMagnitude}
           heldCellContent={settings.heatmapHeldCellContent}
           hoverContent={settings.heatmapHoverContent}
+          expiryHoverContent={settings.heatmapExpiryHoverContent}
           onSelectPosition={setSelectedPosition}
         />
       )}

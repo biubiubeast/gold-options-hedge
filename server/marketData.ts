@@ -57,6 +57,8 @@ export interface GldOptionQuote {
   ivSpread: number | null;
   bid1Price: number;
   ask1Price: number;
+  bid1Size: number | null;
+  ask1Size: number | null;
   delta: number;
   gamma: number;
   theta: number;
@@ -89,6 +91,10 @@ export interface XautOptionChain extends Omit<GldOptionChain, "quotes" | "status
   quotes: XautOptionQuote[];
   status: "realtime" | "stale";
 }
+
+export type BtcOptionQuote = XautOptionQuote;
+export type BtcOptionChain = XautOptionChain;
+type BybitOptionBaseCoin = "XAUT" | "BTC";
 
 export interface GldContractRequest {
   expiry: string;
@@ -226,35 +232,47 @@ function spotPrice(price: number, timestamp: number, source: string, forceDelaye
   };
 }
 
-export async function getXautOptionTickers(): Promise<BybitTickerOption[]> {
-  return cached("xaut-option-tickers", LIVE_CACHE_MS, async () => {
-    const data = await fetchJson<any>(`${BYBIT_BASE_URL}/v5/market/tickers?category=option&baseCoin=XAUT`);
+async function getBybitOptionTickers(baseCoin: BybitOptionBaseCoin): Promise<BybitTickerOption[]> {
+  return cached(`${baseCoin.toLowerCase()}-option-tickers`, LIVE_CACHE_MS, async () => {
+    const data = await fetchJson<any>(`${BYBIT_BASE_URL}/v5/market/tickers?category=option&baseCoin=${baseCoin}`);
     if (data.retCode !== 0 || !Array.isArray(data.result?.list)) {
-      throw new Error(data.retMsg || "Bybit returned no XAUT option tickers");
+      throw new Error(data.retMsg || `Bybit returned no ${baseCoin} option tickers`);
     }
     const timestamp = timestampSeconds(data.time);
     return data.result.list.map((ticker: Record<string, unknown>) => ({ ...ticker, timestamp })) as BybitTickerOption[];
   }).catch(error => {
-    console.error("[MarketData] Failed to fetch XAUT option tickers:", error);
+    console.error(`[MarketData] Failed to fetch ${baseCoin} option tickers:`, error);
     return [];
   });
 }
 
-export async function getXautOptionInstruments(): Promise<BybitInstrument[]> {
-  return cached("xaut-option-instruments", 60_000, async () => {
-    const data = await fetchJson<any>(`${BYBIT_BASE_URL}/v5/market/instruments-info?category=option&baseCoin=XAUT&limit=1000`);
-    if (data.retCode !== 0 || !Array.isArray(data.result?.list)) {
-      throw new Error(data.retMsg || "Bybit returned no XAUT instruments");
-    }
-    return data.result.list;
+async function getBybitOptionInstruments(baseCoin: BybitOptionBaseCoin): Promise<BybitInstrument[]> {
+  return cached(`${baseCoin.toLowerCase()}-option-instruments`, 60_000, async () => {
+    const instruments: BybitInstrument[] = [];
+    let cursor = "";
+    do {
+      const cursorQuery = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+      const data = await fetchJson<any>(`${BYBIT_BASE_URL}/v5/market/instruments-info?category=option&baseCoin=${baseCoin}&limit=1000${cursorQuery}`);
+      if (data.retCode !== 0 || !Array.isArray(data.result?.list)) {
+        throw new Error(data.retMsg || `Bybit returned no ${baseCoin} instruments`);
+      }
+      instruments.push(...data.result.list);
+      cursor = String(data.result?.nextPageCursor || "");
+    } while (cursor);
+    return instruments;
   }).catch(error => {
-    console.error("[MarketData] Failed to fetch XAUT instruments:", error);
+    console.error(`[MarketData] Failed to fetch ${baseCoin} instruments:`, error);
     return [];
   });
 }
 
-function parseBybitOptionSymbol(symbol: string): { expiry: string; strike: number; optionType: "call" | "put" } | null {
-  const match = symbol.toUpperCase().match(/^XAUT-(\d{1,2})([A-Z]{3})(\d{2})-([0-9.]+)-([CP])(?:-|$)/);
+export const getXautOptionTickers = () => getBybitOptionTickers("XAUT");
+export const getBtcOptionTickers = () => getBybitOptionTickers("BTC");
+export const getXautOptionInstruments = () => getBybitOptionInstruments("XAUT");
+export const getBtcOptionInstruments = () => getBybitOptionInstruments("BTC");
+
+function parseBybitOptionSymbol(symbol: string, baseCoin: BybitOptionBaseCoin): { expiry: string; strike: number; optionType: "call" | "put" } | null {
+  const match = symbol.toUpperCase().match(new RegExp(`^${baseCoin}-(\\d{1,2})([A-Z]{3})(\\d{2})-([0-9.]+)-([CP])(?:-|$)`));
   if (!match || !MONTHS[match[2]]) return null;
   const [, day, month, year, strike, side] = match;
   return {
@@ -264,18 +282,18 @@ function parseBybitOptionSymbol(symbol: string): { expiry: string; strike: numbe
   };
 }
 
-export async function getXautOptionChain(): Promise<XautOptionChain> {
-  return cached("bybit-xaut-full-chain", 10_000, async () => {
+async function getBybitOptionChain(baseCoin: BybitOptionBaseCoin): Promise<XautOptionChain> {
+  return cached(`bybit-${baseCoin.toLowerCase()}-full-chain`, 10_000, async () => {
     const [tickers, instruments, spotQuote] = await Promise.all([
-      getXautOptionTickers(),
-      getXautOptionInstruments(),
-      getXautSpotPrice(),
+      getBybitOptionTickers(baseCoin),
+      getBybitOptionInstruments(baseCoin),
+      getBybitSpotPrice(baseCoin),
     ]);
     const tickerMap = new Map(tickers.map(ticker => [ticker.symbol, ticker]));
     const timestamp = Math.max(...tickers.map(ticker => timestampSeconds(ticker.timestamp)), Date.now() - 60_000);
     const quotes: XautOptionQuote[] = [];
     for (const instrument of instruments.filter(item => item.status === "Trading")) {
-        const parsed = parseBybitOptionSymbol(instrument.symbol);
+        const parsed = parseBybitOptionSymbol(instrument.symbol, baseCoin);
         if (!parsed) continue;
         const ticker = tickerMap.get(instrument.symbol);
         const bidIv = ticker && toNumber(ticker.bid1Iv) > 0 ? toNumber(ticker.bid1Iv) : null;
@@ -290,6 +308,8 @@ export async function getXautOptionChain(): Promise<XautOptionChain> {
           ivSpread: bidIv !== null && askIv !== null ? askIv - bidIv : null,
           bid1Price: ticker ? toNumber(ticker.bid1Price) : 0,
           ask1Price: ticker ? toNumber(ticker.ask1Price) : 0,
+          bid1Size: ticker && toNumber(ticker.bid1Size) > 0 ? toNumber(ticker.bid1Size) : null,
+          ask1Size: ticker && toNumber(ticker.ask1Size) > 0 ? toNumber(ticker.ask1Size) : null,
           delta: ticker ? toNumber(ticker.delta) : 0,
           gamma: ticker ? toNumber(ticker.gamma) : 0,
           theta: ticker ? toNumber(ticker.theta) : 0,
@@ -307,7 +327,7 @@ export async function getXautOptionChain(): Promise<XautOptionChain> {
       quotes,
       spot: spotQuote?.price ?? toNumber(tickers[0]?.indexPrice),
       timestamp,
-      source: "Bybit V5 realtime options",
+      source: `Bybit V5 realtime options · ${baseCoin}`,
       status: delaySeconds > 15 * 60 ? "stale" : "realtime",
       delaySeconds,
       contractCount: quotes.length,
@@ -317,17 +337,23 @@ export async function getXautOptionChain(): Promise<XautOptionChain> {
   });
 }
 
-export async function getXautSpotPrice(): Promise<SpotPrice | null> {
-  return cached("xaut-spot", LIVE_CACHE_MS, async () => {
-    const data = await fetchJson<any>(`${BYBIT_BASE_URL}/v5/market/tickers?category=spot&symbol=XAUTUSDT`);
+export const getXautOptionChain = () => getBybitOptionChain("XAUT");
+export const getBtcOptionChain = () => getBybitOptionChain("BTC");
+
+async function getBybitSpotPrice(baseCoin: BybitOptionBaseCoin): Promise<SpotPrice | null> {
+  return cached(`${baseCoin.toLowerCase()}-spot`, LIVE_CACHE_MS, async () => {
+    const data = await fetchJson<any>(`${BYBIT_BASE_URL}/v5/market/tickers?category=spot&symbol=${baseCoin}USDT`);
     const price = toNumber(data.result?.list?.[0]?.lastPrice);
-    if (data.retCode !== 0 || price <= 0) throw new Error(data.retMsg || "Bybit returned no XAUT spot price");
-    return spotPrice(price, timestampSeconds(data.time), "Bybit V5 realtime");
+    if (data.retCode !== 0 || price <= 0) throw new Error(data.retMsg || `Bybit returned no ${baseCoin} spot price`);
+    return spotPrice(price, timestampSeconds(data.time), `Bybit V5 realtime · ${baseCoin}USDT`);
   }).catch(error => {
-    console.error("[MarketData] Failed to fetch XAUT spot:", error);
+    console.error(`[MarketData] Failed to fetch ${baseCoin} spot:`, error);
     return null;
   });
 }
+
+export const getXautSpotPrice = () => getBybitSpotPrice("XAUT");
+export const getBtcSpotPrice = () => getBybitSpotPrice("BTC");
 
 async function getYahooPrice(symbol: string, cacheKey: string): Promise<SpotPrice | null> {
   return cached(cacheKey, 30_000, async () => {
@@ -452,6 +478,8 @@ function normalizeMarketDataOption(data: any, contract: GldContractRequest): Gld
     ivSpread: null,
     bid1Price: bid,
     ask1Price: ask,
+    bid1Size: toNumber(first(data.bidSize)) > 0 ? toNumber(first(data.bidSize)) : null,
+    ask1Size: toNumber(first(data.askSize)) > 0 ? toNumber(first(data.askSize)) : null,
     delta: toNumber(first(data.delta)),
     gamma: toNumber(first(data.gamma)),
     theta: toNumber(first(data.theta)),
@@ -508,6 +536,8 @@ function normalizeTradierOption(raw: any, expiry: string): GldOptionQuote | null
     ivSpread: bidIv !== null && askIv !== null ? askIv - bidIv : null,
     bid1Price: bid,
     ask1Price: ask,
+    bid1Size: toNumber(raw.bidsize ?? raw.bid_size) > 0 ? toNumber(raw.bidsize ?? raw.bid_size) : null,
+    ask1Size: toNumber(raw.asksize ?? raw.ask_size) > 0 ? toNumber(raw.asksize ?? raw.ask_size) : null,
     delta: toNumber(greeks.delta),
     gamma: toNumber(greeks.gamma),
     theta: toNumber(greeks.theta),
@@ -549,6 +579,8 @@ export function normalizeCboeGldOption(raw: any, timestamp: number, spot = 0): G
     ivSpread: bidIv !== null && askIv !== null ? askIv - bidIv : null,
     bid1Price: bid,
     ask1Price: ask,
+    bid1Size: toNumber(raw.bid_size ?? raw.bidsize) > 0 ? toNumber(raw.bid_size ?? raw.bidsize) : null,
+    ask1Size: toNumber(raw.ask_size ?? raw.asksize) > 0 ? toNumber(raw.ask_size ?? raw.asksize) : null,
     delta: toNumber(raw.delta),
     gamma: toNumber(raw.gamma),
     theta: toNumber(raw.theta),
@@ -653,6 +685,22 @@ export function getMarketSources() {
         product: "XAUT/USDT Spot",
         provider: "Bybit V5 REST",
         endpoint: "/v5/market/tickers?category=spot&symbol=XAUTUSDT",
+        authentication: "无需密钥",
+        mode: "交易所实时快照",
+        documentationUrl: "https://bybit-exchange.github.io/docs/v5/market/tickers",
+      },
+      {
+        product: "BTC 期权 / Greeks / Bid-Ask / Top-of-book Size",
+        provider: "Bybit V5 REST",
+        endpoint: "/v5/market/tickers?category=option&baseCoin=BTC",
+        authentication: "无需密钥",
+        mode: "交易所实时完整期权链快照；包含 Bid/Ask 一档价格、数量、IV 与 Greeks",
+        documentationUrl: "https://bybit-exchange.github.io/docs/v5/market/tickers",
+      },
+      {
+        product: "BTC/USDT Spot",
+        provider: "Bybit V5 REST",
+        endpoint: "/v5/market/tickers?category=spot&symbol=BTCUSDT",
         authentication: "无需密钥",
         mode: "交易所实时快照",
         documentationUrl: "https://bybit-exchange.github.io/docs/v5/market/tickers",

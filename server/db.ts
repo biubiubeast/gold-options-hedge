@@ -18,7 +18,7 @@ export type LocalUser = {
 export type PositionRecord = {
   id: number;
   userId: number;
-  underlying: "XAUT" | "GLD";
+  underlying: "XAUT" | "GLD" | "BTC";
   expiry: string;
   strike: string;
   optionType: "call" | "put";

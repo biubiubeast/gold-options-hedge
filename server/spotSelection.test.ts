@@ -12,11 +12,11 @@ describe("heatmap canonical spot selection", () => {
       xaut: 4335,
     });
 
-    expect(spots).toEqual({ gld: 399.52, xaut: 4337, xau: 4700 });
+    expect(spots).toEqual({ gld: 399.52, xaut: 4337, btc: 0, xau: 4700 });
   });
 
   it("only uses the option-chain spot when the canonical quote is unavailable", () => {
     expect(resolveHeatmapSpots(undefined, { gld: 398.86, xaut: 4335 }))
-      .toEqual({ gld: 398.86, xaut: 4335, xau: 0 });
+      .toEqual({ gld: 398.86, xaut: 4335, btc: 0, xau: 0 });
   });
 });

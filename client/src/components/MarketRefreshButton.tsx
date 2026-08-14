@@ -23,7 +23,7 @@ export function MarketRefreshButton({ compact = false }: { compact?: boolean }) 
       variant="outline"
       size={compact ? "sm" : "default"}
       className="gap-1.5 whitespace-nowrap border-primary/40 text-primary"
-      onClick={() => refresh.mutate({ gldMultiplierXau: settings.gldSpotScaleOverride, xautMultiplierXau: settings.xautSpotScaleOverride })}
+      onClick={() => refresh.mutate({ gldMultiplierXau: settings.gldSpotScaleOverride, xautMultiplierXau: settings.xautSpotScaleOverride, btcMultiplierXau: settings.btcSpotScaleOverride })}
       disabled={refresh.isPending}
       title="联网刷新每条持仓的 Mark、IV、Bid/Ask、Unit/Total Greeks、MV 与 UPL，并持久化到下次 Excel 导出"
       data-testid="refresh-market-data"

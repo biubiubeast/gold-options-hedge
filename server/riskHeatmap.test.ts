@@ -14,9 +14,10 @@ import {
   nearestStrikeLevels,
   spotRangeState,
 } from "../shared/riskHeatmap";
+import { DEFAULT_FORMULAS } from "../shared/marketTypes";
 
 const asOf = new Date("2026-08-11T10:00:00.000Z");
-const spots = { GLD: 247.3, XAUT: 3358, XAU: 3358 } as const;
+const spots = { GLD: 247.3, XAUT: 3358, BTC: 95_000, XAU: 3358 } as const;
 
 describe("institutional risk heatmap acceptance", () => {
   it("generates deterministic 100/200-position datasets with required edge cases", () => {
@@ -139,5 +140,20 @@ describe("institutional risk heatmap acceptance", () => {
     const missing = { ...source[1], unitDelta: null };
     expect(aggregateHeatmapCellMetric([valid, missing], "unitDelta")).toBeNull();
     expect(aggregateHeatmapCellMetric([valid], "unitDelta")).toBe(0.42);
+  });
+
+  it("calculates editable top-of-book dollar notionals and preserves missing size", () => {
+    const source = generateMockPositions(100, 53, asOf)[1];
+    const custom = DEFAULT_FORMULAS.map(formula => formula.name === "bid_dollar_notional"
+      ? { ...formula, expression: "bidPrice * bidSize * contractMultiplier * 2" }
+      : formula);
+    const enriched = enrichRiskPositions([{ ...source, bid: 10, ask: 12, bidSize: 3, askSize: 4, contractMultiplier: 2 }], spots, asOf, custom)[0];
+    expect(enriched.bidDollarNotional).toBe(120);
+    expect(enriched.askDollarNotional).toBe(96);
+    expect(enriched.bidAskDollarNotional).toBe(216);
+    expect(metricValue(enriched, "bidAskDollarNotional")).toBe(216);
+    const missing = enrichRiskPositions([{ ...source, bidSize: null }], spots, asOf, custom)[0];
+    expect(missing.bidDollarNotional).toBeNull();
+    expect(aggregateHeatmapCellMetric([missing], "bidDollarNotional")).toBeNull();
   });
 });

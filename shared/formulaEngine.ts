@@ -228,6 +228,12 @@ export function validateFormula(
     theta: -0.1,
     vega: 0.2,
     spotScale: 0.1,
+    bidPrice: 11.5,
+    askPrice: 12.5,
+    bidSize: 8,
+    askSize: 6,
+    bidDollarNotional: 9200,
+    askDollarNotional: 7500,
   };
   try {
     evaluateExpression(expression, sampleVariables, formulas);

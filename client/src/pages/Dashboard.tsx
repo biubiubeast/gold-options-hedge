@@ -28,6 +28,7 @@ export default function Dashboard() {
   const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, {
     refetchInterval: 10_000,
   });
+  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, { refetchInterval: 10_000 });
   const gldExpiries = useMemo(() => [...new Set(
     (positions || []).filter(position => position.underlying === "GLD").map(position => position.expiry),
   )], [positions]);
@@ -52,6 +53,7 @@ export default function Dashboard() {
   const xautPrice = spotPrices?.xaut?.price ?? 0;
   const gldPrice = spotPrices?.gld?.price ?? 0;
   const xauPrice = spotPrices?.gold?.price ?? 0;
+  const btcPrice = spotPrices?.btc?.price ?? 0;
   const automaticXautScale = xauPrice > 0 ? xautPrice / xauPrice : 1;
   const automaticGldScale = xauPrice > 0 ? gldPrice / xauPrice : 0.1;
 
@@ -68,6 +70,7 @@ export default function Dashboard() {
     const market = getPositionMarketData({
       position,
       xautTickers,
+      btcTickers,
       gldQuotes,
       gldSpot: gldPrice,
       formulas,
@@ -77,6 +80,7 @@ export default function Dashboard() {
       position,
       market,
       xautSpot: xautPrice,
+      btcSpot: btcPrice,
       gldSpot: gldPrice,
       xauSpot: xauPrice,
       formulas,
@@ -93,7 +97,7 @@ export default function Dashboard() {
     if (!market.available) totals.unavailable += 1;
     return totals;
   }, { entryCost: 0, currentValue: 0, pnl: 0, delta: 0, gamma: 0, theta: 0, vega: 0, estimated: 0, unavailable: 0 }), [
-    filteredPositions, xautTickers, gldQuotes, gldPrice, xautPrice, xauPrice, formulas, settings,
+    filteredPositions, xautTickers, btcTickers, gldQuotes, gldPrice, xautPrice, btcPrice, xauPrice, formulas, settings,
   ]);
 
   const pnlPercent = summary.entryCost !== 0 ? summary.pnl / Math.abs(summary.entryCost) * 100 : 0;
@@ -125,6 +129,7 @@ export default function Dashboard() {
         {[
           ["XAUT/USDT", xautPrice, `${spotPrices?.xaut?.source || "等待数据源"}${spotPrices?.xaut?.stale ? "（缓存）" : ""}`],
           ["GLD/USD", gldPrice, `${spotPrices?.gld?.source || "等待数据源"}${spotPrices?.gld?.stale ? "（缓存）" : ""}`],
+          ["BTC/USDT", btcPrice, `${spotPrices?.btc?.source || "等待数据源"}${spotPrices?.btc?.stale ? "（缓存）" : ""}`],
           ["XAU/USD 代理（GC=F）", xauPrice, `${spotPrices?.gold?.source || "等待数据源"}${spotPrices?.gold?.stale ? "（缓存/代理）" : ""}`],
         ].map(([label, value, source]) => (
           <Card className="glass-card" key={String(label)}>
@@ -152,7 +157,7 @@ export default function Dashboard() {
             <Label className="text-xs text-muted-foreground">Underlying</Label>
             <Select value={filterUnderlying} onValueChange={setFilterUnderlying}>
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="all">全部</SelectItem><SelectItem value="XAUT">XAUT</SelectItem><SelectItem value="GLD">GLD</SelectItem></SelectContent>
+              <SelectContent><SelectItem value="all">全部</SelectItem><SelectItem value="XAUT">XAUT</SelectItem><SelectItem value="GLD">GLD</SelectItem><SelectItem value="BTC">BTC</SelectItem></SelectContent>
             </Select>
           </div>
           <div>

@@ -56,6 +56,10 @@ function loadSettings(): PortfolioSettings {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapHoverContent,
         ...saved.heatmapHoverContent,
       },
+      heatmapExpiryHoverContent: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.heatmapExpiryHoverContent,
+        ...saved.heatmapExpiryHoverContent,
+      },
       heatmapDetailContent: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapDetailContent,
         ...saved.heatmapDetailContent,

@@ -33,7 +33,7 @@ export const POSITION_EXCEL_HEADERS = [
 export type ImportMode = "replace" | "upsert";
 
 export type ImportedPosition = {
-  underlying: "XAUT" | "GLD";
+  underlying: "XAUT" | "GLD" | "BTC";
   expiry: string;
   strike: string;
   optionType: "call" | "put";
@@ -73,7 +73,7 @@ export type ImportedPosition = {
 };
 
 export type PositionExcelTotal = {
-  underlying: "XAUT" | "GLD";
+  underlying: "XAUT" | "GLD" | "BTC";
   netQty: number | null;
   xauEqNetQty: number | null;
   entryCost: number | null;
@@ -101,7 +101,9 @@ export type PositionExcelPreview = {
     totalRows: number;
     xautRows: number;
     gldRows: number;
+    btcRows: number;
     xautNetQty: number;
     gldNetQty: number;
+    btcNetQty: number;
   };
 };

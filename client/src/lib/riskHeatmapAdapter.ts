@@ -20,7 +20,7 @@ function fallbackStatus(market: MarketSnapshot): DataStatus {
 }
 export function buildLiveRiskPositions(args: {
   views: LivePositionView[];
-  spots: { xaut: number; gld: number; xau: number };
+  spots: { xaut: number; gld: number; btc: number; xau: number };
   settings: PortfolioSettings;
   formulas?: readonly FormulaLike[];
 }): RiskPosition[] {
@@ -31,6 +31,7 @@ export function buildLiveRiskPositions(args: {
       market,
       xautSpot: spots.xaut,
       gldSpot: spots.gld,
+      btcSpot: spots.btc,
       xauSpot: spots.xau,
       formulas: args.formulas,
       settings,
@@ -38,11 +39,13 @@ export function buildLiveRiskPositions(args: {
     const importedMultiplier = finiteOrNull(position.contractMultiplier);
     const multiplier = importedMultiplier ?? (position.underlying === "GLD"
       ? settings.gldContractMultiplier
-      : settings.xautContractMultiplier);
+      : position.underlying === "BTC" ? settings.btcContractMultiplier : settings.xautContractMultiplier);
     const importedOunces = finiteOrNull(position.multiplierXau);
     const ounces = importedOunces ?? (position.underlying === "GLD"
       ? settings.gldSpotScaleOverride ?? (spots.xau > 0 && spots.gld > 0 ? spots.gld / spots.xau : null)
-      : settings.xautSpotScaleOverride ?? (spots.xau > 0 && spots.xaut > 0 ? spots.xaut / spots.xau : null));
+      : position.underlying === "BTC"
+        ? settings.btcSpotScaleOverride ?? (spots.xau > 0 && spots.btc > 0 ? spots.btc / spots.xau : null)
+        : settings.xautSpotScaleOverride ?? (spots.xau > 0 && spots.xaut > 0 ? spots.xaut / spots.xau : null));
     const positionTime = position.referenceDate
       ? `${position.referenceDate}T23:59:59.000Z`
       : position.updatedAt instanceof Date
@@ -50,8 +53,8 @@ export function buildLiveRiskPositions(args: {
       : typeof position.updatedAt === "string" ? position.updatedAt : null;
     const riskPosition: RiskPosition = {
       id: String(position.id),
-      venue: position.venue || (position.underlying === "XAUT" ? "Bybit" : "OPRA"),
-      broker: position.venue || (position.underlying === "XAUT" ? "SignalPlus" : "Manual fallback"),
+      venue: position.venue || (position.underlying === "GLD" ? "OPRA" : "Bybit"),
+      broker: position.venue || (position.underlying === "GLD" ? "Manual fallback" : "SignalPlus / Bybit"),
       account: position.sourceAccount || "LOCAL-HEDGE",
       underlying: position.underlying,
       instrument: position.instrument || `${position.underlying}-${position.expiry.replaceAll("-", "")}-${position.strike}-${position.optionType === "call" ? "C" : "P"}`,
@@ -65,10 +68,12 @@ export function buildLiveRiskPositions(args: {
         : "fallback account setting · contract master not connected",
       contractAdjusted: position.underlying === "GLD" && importedMultiplier !== null && Math.abs(importedMultiplier - 100) > 1e-9,
       gldOzPerShare: position.underlying === "GLD" ? finiteOrNull(ounces) : null,
-      underlyingOzPerUnit: position.underlying === "XAUT" ? finiteOrNull(ounces) : null,
+      underlyingOzPerUnit: position.underlying !== "GLD" ? finiteOrNull(ounces) : null,
       markPrice: market.available ? finiteOrNull(market.markPrice) : null,
       bid: market.bid1 > 0 ? market.bid1 : null,
       ask: market.ask1 > 0 ? market.ask1 : null,
+      bidSize: market.bidSize,
+      askSize: market.askSize,
       markIV: market.markIv > 0 ? market.markIv : null,
       bidIV: market.bidIv ?? null,
       askIV: market.askIv ?? null,
@@ -109,12 +114,12 @@ export function buildLiveRiskPositions(args: {
 type ChainQuote = {
   symbol: string; expiry: string; strike: number; optionType: "call" | "put"; markPrice: number; markIv: number;
   bidIv?: number | null; askIv?: number | null; ivSpread?: number | null;
-  bid1Price: number; ask1Price: number; delta: number; gamma: number; theta: number; vega: number;
+  bid1Price: number; ask1Price: number; bid1Size?: number | null; ask1Size?: number | null; delta: number; gamma: number; theta: number; vega: number;
   timestamp: number; source: string; openInterest?: number; volume?: number;
   marketAvailable?: boolean;
 };
 
-export function buildChainRiskPositions(quotes: ChainQuote[], underlying: "GLD" | "XAUT", xauPerUnit: number | null): RiskPosition[] {
+export function buildChainRiskPositions(quotes: ChainQuote[], underlying: "GLD" | "XAUT" | "BTC", xauPerUnit: number | null): RiskPosition[] {
   return quotes.map(quote => {
     const marketAvailable = quote.marketAvailable !== false;
     return ({
@@ -134,10 +139,12 @@ export function buildChainRiskPositions(quotes: ChainQuote[], underlying: "GLD" 
       : "Bybit V5 instrument specification",
     contractAdjusted: false,
     gldOzPerShare: underlying === "GLD" ? xauPerUnit : null,
-    underlyingOzPerUnit: underlying === "XAUT" ? xauPerUnit : null,
+    underlyingOzPerUnit: underlying !== "GLD" ? xauPerUnit : null,
     markPrice: marketAvailable && quote.markPrice > 0 ? quote.markPrice : null,
     bid: quote.bid1Price > 0 ? quote.bid1Price : 0,
     ask: quote.ask1Price > 0 ? quote.ask1Price : 0,
+    bidSize: quote.bid1Size ?? null,
+    askSize: quote.ask1Size ?? null,
     markIV: marketAvailable && quote.markIv > 0 ? quote.markIv : null,
     bidIV: quote.bidIv ?? null,
     askIV: quote.askIv ?? null,

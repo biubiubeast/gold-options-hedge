@@ -1,6 +1,8 @@
 import { blackScholes } from "./blackScholes";
+import { evaluateNamedFormula } from "./formulaEngine";
+import { DEFAULT_FORMULAS, type FormulaLike } from "./marketTypes";
 
-export type RiskUnderlying = "GLD" | "XAUT";
+export type RiskUnderlying = "GLD" | "XAUT" | "BTC";
 export type CallPut = "call" | "put";
 export type DataStatus = "LIVE" | "STALE" | "WARN" | "MISSING" | "FAIL";
 export type PlannedAction = "HOLD" | "CLOSE" | "ROLL" | "EXERCISE ALLOWED" | "DNE";
@@ -16,6 +18,9 @@ export type HeatmapMetric =
   | "ivSpread"
   | "qty"
   | "notionalSize"
+  | "bidDollarNotional"
+  | "askDollarNotional"
+  | "bidAskDollarNotional"
   | "MV"
   | "UPL"
   | "DTE"
@@ -42,6 +47,8 @@ export interface RiskPosition {
   markPrice: number | null;
   bid: number | null;
   ask: number | null;
+  bidSize: number | null;
+  askSize: number | null;
   markIV: number | null;
   bidIV: number | null;
   askIV: number | null;
@@ -95,6 +102,9 @@ export interface EnrichedRiskPosition extends RiskPosition {
   dte: number;
   /** Signed underlying notional: netQty × contractMultiplier × underlying spot. */
   notionalSizeUSD: number | null;
+  bidDollarNotional: number | null;
+  askDollarNotional: number | null;
+  bidAskDollarNotional: number | null;
   distanceToStrike: number | null;
   spreadPct: number | null;
   intrinsicValue: number | null;
@@ -134,6 +144,7 @@ export interface ScenarioResult {
   optionPnlUSD: number;
   gldPnlUSD: number;
   xautPnlUSD: number;
+  btcPnlUSD: number;
   vanNakedPnlUSD: number;
   residualPnlUSD: number;
   stressedDeltaXAU: number;
@@ -177,6 +188,9 @@ export const METRIC_LABELS: Record<HeatmapMetric, string> = {
   ivSpread: "Ask−Bid IV Spread",
   qty: "Qty / Position Size",
   notionalSize: "Notional Size USD",
+  bidDollarNotional: "Bid Dollar Notional",
+  askDollarNotional: "Ask Dollar Notional",
+  bidAskDollarNotional: "Bid Ask Dollar Notional",
   MV: "Market Value",
   UPL: "UPL",
   DTE: "DTE",
@@ -242,6 +256,9 @@ export function metricValue(position: EnrichedRiskPosition, metric: HeatmapMetri
     case "ivSpread": return position.ivSpread;
     case "qty": return position.netQty;
     case "notionalSize": return position.notionalSizeUSD;
+    case "bidDollarNotional": return position.bidDollarNotional;
+    case "askDollarNotional": return position.askDollarNotional;
+    case "bidAskDollarNotional": return position.bidAskDollarNotional;
     case "MV": return position.MV;
     case "UPL": return position.UPL;
     case "DTE": return Number.isFinite(position.dte) ? position.dte : null;
@@ -412,7 +429,27 @@ function rollFactors(position: RiskPosition, spot: number, context: { portfolioA
   return { total: factors.reduce((sum, factor) => sum + factor.contribution, 0), factors };
 }
 
-export function enrichRiskPositions(positions: RiskPosition[], spots: Record<RiskUnderlying, number>, asOf: Date = new Date()): EnrichedRiskPosition[] {
+function editableFormula(
+  name: string,
+  variables: Record<string, number>,
+  formulas: readonly FormulaLike[],
+  fallback: number,
+): number | null {
+  try {
+    const value = evaluateNamedFormula(name, variables, formulas, new Set());
+    return Number.isFinite(value) ? value : null;
+  } catch {
+    return Number.isFinite(fallback) ? fallback : null;
+  }
+}
+
+export function enrichRiskPositions(
+  positions: RiskPosition[],
+  spots: Record<RiskUnderlying, number>,
+  asOf: Date = new Date(),
+  customFormulas: readonly FormulaLike[] = DEFAULT_FORMULAS,
+): EnrichedRiskPosition[] {
+  const formulas = customFormulas.length ? customFormulas : DEFAULT_FORMULAS;
   const totaled = positions.map(deriveTotals);
   const context = {
     portfolioAbsDelta: totaled.reduce((sum, position) => sum + Math.abs(position.totalDeltaXAU ?? 0), 0),
@@ -427,6 +464,20 @@ export function enrichRiskPositions(positions: RiskPosition[], spots: Record<Ris
     const spreadPct = position.bid !== null && position.ask !== null && position.markPrice && position.markPrice > 0
       ? Math.max(0, position.ask - position.bid) / position.markPrice
       : null;
+    const multiplier = finiteOrNull(position.contractMultiplier);
+    const bidPrice = finiteOrNull(position.bid);
+    const askPrice = finiteOrNull(position.ask);
+    const bidSize = finiteOrNull(position.bidSize);
+    const askSize = finiteOrNull(position.askSize);
+    const bidDollarNotional = multiplier !== null && bidPrice !== null && bidSize !== null
+      ? editableFormula("bid_dollar_notional", { bidPrice, bidSize, contractMultiplier: multiplier }, formulas, bidPrice * bidSize * multiplier)
+      : null;
+    const askDollarNotional = multiplier !== null && askPrice !== null && askSize !== null
+      ? editableFormula("ask_dollar_notional", { askPrice, askSize, contractMultiplier: multiplier }, formulas, askPrice * askSize * multiplier)
+      : null;
+    const bidAskDollarNotional = bidDollarNotional !== null && askDollarNotional !== null
+      ? editableFormula("bid_ask_dollar_notional", { bidDollarNotional, askDollarNotional }, formulas, bidDollarNotional + askDollarNotional)
+      : null;
     const enrichedBase: RiskPosition = { ...position, dataStatus: deriveDataStatus(position, asOf) };
     return {
       ...enrichedBase,
@@ -436,6 +487,9 @@ export function enrichRiskPositions(positions: RiskPosition[], spots: Record<Ris
         : finiteOrNull(position.notionalSizeUSD) ?? (spot > 0 && position.contractMultiplier !== null
           ? position.netQty * position.contractMultiplier * spot
           : null),
+      bidDollarNotional,
+      askDollarNotional,
+      bidAskDollarNotional,
       distanceToStrike: spot > 0 ? (spot - position.strike) / spot : null,
       spreadPct,
       intrinsicValue,
@@ -602,6 +656,7 @@ export function calculateScenario(positions: EnrichedRiskPosition[], input: Scen
   const shockFactor = 1 + input.xauShockPct / 100;
   let gldPnlUSD = 0;
   let xautPnlUSD = 0;
+  let btcPnlUSD = 0;
   let stressedDeltaXAU = 0;
   let missingCount = 0;
   for (const position of positions) {
@@ -630,16 +685,17 @@ export function calculateScenario(positions: EnrichedRiskPosition[], input: Scen
         });
     const pnl = (theoretical.price - position.markPrice) * position.netQty * multiplier;
     if (position.underlying === "GLD") gldPnlUSD += pnl;
-    else xautPnlUSD += pnl;
+    else if (position.underlying === "XAUT") xautPnlUSD += pnl;
+    else btcPnlUSD += pnl;
     stressedDeltaXAU += theoretical.delta * position.netQty * multiplier * ounces;
   }
-  const optionPnlUSD = gldPnlUSD + xautPnlUSD;
+  const optionPnlUSD = gldPnlUSD + xautPnlUSD + btcPnlUSD;
   const vanNakedPnlUSD = input.vanNakedDeltaXau * input.spots.XAU * input.xauShockPct / 100;
   const residualPnlUSD = optionPnlUSD + vanNakedPnlUSD;
   const stressCoveragePct = vanNakedPnlUSD < 0 && optionPnlUSD > 0
     ? optionPnlUSD / Math.abs(vanNakedPnlUSD) * 100
     : null;
-  return { optionPnlUSD, gldPnlUSD, xautPnlUSD, vanNakedPnlUSD, residualPnlUSD, stressedDeltaXAU, stressCoveragePct, missingCount };
+  return { optionPnlUSD, gldPnlUSD, xautPnlUSD, btcPnlUSD, vanNakedPnlUSD, residualPnlUSD, stressedDeltaXAU, stressCoveragePct, missingCount };
 }
 
 function mulberry32(seed: number) {
@@ -723,6 +779,8 @@ export function generateMockPositions(count: 100 | 200, seed = 20260811, asOf: D
       markPrice: fail ? null : markPrice,
       bid: missing ? null : bid,
       ask: missing ? null : ask,
+      bidSize: missing ? null : 1 + (index * 7) % 40,
+      askSize: missing ? null : 1 + (index * 11) % 40,
       markIV: missing ? null : markIV,
       bidIV: missing ? null : Math.max(0.01, markIV - 0.012),
       askIV: missing ? null : markIV + 0.014,

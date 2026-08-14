@@ -21,11 +21,16 @@ export type HeatmapDetailField =
   | "unitVega" | "totalVega" | "marketValue" | "entryPrice" | "entryCost" | "upl" | "source" | "quoteAsOf"
   | "dataStatus" | "deliverableSource" | "adjustedContract" | "rollPriority";
 
+export type HeatmapExpiryHoverField =
+  | "heldListed" | "totalDelta" | "totalGamma" | "totalTheta" | "totalVega" | "maxRoll" | "worstStatus"
+  | "averageIv" | "openInterestVolume" | "staleMissing" | "latestQuote"
+  | "netGrossQty" | "grossNotional" | "mvEntry" | "upl";
+
 export type AdminPasswordPage = "dashboard" | "positions" | "matrix" | "formulas" | "dataSources" | "settings" | "optionDetail" | "notFound";
 
 export type PortfolioPosition = {
   id: number;
-  underlying: "XAUT" | "GLD";
+  underlying: "XAUT" | "GLD" | "BTC";
   expiry: string;
   strike: string;
   optionType: "call" | "put";
@@ -113,13 +118,13 @@ export type PortfolioSettings = {
   };
   heatmapFilterOptions: {
     dataset: Record<"chain" | "live" | "mock100" | "mock200", boolean>;
-    underlying: Record<"GLD" | "XAUT" | "all", boolean>;
+    underlying: Record<"GLD" | "XAUT" | "BTC" | "all", boolean>;
     callPut: Record<"call" | "put" | "combined", boolean>;
     expiryBucket: Record<"all" | "expired" | "0-2" | "3-7" | "8-30" | "31+", boolean>;
     status: Record<DataStatus | "all", boolean>;
     metric: Record<HeatmapMetric, boolean>;
     scale: Record<"quantile" | "log" | "symmetric", boolean>;
-    spot: Record<"GLD" | "XAUT" | "XAU", boolean>;
+    spot: Record<"GLD" | "XAUT" | "BTC" | "XAU", boolean>;
     label: Record<"none" | "held" | "top" | "bottom" | "all", boolean>;
     hover: Record<"risk" | "market" | "pnl" | "all", boolean>;
   };
@@ -134,6 +139,7 @@ export type PortfolioSettings = {
     dataStatus: boolean;
   };
   heatmapHoverContent: Record<HeatmapHoverField, boolean>;
+  heatmapExpiryHoverContent: Record<HeatmapExpiryHoverField, boolean>;
   heatmapDetailContent: Record<HeatmapDetailField, boolean>;
   heatmapVisibleSections: {
     decisionCards: boolean;
@@ -144,8 +150,10 @@ export type PortfolioSettings = {
   };
   xautContractMultiplier: number;
   gldContractMultiplier: number;
+  btcContractMultiplier: number;
   xautSpotScaleOverride: number | null;
   gldSpotScaleOverride: number | null;
+  btcSpotScaleOverride: number | null;
   gldFallbackIv: number;
   riskFreeRate: number;
 };
@@ -198,7 +206,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   },
   heatmapFilterOptions: {
     dataset: { chain: true, live: true, mock100: true, mock200: true },
-    underlying: { GLD: true, XAUT: true, all: true },
+    underlying: { GLD: true, XAUT: true, BTC: true, all: true },
     callPut: { call: true, put: true, combined: false },
     expiryBucket: { all: true, expired: true, "0-2": true, "3-7": true, "8-30": true, "31+": true },
     status: { all: true, LIVE: true, STALE: true, WARN: true, MISSING: true, FAIL: true },
@@ -214,6 +222,9 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
       ivSpread: true,
       qty: true,
       notionalSize: true,
+      bidDollarNotional: true,
+      askDollarNotional: true,
+      bidAskDollarNotional: true,
       MV: false,
       UPL: false,
       DTE: false,
@@ -221,7 +232,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
       rollPriority: false,
     },
     scale: { quantile: true, log: true, symmetric: true },
-    spot: { GLD: true, XAUT: true, XAU: true },
+    spot: { GLD: true, XAUT: true, BTC: true, XAU: true },
     label: { none: true, held: true, top: false, bottom: false, all: true },
     hover: { risk: true, market: true, pnl: true, all: true },
   },
@@ -244,6 +255,23 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     ivSpread: true,
     sourceQuote: true,
     openInterestVolume: true,
+    mvEntry: true,
+    upl: true,
+  },
+  heatmapExpiryHoverContent: {
+    heldListed: true,
+    totalDelta: true,
+    totalGamma: false,
+    totalTheta: false,
+    totalVega: false,
+    maxRoll: false,
+    worstStatus: true,
+    averageIv: true,
+    openInterestVolume: true,
+    staleMissing: true,
+    latestQuote: true,
+    netGrossQty: true,
+    grossNotional: true,
     mvEntry: true,
     upl: true,
   },
@@ -293,8 +321,10 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   },
   xautContractMultiplier: 1,
   gldContractMultiplier: 100,
+  btcContractMultiplier: 1,
   xautSpotScaleOverride: null,
   gldSpotScaleOverride: 0.092,
+  btcSpotScaleOverride: null,
   gldFallbackIv: 0.2,
   riskFreeRate: 0.045,
 };
@@ -304,6 +334,8 @@ export type MarketSnapshot = {
   markIv: number;
   bid1: number;
   ask1: number;
+  bidSize: number | null;
+  askSize: number | null;
   bidIv?: number | null;
   askIv?: number | null;
   delta: number;
@@ -323,6 +355,8 @@ type XautTicker = {
   markIv: string;
   bid1Price: string;
   ask1Price: string;
+  bid1Size?: string;
+  ask1Size?: string;
   bid1Iv?: string;
   ask1Iv?: string;
   delta: string;
@@ -339,6 +373,8 @@ type GldQuote = {
   markIv: number;
   bid1Price: number;
   ask1Price: number;
+  bid1Size?: number | null;
+  ask1Size?: number | null;
   bidIv?: number | null;
   askIv?: number | null;
   delta: number;
@@ -386,6 +422,8 @@ function importedSnapshot(position: PortfolioPosition): MarketSnapshot | null {
     markIv: finiteImported(position.markIv) ?? 0,
     bid1: finiteImported(position.bid1Price) ?? 0,
     ask1: finiteImported(position.ask1Price) ?? 0,
+    bidSize: null,
+    askSize: null,
     delta: delta!,
     gamma: gamma!,
     theta: theta!,
@@ -420,29 +458,32 @@ export function findXautTicker(position: PortfolioPosition, tickers?: XautTicker
 export function getPositionMarketData(args: {
   position: PortfolioPosition;
   xautTickers?: XautTicker[];
+  btcTickers?: XautTicker[];
   gldQuotes?: GldQuote[];
   gldSpot: number;
   formulas?: readonly FormulaLike[];
   settings: PortfolioSettings;
 }): MarketSnapshot {
-  const { position, xautTickers, gldQuotes, gldSpot, settings } = args;
+  const { position, xautTickers, btcTickers, gldQuotes, gldSpot, settings } = args;
   const formulas = args.formulas?.length ? args.formulas : DEFAULT_FORMULAS;
 
-  if (position.underlying === "XAUT") {
-    const ticker = findXautTicker(position, xautTickers);
+  if (position.underlying === "XAUT" || position.underlying === "BTC") {
+    const ticker = findXautTicker(position, position.underlying === "BTC" ? btcTickers : xautTickers);
     if (ticker) {
       return {
         markPrice: numberOf(ticker.markPrice),
         markIv: numberOf(ticker.markIv),
         bid1: numberOf(ticker.bid1Price),
         ask1: numberOf(ticker.ask1Price),
+        bidSize: finiteImported(ticker.bid1Size),
+        askSize: finiteImported(ticker.ask1Size),
         bidIv: finiteImported(ticker.bid1Iv),
         askIv: finiteImported(ticker.ask1Iv),
         delta: numberOf(ticker.delta),
         gamma: numberOf(ticker.gamma),
         theta: numberOf(ticker.theta),
         vega: numberOf(ticker.vega),
-        source: "Bybit V5",
+        source: `Bybit V5 · ${position.underlying}`,
         estimated: false,
         available: true,
         quoteTime: quoteIso(ticker.timestamp),
@@ -465,6 +506,8 @@ export function getPositionMarketData(args: {
         markIv: numberOf(quote.markIv),
         bid1: numberOf(quote.bid1Price),
         ask1: numberOf(quote.ask1Price),
+        bidSize: finiteImported(quote.bid1Size),
+        askSize: finiteImported(quote.ask1Size),
         bidIv: finiteImported(quote.bidIv),
         askIv: finiteImported(quote.askIv),
         delta: numberOf(quote.delta),
@@ -494,6 +537,8 @@ export function getPositionMarketData(args: {
         markIv: settings.gldFallbackIv,
         bid1: 0,
         ask1: 0,
+        bidSize: null,
+        askSize: null,
         delta: result.delta,
         gamma: result.gamma,
         theta: result.theta,
@@ -512,6 +557,8 @@ export function getPositionMarketData(args: {
     markIv: 0,
     bid1: 0,
     ask1: 0,
+    bidSize: null,
+    askSize: null,
     delta: numberOf(position.entryDelta),
     gamma: 0,
     theta: 0,
@@ -541,6 +588,7 @@ export function calculatePosition(args: {
   position: PortfolioPosition;
   market: MarketSnapshot;
   xautSpot: number;
+  btcSpot: number;
   gldSpot: number;
   xauSpot: number;
   formulas?: readonly FormulaLike[];
@@ -554,12 +602,14 @@ export function calculatePosition(args: {
   const importedContractMultiplier = finiteImported(position.contractMultiplier);
   const contractMultiplier = importedContractMultiplier && importedContractMultiplier > 0
     ? importedContractMultiplier
-    : position.underlying === "GLD" ? settings.gldContractMultiplier : settings.xautContractMultiplier;
-  const underlyingPrice = position.underlying === "GLD" ? args.gldSpot : args.xautSpot;
+    : position.underlying === "GLD" ? settings.gldContractMultiplier
+    : position.underlying === "BTC" ? settings.btcContractMultiplier
+    : settings.xautContractMultiplier;
+  const underlyingPrice = position.underlying === "GLD" ? args.gldSpot : position.underlying === "BTC" ? args.btcSpot : args.xautSpot;
   const automaticScale = args.xauSpot > 0 && underlyingPrice > 0 ? underlyingPrice / args.xauSpot : 1;
   const override = position.underlying === "GLD"
     ? settings.gldSpotScaleOverride
-    : settings.xautSpotScaleOverride;
+    : position.underlying === "BTC" ? settings.btcSpotScaleOverride : settings.xautSpotScaleOverride;
   const importedSpotScale = finiteImported(position.multiplierXau);
   const spotScale = importedSpotScale ?? override ?? calculate("spot_scale", {
     underlyingPrice,

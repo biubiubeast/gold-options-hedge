@@ -43,6 +43,7 @@ export function LiveSpotBar() {
     <div className="flex items-center gap-1.5" aria-label="实时现价">
       <SpotChip label="XAUT/USDT" value={data?.xaut} />
       <SpotChip label="GLD/USD" value={data?.gld} />
+      <SpotChip label="BTC/USDT" value={data?.btc} />
       <Button
         type="button"
         variant="ghost"

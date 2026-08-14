@@ -16,7 +16,7 @@ import { calculatePosition, getPositionMarketData, type PortfolioPosition } from
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 
 interface PositionForm {
-  underlying: "XAUT" | "GLD";
+  underlying: "XAUT" | "GLD" | "BTC";
   expiry: string;
   strike: string;
   optionType: "call" | "put";
@@ -80,6 +80,7 @@ export default function Positions() {
   const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
   const { data: formulas } = trpc.formulas.list.useQuery();
   const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
+  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, { refetchInterval: 10_000 });
   const { settings } = usePortfolioSettings();
   const exportExcelQuery = trpc.positions.exportExcel.useQuery(undefined, { enabled: false });
   const previewMutation = trpc.positions.previewExcel.useMutation({ onError: error => toast.error(error.message) });
@@ -115,13 +116,15 @@ export default function Positions() {
 
   const summary = useMemo(() => {
     const all = positions ?? [];
-    const forUnderlying = (value: "XAUT" | "GLD") => all.filter(position => position.underlying === value);
+    const forUnderlying = (value: "XAUT" | "GLD" | "BTC") => all.filter(position => position.underlying === value);
     return {
       count: all.length,
       xaut: forUnderlying("XAUT").length,
       gld: forUnderlying("GLD").length,
+      btc: forUnderlying("BTC").length,
       xautQty: forUnderlying("XAUT").reduce((sum, position) => sum + Number(position.quantity), 0),
       gldQty: forUnderlying("GLD").reduce((sum, position) => sum + Number(position.quantity), 0),
+      btcQty: forUnderlying("BTC").reduce((sum, position) => sum + Number(position.quantity), 0),
       referenceDate: all.map(position => position.referenceDate).filter(Boolean).sort().at(-1) ?? "—",
     };
   }, [positions]);
@@ -165,7 +168,7 @@ export default function Positions() {
       underlying: position.underlying, expiry: position.expiry, strike: position.strike, optionType: position.optionType,
       entryPrice: position.entryPrice, quantity: position.quantity, fee: position.fee, entryDelta: position.entryDelta,
       sourceAccount: position.sourceAccount ?? "", venue: position.venue ?? "", instrument: position.instrument ?? "",
-      currency: position.currency ?? (position.underlying === "XAUT" ? "USDT" : "USD"), referenceDate: position.referenceDate ?? "",
+      currency: position.currency ?? (position.underlying === "GLD" ? "USD" : "USDT"), referenceDate: position.referenceDate ?? "",
       importedMarkPrice: position.importedMarkPrice ?? "", multiplierXau: position.multiplierXau ?? (position.underlying === "XAUT" ? "1" : ""),
       contractMultiplier: position.contractMultiplier ?? (position.underlying === "GLD" ? "100" : "1"), unitGamma: position.unitGamma ?? "",
       unitTheta: position.unitTheta ?? "", unitVega: position.unitVega ?? "",
@@ -208,9 +211,10 @@ export default function Positions() {
     const xautSpot = Number(spotPrices?.xaut?.price);
     const gldSpot = Number(spotPrices?.gld?.price);
     const xauSpot = Number(spotPrices?.gold?.price);
-    if (![xautSpot, gldSpot, xauSpot].every(Number.isFinite)) return null;
-    const market = getPositionMarketData({ position: position as PortfolioPosition, xautTickers, gldSpot, formulas, settings });
-    return calculatePosition({ position: position as PortfolioPosition, market, xautSpot, gldSpot, xauSpot, formulas, settings }).notionalSize;
+    const btcSpot = Number(spotPrices?.btc?.price);
+    if (![xautSpot, gldSpot, btcSpot, xauSpot].every(Number.isFinite)) return null;
+    const market = getPositionMarketData({ position: position as PortfolioPosition, xautTickers, btcTickers, gldSpot, formulas, settings });
+    return calculatePosition({ position: position as PortfolioPosition, market, xautSpot, btcSpot, gldSpot, xauSpot, formulas, settings }).notionalSize;
   };
 
   if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
@@ -242,7 +246,7 @@ export default function Positions() {
                   <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
                     {[
                       ["文件", preview.fileName], ["工作表", preview.sheetName], ["Reference", preview.referenceDate ?? "MISSING"],
-                      ["明细", preview.summary.detailRows], ["XAUT", `${preview.summary.xautRows} / Qty ${preview.summary.xautNetQty}`], ["GLD", `${preview.summary.gldRows} / Qty ${preview.summary.gldNetQty}`],
+                      ["明细", preview.summary.detailRows], ["XAUT", `${preview.summary.xautRows} / Qty ${preview.summary.xautNetQty}`], ["GLD", `${preview.summary.gldRows} / Qty ${preview.summary.gldNetQty}`], ["BTC", `${preview.summary.btcRows} / Qty ${preview.summary.btcNetQty}`],
                     ].map(([label, value]) => <div key={String(label)} className="border border-border/60 bg-secondary/20 p-2"><p className="text-[10px] uppercase text-muted-foreground">{label}</p><p className="truncate font-mono text-xs" title={String(value)}>{value}</p></div>)}
                   </div>
                   <div className={`flex items-center gap-2 border p-2 text-xs ${preview.exactHeaderMatch ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-amber-500/40 bg-amber-500/10 text-amber-200"}`}>
@@ -271,7 +275,7 @@ export default function Positions() {
             <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
               <DialogHeader><DialogTitle>{editId ? "编辑仓位" : "添加新仓位"}</DialogTitle><DialogDescription>核心合约信息为必填；账户、快照和 Unit Greeks 可展开补充。</DialogDescription></DialogHeader>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <div><Label>Underlying *</Label><Select value={form.underlying} onValueChange={(value: "XAUT" | "GLD") => setForm({ ...form, underlying: value, currency: value === "XAUT" ? "USDT" : "USD", contractMultiplier: String(value === "XAUT" ? settings.xautContractMultiplier : settings.gldContractMultiplier), multiplierXau: String(value === "XAUT" ? settings.xautSpotScaleOverride ?? 1 : settings.gldSpotScaleOverride ?? 0.092) })}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="XAUT">XAUT</SelectItem><SelectItem value="GLD">GLD</SelectItem></SelectContent></Select></div>
+                <div><Label>Underlying *</Label><Select value={form.underlying} onValueChange={(value: "XAUT" | "GLD" | "BTC") => setForm({ ...form, underlying: value, currency: value === "GLD" ? "USD" : "USDT", contractMultiplier: String(value === "GLD" ? settings.gldContractMultiplier : value === "BTC" ? settings.btcContractMultiplier : settings.xautContractMultiplier), multiplierXau: String(value === "GLD" ? settings.gldSpotScaleOverride ?? 0.092 : value === "BTC" ? settings.btcSpotScaleOverride ?? "" : settings.xautSpotScaleOverride ?? 1) })}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="XAUT">XAUT</SelectItem><SelectItem value="GLD">GLD</SelectItem><SelectItem value="BTC">BTC</SelectItem></SelectContent></Select></div>
                 <div><Label>Call / Put *</Label><Select value={form.optionType} onValueChange={(value: "call" | "put") => setForm({ ...form, optionType: value })}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="call">Call</SelectItem><SelectItem value="put">Put</SelectItem></SelectContent></Select></div>
                 <div><Label>Expiry *</Label><Input type="date" value={form.expiry} onChange={event => setForm({ ...form, expiry: event.target.value })} className="mt-1" /></div>
                 <div><Label>Strike *</Label><Input type="number" step="0.01" value={form.strike} onChange={event => setForm({ ...form, strike: event.target.value })} className="mt-1" /></div>
@@ -298,7 +302,7 @@ export default function Positions() {
       </div>
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-        {[["Positions", summary.count], ["XAUT", `${summary.xaut} / Qty ${summary.xautQty}`], ["GLD", `${summary.gld} / Qty ${summary.gldQty}`], ["Reference Date", summary.referenceDate], ["Import Status", positions?.some(position => position.importSource) ? "EXCEL SNAPSHOT" : "MANUAL"]].map(([label, value]) => <Card key={String(label)} className="glass-card"><CardContent className="p-3"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-sm font-semibold">{value}</p></CardContent></Card>)}
+        {[["Positions", summary.count], ["XAUT", `${summary.xaut} / Qty ${summary.xautQty}`], ["GLD", `${summary.gld} / Qty ${summary.gldQty}`], ["BTC", `${summary.btc} / Qty ${summary.btcQty}`], ["Reference Date", summary.referenceDate], ["Import Status", positions?.some(position => position.importSource) ? "EXCEL SNAPSHOT" : "MANUAL"]].map(([label, value]) => <Card key={String(label)} className="glass-card"><CardContent className="p-3"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-sm font-semibold">{value}</p></CardContent></Card>)}
       </div>
 
       <Card className="glass-card">

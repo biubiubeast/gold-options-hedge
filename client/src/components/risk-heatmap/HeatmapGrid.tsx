@@ -45,6 +45,7 @@ type Props = {
   sequentialMagnitude: boolean;
   heldCellContent: { underlying: boolean; callPut: boolean; dataStatus: boolean };
   hoverContent: PortfolioSettings["heatmapHoverContent"];
+  expiryHoverContent: PortfolioSettings["heatmapExpiryHoverContent"];
   onSelectPosition: (position: EnrichedRiskPosition) => void;
 };
 
@@ -77,7 +78,11 @@ function TooltipPosition({ position, metric, preset, content }: { position: Enri
   if (preset === "market" || preset === "all") {
     if (content.qtyNotional) rows.push(["Qty / Notional", `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`]);
     if (content.markIv) rows.push(["Mark / IV", `${formatPrice(position.markPrice)} / ${formatCompact(position.markIV, "markIV")}`]);
-    if (content.bidAsk) rows.push(["Bid / Ask", `${formatPrice(position.bid)} / ${formatPrice(position.ask)}`]);
+    if (content.bidAsk) {
+      rows.push(["Bid / Ask", `${formatPrice(position.bid)} / ${formatPrice(position.ask)}`]);
+      rows.push(["Bid / Ask Size", `${formatCompact(position.bidSize)} / ${formatCompact(position.askSize)}`]);
+      rows.push(["Bid / Ask $ Notional", `$${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`]);
+    }
     if (content.bidAskIv) rows.push(["Bid IV / Ask IV", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")}`]);
     if (content.ivSpread) rows.push(["IV spread", formatCompact(position.ivSpread, "ivSpread")]);
     if (content.sourceQuote) rows.push(["Source / Quote As-of", `${position.source ?? "MISSING"} / ${position.quoteTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`]);
@@ -95,7 +100,7 @@ function SpotPriceTooltip({ spot, children }: { spot: number; children: ReactEle
   return <Tooltip delayDuration={80}><TooltipTrigger asChild>{children}</TooltipTrigger><TooltipContent side="right" sideOffset={4} className="z-[120] border border-amber-300/40 bg-popover px-2 py-1 text-[10px] text-popover-foreground shadow-xl"><span className="text-muted-foreground">Spot price </span><strong className="font-mono text-amber-300">{formatSpotPrice(spot)}</strong></TooltipContent></Tooltip>;
 }
 
-function ExpiryTooltip({ expiry, positions, preset, children }: { expiry: string; positions: EnrichedRiskPosition[]; preset: HoverDataPreset; children: ReactElement<{ onClick?: MouseEventHandler }> }) {
+function ExpiryTooltip({ expiry, positions, preset, content, children }: { expiry: string; positions: EnrichedRiskPosition[]; preset: HoverDataPreset; content: Props["expiryHoverContent"]; children: ReactElement<{ onClick?: MouseEventHandler }> }) {
   const [open, setOpen] = useState(false);
   const held = positions.filter(position => position.positionKind !== "listed");
   const valid = (values: Array<number | null>) => values.filter((value): value is number => value !== null && Number.isFinite(value));
@@ -108,28 +113,31 @@ function ExpiryTooltip({ expiry, positions, preset, children }: { expiry: string
     return numbers.length ? numbers.reduce((total, value) => total + value, 0) / numbers.length : null;
   };
   const rows: Array<[string, string]> = [];
-  if (preset === "risk" || preset === "all") rows.push(
-    ["Held / Listed", `${held.length} / ${positions.length}`],
-    ["Total Δ / Γ", `${formatCompact(sum(held.map(position => position.totalDeltaXAU)))} oz / ${formatCompact(sum(held.map(position => position.totalGammaXAU)))}`],
-    ["Total Θ / Vega", `$${formatCompact(sum(held.map(position => position.totalThetaUSD)))}/d / $${formatCompact(sum(held.map(position => position.totalVegaUSD)))}`],
-    ["Max Roll / Worst", `${formatCompact(Math.max(...held.map(position => position.rollPriority.total), 0), "rollPriority")} / ${worstStatus(positions)}`],
-  );
-  if (preset === "market" || preset === "all") rows.push(
-    ["Avg Mark / Bid / Ask IV", `${formatCompact(average(positions.map(position => position.markIV)), "markIV")} / ${formatCompact(average(positions.map(position => position.bidIV)), "bidIV")} / ${formatCompact(average(positions.map(position => position.askIV)), "askIV")}`],
-    ["OI / Volume", `${formatCompact(sum(positions.map(position => position.openInterest ?? null)))} / ${formatCompact(sum(positions.map(position => position.volume ?? null)))}`],
-    ["Stale / Missing", `${positions.filter(position => position.dataStatus === "STALE").length} / ${positions.filter(position => position.dataStatus === "MISSING" || position.dataStatus === "FAIL").length}`],
-    ["Latest quote", positions.map(position => position.quoteTime).filter((value): value is string => Boolean(value)).sort().at(-1)?.slice(0, 19).replace("T", " ") ?? "MISSING"],
-  );
-  if (preset === "pnl" || preset === "all") rows.push(
-    ["Net / Gross Qty", `${formatCompact(sum(held.map(position => position.netQty)))} / ${formatCompact(sum(held.map(position => Math.abs(position.netQty))))}`],
-    ["Gross Notional", `$${formatCompact(sum(held.map(position => position.notionalSizeUSD === null ? null : Math.abs(position.notionalSizeUSD))))}`],
-    ["MV / Entry", `$${formatCompact(sum(held.map(position => position.MV)))} / $${formatCompact(sum(held.map(position => position.entryCost)))}`],
-    ["UPL", `$${formatCompact(sum(held.map(position => position.UPL)))}`],
-  );
+  if (preset === "risk" || preset === "all") {
+    if (content.heldListed) rows.push(["Held / Listed", `${held.length} / ${positions.length}`]);
+    if (content.totalDelta) rows.push(["Total Delta XAU", `${formatCompact(sum(held.map(position => position.totalDeltaXAU)))} oz`]);
+    if (content.totalGamma) rows.push(["Total Gamma XAU", formatCompact(sum(held.map(position => position.totalGammaXAU)))]);
+    if (content.totalTheta) rows.push(["Total Theta", `$${formatCompact(sum(held.map(position => position.totalThetaUSD)))}/d`]);
+    if (content.totalVega) rows.push(["Total Vega", `$${formatCompact(sum(held.map(position => position.totalVegaUSD)))}/vol`]);
+    if (content.maxRoll) rows.push(["Max Roll", formatCompact(Math.max(...held.map(position => position.rollPriority.total), 0), "rollPriority")]);
+    if (content.worstStatus) rows.push(["Worst Status", worstStatus(positions)]);
+  }
+  if (preset === "market" || preset === "all") {
+    if (content.averageIv) rows.push(["Avg Mark / Bid / Ask IV", `${formatCompact(average(positions.map(position => position.markIV)), "markIV")} / ${formatCompact(average(positions.map(position => position.bidIV)), "bidIV")} / ${formatCompact(average(positions.map(position => position.askIV)), "askIV")}`]);
+    if (content.openInterestVolume) rows.push(["OI / Volume", `${formatCompact(sum(positions.map(position => position.openInterest ?? null)))} / ${formatCompact(sum(positions.map(position => position.volume ?? null)))}`]);
+    if (content.staleMissing) rows.push(["Stale / Missing", `${positions.filter(position => position.dataStatus === "STALE").length} / ${positions.filter(position => position.dataStatus === "MISSING" || position.dataStatus === "FAIL").length}`]);
+    if (content.latestQuote) rows.push(["Latest quote", positions.map(position => position.quoteTime).filter((value): value is string => Boolean(value)).sort().at(-1)?.slice(0, 19).replace("T", " ") ?? "MISSING"]);
+  }
+  if (preset === "pnl" || preset === "all") {
+    if (content.netGrossQty) rows.push(["Net / Gross Qty", `${formatCompact(sum(held.map(position => position.netQty)))} / ${formatCompact(sum(held.map(position => Math.abs(position.netQty))))}`]);
+    if (content.grossNotional) rows.push(["Gross Notional", `$${formatCompact(sum(held.map(position => position.notionalSizeUSD === null ? null : Math.abs(position.notionalSizeUSD))))}`]);
+    if (content.mvEntry) rows.push(["MV / Entry", `$${formatCompact(sum(held.map(position => position.MV)))} / $${formatCompact(sum(held.map(position => position.entryCost)))}`]);
+    if (content.upl) rows.push(["UPL", `$${formatCompact(sum(held.map(position => position.UPL)))}`]);
+  }
   return <Tooltip open={open} onOpenChange={setOpen} delayDuration={100}><TooltipTrigger asChild>{cloneElement(children, { onClick: () => setOpen(value => !value) })}</TooltipTrigger><TooltipContent side="bottom" sideOffset={4} collisionPadding={10} className="z-[110] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">EXPIRY {expiry}</strong><span className="text-[9px] text-muted-foreground">{preset.toUpperCase()} SUMMARY</span></div><div className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[10px]">{rows.map(([label, value]) => <div key={label} className="contents"><span className="text-muted-foreground">{label}</span><span className="text-right font-mono">{value}</span></div>)}</div></TooltipContent></Tooltip>;
 }
 
-export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanceCutoff, lowImportanceCutoff, transpose, reverseStrikes, cellSize, fitAll, spot, callPut, highlightCellKey, labelMode, hoverPreset, sequentialMagnitude, heldCellContent, hoverContent, onSelectPosition }: Props) {
+export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanceCutoff, lowImportanceCutoff, transpose, reverseStrikes, cellSize, fitAll, spot, callPut, highlightCellKey, labelMode, hoverPreset, sequentialMagnitude, heldCellContent, hoverContent, expiryHoverContent, onSelectPosition }: Props) {
   const [centerSpot, setCenterSpot] = useState(false);
   const [hoveredCellKey, setHoveredCellKey] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -190,14 +198,14 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
             const isSpotColumn = strikeColumn !== null && range.nearestStrike === strikeColumn;
             const isAtmColumn = strikeColumn !== null && atmStrikes.has(strikeColumn);
             const label = <button type="button" data-expiry-header={!transpose ? String(column) : undefined} aria-label={!transpose ? `Expiry ${String(column)} summary` : undefined} data-spot-column={isSpotColumn ? "true" : undefined} className={`sticky top-0 z-20 flex h-6 items-center justify-center truncate border-b border-r border-border/40 bg-background px-0.5 font-mono text-[8px] ${isSpotColumn ? "border-x-amber-300/70 text-amber-300" : "text-foreground/75"}`} title={String(column)}>{transpose ? formatPrice(strikeColumn) : String(column).slice(5)}{isAtmColumn ? " · ATM" : ""}</button>;
-            return transpose ? <div key={String(column)} className="contents">{isSpotColumn ? <SpotPriceTooltip spot={spot}>{label}</SpotPriceTooltip> : label}</div> : <ExpiryTooltip key={String(column)} expiry={String(column)} positions={cells.filter(cell => cell.expiry === String(column)).flatMap(cell => cell.positions)} preset={hoverPreset}>{label}</ExpiryTooltip>;
+            return transpose ? <div key={String(column)} className="contents">{isSpotColumn ? <SpotPriceTooltip spot={spot}>{label}</SpotPriceTooltip> : label}</div> : <ExpiryTooltip key={String(column)} expiry={String(column)} positions={cells.filter(cell => cell.expiry === String(column)).flatMap(cell => cell.positions)} preset={hoverPreset} content={expiryHoverContent}>{label}</ExpiryTooltip>;
           })}
           {rowValues.flatMap(row => {
             const rowStrike = transpose ? null : Number(row);
             const isSpotRow = rowStrike !== null && range.nearestStrike === rowStrike;
             const zone = rowStrike === null ? "NEUTRAL" : zoneFor(rowStrike, spot, callPut, atmStrikes);
             const axisLabel = <button type="button" data-expiry-header={transpose ? String(row) : undefined} aria-label={transpose ? `Expiry ${String(row)} summary` : undefined} data-spot-row={isSpotRow ? "true" : undefined} style={{ height: rowHeight }} className={`sticky left-0 z-10 flex items-center justify-between overflow-hidden border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{rowStrike !== null && <span className="text-[7px]">{isSpotRow ? "ATM" : !fitAll && zone !== "NEUTRAL" ? zone : ""}</span>}</button>;
-            const axis = transpose ? <ExpiryTooltip key={`axis-${String(row)}`} expiry={String(row)} positions={cells.filter(cell => cell.expiry === String(row)).flatMap(cell => cell.positions)} preset={hoverPreset}>{axisLabel}</ExpiryTooltip> : <div key={`axis-${String(row)}`} className="contents">{isSpotRow ? <SpotPriceTooltip spot={spot}>{axisLabel}</SpotPriceTooltip> : axisLabel}</div>;
+            const axis = transpose ? <ExpiryTooltip key={`axis-${String(row)}`} expiry={String(row)} positions={cells.filter(cell => cell.expiry === String(row)).flatMap(cell => cell.positions)} preset={hoverPreset} content={expiryHoverContent}>{axisLabel}</ExpiryTooltip> : <div key={`axis-${String(row)}`} className="contents">{isSpotRow ? <SpotPriceTooltip spot={spot}>{axisLabel}</SpotPriceTooltip> : axisLabel}</div>;
             const buttons = columnValues.map(column => {
               const expiry = transpose ? String(row) : String(column);
               const strike = transpose ? Number(column) : Number(row);
@@ -216,7 +224,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
               const heldUnderlyings = new Set(cell?.positions
                 .filter(position => position.positionKind !== "listed")
                 .map(position => position.underlying) ?? []);
-              const heldMarker = heldUnderlyings.size > 1 ? "B" : heldUnderlyings.has("XAUT") ? "X" : heldUnderlyings.has("GLD") ? "G" : null;
+              const heldMarker = heldUnderlyings.size > 1 ? "M" : heldUnderlyings.has("XAUT") ? "X" : heldUnderlyings.has("GLD") ? "G" : heldUnderlyings.has("BTC") ? "B" : null;
               const xautHeld = heldUnderlyings.has("XAUT");
               const heldCallPuts = new Set(cell?.positions
                 .filter(position => position.positionKind !== "listed")
