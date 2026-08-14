@@ -223,7 +223,7 @@ export default function Positions() {
           <p className="mt-1 text-sm text-muted-foreground">Excel 快照是主导入流程；手工录入用于临时修正或单腿补录。</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <MarketRefreshButton />
+          {settings.pageMarketRefreshButtons.positions && <MarketRefreshButton />}
           <Button variant="outline" onClick={handleExportExcel} className="gap-2" disabled={exportExcelQuery.isFetching || !positions?.length}>
             {exportExcelQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} 导出 Excel
           </Button>

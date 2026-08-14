@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import { MARKET_REFRESH_EVENT, readLastMarketRefreshAt } from "@/lib/marketRefreshStatus";
 import { trpc } from "@/lib/trpc";
-import { DEFAULT_PORTFOLIO_SETTINGS, type PortfolioSettings } from "@/lib/portfolio";
+import { DEFAULT_PORTFOLIO_SETTINGS, type AdminPasswordPage, type PortfolioSettings } from "@/lib/portfolio";
 import { METRIC_LABELS, type HeatmapMetric } from "@shared/riskHeatmap";
 import { CheckCircle2, Clock3, Database, Eye, Filter, LockKeyhole, MessageSquareText, RefreshCw, RotateCcw, Scale, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -47,17 +47,30 @@ const heldCellContentLabels: Array<[keyof PortfolioSettings["heatmapHeldCellCont
 
 const pageEntryLabels: Array<[keyof PortfolioSettings["visiblePages"], string, string]> = [
   ["dashboard", "Dashboard", "总持仓汇总与风险数据"],
-  ["positions", "仓位管理", "默认显示且无需管理员密码"],
-  ["matrix", "风险热力图", "默认显示且无需管理员密码"],
+  ["positions", "仓位管理", "默认显示；管理员门禁单独设置"],
+  ["matrix", "风险热力图", "默认显示；默认免管理员密码"],
   ["formulas", "公式管理", "公式说明、编辑与恢复"],
   ["dataSources", "数据来源", "行情 API 与延迟说明"],
   ["settings", "设置", "本页入口；页面本身受管理员门禁保护"],
+];
+
+const adminPasswordPageLabels: Array<[AdminPasswordPage, string, string]> = [
+  ["dashboard", "Dashboard", "默认需要密码"],
+  ["positions", "仓位管理", "默认需要密码"],
+  ["matrix", "风险热力图", "默认不需要密码，可在此开启"],
+  ["formulas", "公式管理", "默认需要密码"],
+  ["dataSources", "数据来源", "默认需要密码"],
+  ["settings", "设置", "默认需要密码"],
+  ["optionDetail", "期权完整详情页", "默认需要密码"],
+  ["notFound", "未知 / 404 页面", "默认需要密码"],
 ];
 
 const heatmapSectionLabels: Array<[keyof PortfolioSettings["heatmapVisibleSections"], string, string]> = [
   ["decisionCards", "Show Cards / 决策卡", "显示顶部 Show/Hide Cards 按钮；默认隐藏"],
   ["dataError", "Largest Data Error", "显示顶部数据质量说明按钮；默认隐藏"],
   ["scenario", "情景分析", "显示热力图底部 XAU / IV / Day Shock 分析；默认隐藏"],
+  ["chainStatusBanner", "期权链状态提示", "显示筛选区下方 GLD / XAUT FULL CHAIN 行情来源与更新时间；默认隐藏"],
+  ["positionOnlyMetricBanner", "Position-only Metric 提示", "显示 Qty、Notional、MV 等仅按持仓着色的口径说明；默认隐藏"],
 ];
 
 const fixedOptionGroups = [
@@ -160,10 +173,7 @@ export default function Settings() {
       <Card className="glass-card">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-4 w-4 text-primary" />管理员门禁与页面入口</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-4 rounded-md border border-amber-300/25 bg-amber-300/[0.03] p-3">
-            <div><p className="text-sm font-medium">启用管理员页面密码</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">启用后，除“风险热力图、仓位管理”外的页面每次打开或刷新都要输入 8888。关闭仅作用于当前浏览器，不替代网站的 Basic Auth 登录。</p></div>
-            <Switch checked={draft.adminPasswordEnabled} onCheckedChange={checked => setDraft(current => ({ ...current, adminPasswordEnabled: checked }))} aria-label="启用管理员页面密码" />
-          </div>
+          <div><p className="mb-2 flex items-center gap-2 text-xs font-semibold"><LockKeyhole className="h-3.5 w-3.5" />各页面管理员密码</p><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{adminPasswordPageLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-amber-300/25 bg-amber-300/[0.03] p-3"><div><Label htmlFor={`admin-password-page-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div><Switch id={`admin-password-page-${key}`} checked={draft.adminPasswordPages[key]} onCheckedChange={checked => setDraft(current => ({ ...current, adminPasswordPages: { ...current.adminPasswordPages, [key]: checked } }))} aria-label={`${label}开启管理员密码`} /></div>)}</div><p className="mt-2 text-[11px] text-muted-foreground">默认只有风险热力图免管理员密码；其他页面每次打开或刷新都需要输入 8888。这里的门禁不替代网站 Basic Auth 登录。</p></div>
           <div><p className="mb-2 flex items-center gap-2 text-xs font-semibold"><Eye className="h-3.5 w-3.5" />左侧导航入口显示</p><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{pageEntryLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`page-entry-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] text-muted-foreground">{description}</p></div><Switch id={`page-entry-${key}`} checked={draft.visiblePages[key]} onCheckedChange={checked => setDraft(current => ({ ...current, visiblePages: { ...current.visiblePages, [key]: checked } }))} aria-label={`显示 ${label} 页面入口`} /></div>)}</div></div>
           <p className="text-[11px] text-muted-foreground">隐藏入口不会删除页面或数据；已知网址仍可访问，并继续遵守管理员门禁。默认只显示风险热力图、仓位管理和设置。</p>
         </CardContent>
@@ -181,6 +191,14 @@ export default function Settings() {
               <Label htmlFor="refresh-minutes">更新间隔（分钟）</Label>
               <Input id="refresh-minutes" className="mt-1" type="number" min="1" max="1440" step="1" value={draft.marketAutoRefreshMinutes} onChange={event => setDraft(current => ({ ...current, marketAutoRefreshMinutes: Number(event.target.value) }))} />
               <p className="mt-1 text-xs text-muted-foreground">默认 60 分钟。GLD 延迟行情频繁更新不会变成实时行情；请按数据源额度设置。</p>
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold">页面内部的更新市场数据按钮</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor="positions-refresh-button" className="text-xs">仓位管理</Label><p className="mt-1 text-[10px] text-muted-foreground">默认隐藏页面内部按钮</p></div><Switch id="positions-refresh-button" checked={draft.pageMarketRefreshButtons.positions} onCheckedChange={checked => setDraft(current => ({ ...current, pageMarketRefreshButtons: { ...current.pageMarketRefreshButtons, positions: checked } }))} aria-label="仓位管理显示更新市场数据按钮" /></div>
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor="matrix-refresh-button" className="text-xs">风险热力图</Label><p className="mt-1 text-[10px] text-muted-foreground">默认隐藏页面内部按钮</p></div><Switch id="matrix-refresh-button" checked={draft.pageMarketRefreshButtons.matrix} onCheckedChange={checked => setDraft(current => ({ ...current, pageMarketRefreshButtons: { ...current.pageMarketRefreshButtons, matrix: checked } }))} aria-label="风险热力图显示更新市场数据按钮" /></div>
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">全站最顶部的“更新市场数据”按钮始终保留显示，不受这里控制。</p>
             </div>
             <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 rounded-md bg-secondary/25 p-3 text-xs">
               <Clock3 className="row-span-2 h-4 w-4 text-muted-foreground" />
@@ -210,7 +228,7 @@ export default function Settings() {
 
       <Card className="glass-card">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Eye className="h-4 w-4 text-primary" />风险热力图模块显示</CardTitle></CardHeader>
-        <CardContent><p className="mb-4 text-xs text-muted-foreground">控制交易屏幕上较占空间的分析模块。三个模块默认都隐藏，打开后保存即可生效。</p><div className="grid gap-2 md:grid-cols-3">{heatmapSectionLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`heatmap-section-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div><Switch id={`heatmap-section-${key}`} checked={draft.heatmapVisibleSections[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapVisibleSections: { ...current.heatmapVisibleSections, [key]: checked } }))} aria-label={`热力图显示 ${label}`} /></div>)}</div></CardContent>
+        <CardContent><p className="mb-4 text-xs text-muted-foreground">控制交易屏幕上较占空间的分析模块和筛选区下方提示条。所有项目默认隐藏，打开后保存即可生效。</p><div className="grid gap-2 md:grid-cols-3">{heatmapSectionLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`heatmap-section-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div><Switch id={`heatmap-section-${key}`} checked={draft.heatmapVisibleSections[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapVisibleSections: { ...current.heatmapVisibleSections, [key]: checked } }))} aria-label={`热力图显示 ${label}`} /></div>)}</div></CardContent>
       </Card>
 
       <Card className="glass-card">

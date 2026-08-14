@@ -21,6 +21,8 @@ export type HeatmapDetailField =
   | "unitVega" | "totalVega" | "marketValue" | "entryPrice" | "entryCost" | "upl" | "source" | "quoteAsOf"
   | "dataStatus" | "deliverableSource" | "adjustedContract" | "rollPriority";
 
+export type AdminPasswordPage = "dashboard" | "positions" | "matrix" | "formulas" | "dataSources" | "settings" | "optionDetail" | "notFound";
+
 export type PortfolioPosition = {
   id: number;
   underlying: "XAUT" | "GLD";
@@ -73,7 +75,7 @@ export type PortfolioPosition = {
 };
 
 export type PortfolioSettings = {
-  adminPasswordEnabled: boolean;
+  adminPasswordPages: Record<AdminPasswordPage, boolean>;
   visiblePages: {
     dashboard: boolean;
     positions: boolean;
@@ -84,6 +86,10 @@ export type PortfolioSettings = {
   };
   marketAutoRefreshEnabled: boolean;
   marketAutoRefreshMinutes: number;
+  pageMarketRefreshButtons: {
+    positions: boolean;
+    matrix: boolean;
+  };
   heatmapVisibleFilters: {
     dataset: boolean;
     underlying: boolean;
@@ -133,6 +139,8 @@ export type PortfolioSettings = {
     decisionCards: boolean;
     dataError: boolean;
     scenario: boolean;
+    chainStatusBanner: boolean;
+    positionOnlyMetricBanner: boolean;
   };
   xautContractMultiplier: number;
   gldContractMultiplier: number;
@@ -143,7 +151,16 @@ export type PortfolioSettings = {
 };
 
 export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
-  adminPasswordEnabled: true,
+  adminPasswordPages: {
+    dashboard: true,
+    positions: true,
+    matrix: false,
+    formulas: true,
+    dataSources: true,
+    settings: true,
+    optionDetail: true,
+    notFound: true,
+  },
   visiblePages: {
     dashboard: false,
     positions: true,
@@ -154,6 +171,10 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   },
   marketAutoRefreshEnabled: true,
   marketAutoRefreshMinutes: 60,
+  pageMarketRefreshButtons: {
+    positions: false,
+    matrix: false,
+  },
   heatmapVisibleFilters: {
     dataset: false,
     underlying: true,
@@ -267,6 +288,8 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     decisionCards: false,
     dataError: false,
     scenario: false,
+    chainStatusBanner: false,
+    positionOnlyMetricBanner: false,
   },
   xautContractMultiplier: 1,
   gldContractMultiplier: 100,

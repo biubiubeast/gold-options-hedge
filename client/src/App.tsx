@@ -17,20 +17,22 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import { AdminPageGate } from "./components/AdminPageGate";
 
-const ProtectedDashboard = () => <AdminPageGate><Dashboard /></AdminPageGate>;
-const ProtectedFormulas = () => <AdminPageGate><Formulas /></AdminPageGate>;
-const ProtectedDataSources = () => <AdminPageGate><DataSources /></AdminPageGate>;
-const ProtectedSettings = () => <AdminPageGate><Settings /></AdminPageGate>;
-const ProtectedOptionDetail = () => <AdminPageGate><OptionDetail /></AdminPageGate>;
-const ProtectedNotFound = () => <AdminPageGate><NotFound /></AdminPageGate>;
+const ProtectedDashboard = () => <AdminPageGate page="dashboard"><Dashboard /></AdminPageGate>;
+const ProtectedPositions = () => <AdminPageGate page="positions"><Positions /></AdminPageGate>;
+const ProtectedMatrix = () => <AdminPageGate page="matrix"><Matrix /></AdminPageGate>;
+const ProtectedFormulas = () => <AdminPageGate page="formulas"><Formulas /></AdminPageGate>;
+const ProtectedDataSources = () => <AdminPageGate page="dataSources"><DataSources /></AdminPageGate>;
+const ProtectedSettings = () => <AdminPageGate page="settings"><Settings /></AdminPageGate>;
+const ProtectedOptionDetail = () => <AdminPageGate page="optionDetail"><OptionDetail /></AdminPageGate>;
+const ProtectedNotFound = () => <AdminPageGate page="notFound"><NotFound /></AdminPageGate>;
 
 function Router() {
   return (
     <DashboardLayout>
       <Switch>
         <Route path="/" component={ProtectedDashboard} />
-        <Route path="/positions" component={Positions} />
-        <Route path="/matrix" component={Matrix} />
+        <Route path="/positions" component={ProtectedPositions} />
+        <Route path="/matrix" component={ProtectedMatrix} />
         <Route path="/dashboard" component={ProtectedDashboard} />
         <Route path="/formulas" component={ProtectedFormulas} />
         <Route path="/data-sources" component={ProtectedDataSources} />

@@ -4,10 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import type { AdminPasswordPage } from "@/lib/portfolio";
 import { LockKeyhole, ShieldCheck } from "lucide-react";
 import { FormEvent, useState } from "react";
 
-export function AdminPageGate({ children }: { children: React.ReactNode }) {
+export function AdminPageGate({ page, children }: { page: AdminPasswordPage; children: React.ReactNode }) {
   const { settings } = usePortfolioSettings();
   const [password, setPassword] = useState("");
   const [unlocked, setUnlocked] = useState(false);
@@ -18,7 +19,7 @@ export function AdminPageGate({ children }: { children: React.ReactNode }) {
     },
   });
 
-  if (!settings.adminPasswordEnabled || unlocked) return <>{children}</>;
+  if (!settings.adminPasswordPages[page] || unlocked) return <>{children}</>;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -31,7 +32,7 @@ export function AdminPageGate({ children }: { children: React.ReactNode }) {
         <CardTitle className="flex items-center gap-2"><LockKeyhole className="h-5 w-5 text-amber-300" />管理员页面</CardTitle>
       </CardHeader>
       <CardContent>
-        <p className="mb-5 text-sm text-muted-foreground">此页面每次打开都需要管理员密码。离开页面或刷新后将重新锁定；风险热力图和仓位管理无需输入。</p>
+        <p className="mb-5 text-sm text-muted-foreground">此页面已在设置中启用管理员门禁。每次打开或刷新都要重新输入密码；离开页面后本次解锁失效。</p>
         <form className="space-y-4" onSubmit={submit}>
           <div><Label htmlFor="admin-page-password">管理员密码</Label><Input id="admin-page-password" className="mt-1" type="password" autoFocus autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} aria-invalid={verify.isError} /></div>
           {verify.isError && <p role="alert" className="text-sm text-red-300">{verify.error.message}</p>}

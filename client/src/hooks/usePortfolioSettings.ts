@@ -16,6 +16,10 @@ function loadSettings(): PortfolioSettings {
     const migrated = {
       ...DEFAULT_PORTFOLIO_SETTINGS,
       ...saved,
+      adminPasswordPages: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.adminPasswordPages,
+        ...saved.adminPasswordPages,
+      },
       heatmapVisibleFilters: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleFilters,
         ...(current ? saved.heatmapVisibleFilters : {}),
@@ -23,6 +27,10 @@ function loadSettings(): PortfolioSettings {
       visiblePages: {
         ...DEFAULT_PORTFOLIO_SETTINGS.visiblePages,
         ...saved.visiblePages,
+      },
+      pageMarketRefreshButtons: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.pageMarketRefreshButtons,
+        ...saved.pageMarketRefreshButtons,
       },
       heatmapFilterOptions: {
         dataset: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.dataset, ...saved.heatmapFilterOptions?.dataset },
