@@ -120,6 +120,14 @@ export interface HeatLegendBin {
   normalized: number;
 }
 
+export interface MetricDistribution {
+  min: number | null;
+  median: number | null;
+  max: number | null;
+  validCount: number;
+  missingCount: number;
+}
+
 export interface HeatScale {
   mode: ColorScaleMode;
   centered: boolean;
@@ -289,6 +297,24 @@ export function aggregateHeatmapCellMetric(positions: EnrichedRiskPosition[], me
   // metric is missing, the entire cell remains visibly listed but uncoloured.
   if (eligible.some(position => metricValue(position, metric) === null)) return null;
   return aggregateMetric(eligible, metric);
+}
+
+/** Distribution of the currently selected heatmap metric for an Expiry. */
+export function metricDistribution(positions: EnrichedRiskPosition[], metric: HeatmapMetric): MetricDistribution {
+  const eligible = HELD_ONLY_HEATMAP_METRICS.has(metric)
+    ? positions.filter(position => position.positionKind !== "listed")
+    : positions;
+  const values = eligible
+    .map(position => metricValue(position, metric))
+    .filter((value): value is number => value !== null && Number.isFinite(value))
+    .sort((left, right) => left - right);
+  return {
+    min: values.length ? values[0] : null,
+    median: values.length ? percentile(values, 0.5) : null,
+    max: values.length ? values[values.length - 1] : null,
+    validCount: values.length,
+    missingCount: eligible.length - values.length,
+  };
 }
 
 export function quoteAgeSeconds(position: RiskPosition, asOf: Date = new Date()): number | null {

@@ -20,4 +20,13 @@ describe("operator display defaults", () => {
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.chainStatusBanner).toBe(false);
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.positionOnlyMetricBanner).toBe(false);
   });
+
+  it("hides the ALL underlying option by default", () => {
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.underlying).toEqual({
+      GLD: true,
+      XAUT: true,
+      BTC: true,
+      all: false,
+    });
+  });
 });

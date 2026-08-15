@@ -10,6 +10,7 @@ import {
   formatSpotPrice,
   generateMockPositions,
   magnitudeHeatColor,
+  metricDistribution,
   metricValue,
   nearestStrikeLevels,
   spotRangeState,
@@ -140,6 +141,22 @@ describe("institutional risk heatmap acceptance", () => {
     const missing = { ...source[1], unitDelta: null };
     expect(aggregateHeatmapCellMetric([valid, missing], "unitDelta")).toBeNull();
     expect(aggregateHeatmapCellMetric([valid], "unitDelta")).toBe(0.42);
+  });
+
+  it("reports Expiry metric min, median and max without converting missing values to zero", () => {
+    const source = enrichRiskPositions(generateMockPositions(3, 49, asOf), spots, asOf);
+    const positions = [
+      { ...source[0], unitDelta: 0.1 },
+      { ...source[1], unitDelta: null },
+      { ...source[2], unitDelta: 0.7 },
+    ];
+    expect(metricDistribution(positions, "unitDelta")).toEqual({
+      min: 0.1,
+      median: 0.4,
+      max: 0.7,
+      validCount: 2,
+      missingCount: 1,
+    });
   });
 
   it("calculates editable top-of-book dollar notionals and preserves missing size", () => {

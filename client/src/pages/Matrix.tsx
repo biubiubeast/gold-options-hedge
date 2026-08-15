@@ -21,9 +21,11 @@ import {
   formatPrice,
   formatSpotPrice,
   generateMockPositions,
+  metricDistribution,
   percentile,
   positionLabel,
   spotRangeState,
+  worstStatus,
   type CallPut,
   type ColorScaleMode,
   type DataStatus,
@@ -38,6 +40,7 @@ type DatasetMode = "chain" | "live" | "mock100" | "mock200";
 type ExpiryBucket = "all" | "expired" | "0-2" | "3-7" | "8-30" | "31+";
 type SelectOption = { value: string; label: string };
 type MetricRange = { min: number; max: number };
+type ExpirySelection = { expiry: string; positions: EnrichedRiskPosition[] };
 
 const RANGE_STORAGE_KEY = "heatmap-metric-custom-ranges-v1";
 const percentageMetrics = new Set<HeatmapMetric>(["markIV", "bidIV", "askIV", "ivSpread", "distanceToStrike"]);
@@ -154,6 +157,47 @@ function PositionDetailDialog({ position, content, onClose }: { position: Enrich
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>{positionLabel(position)} · 完整仓位详情</DialogTitle><DialogDescription>按“设置”页面选择的合约、风险、估值与数据质量字段展示。</DialogDescription></DialogHeader><div className="grid grid-cols-2 gap-px border border-border/60 bg-border/60 md:grid-cols-4">{fields.map(([, label, value]) => <div key={label} className="min-w-0 bg-background p-2"><p className="text-[9px] uppercase text-muted-foreground">{label}</p><p className="mt-1 break-words font-mono text-xs">{value === null || value === undefined ? "MISSING" : String(value)}</p></div>)}</div>{content.rollPriority && <div className="border border-border/60 p-3"><div className="flex items-center justify-between"><strong className="text-sm">Roll Priority</strong><span className="font-mono text-lg">{position.rollPriority.total.toFixed(0)} / 100</span></div>{position.rollPriority.factors.map(factor => <div key={factor.key} className="mt-2 grid grid-cols-[90px_1fr_auto] gap-2 text-xs"><span>{factor.label}</span><span className="text-muted-foreground">{factor.reason}</span><span className="font-mono">{factor.contribution.toFixed(1)} / {(factor.weight * 100).toFixed(0)}</span></div>)}</div>}</DialogContent></Dialog>;
 }
 
+function ExpiryDetailDialog({ selection, metric, content, onClose }: { selection: ExpirySelection | null; metric: HeatmapMetric; content: PortfolioSettings["heatmapExpiryHoverContent"]; onClose: () => void }) {
+  if (!selection) return null;
+  const { expiry, positions } = selection;
+  const held = positions.filter(position => position.positionKind !== "listed");
+  const valid = (values: Array<number | null>) => values.filter((value): value is number => value !== null && Number.isFinite(value));
+  const sum = (values: Array<number | null>) => {
+    const numbers = valid(values);
+    return numbers.length ? numbers.reduce((total, value) => total + value, 0) : null;
+  };
+  const average = (values: Array<number | null>) => {
+    const numbers = valid(values);
+    return numbers.length ? numbers.reduce((total, value) => total + value, 0) / numbers.length : null;
+  };
+  const selectedMetric = metricDistribution(positions, metric);
+  const unitDelta = metricDistribution(positions, "unitDelta");
+  const latestQuote = positions.map(position => position.quoteTime).filter((value): value is string => Boolean(value)).sort().at(-1)?.slice(0, 19).replace("T", " ") ?? "MISSING";
+  const summaryRows: Array<[string, string]> = [];
+  if (content.heldListed) summaryRows.push(["Held / Listed", `${held.length} / ${positions.length - held.length}`]);
+  summaryRows.push(["DTE", `${positions[0]?.dte ?? "MISSING"}d`]);
+  if (content.worstStatus) summaryRows.push(["Worst Status", worstStatus(positions)]);
+  if (content.latestQuote) summaryRows.push(["Latest Quote", latestQuote]);
+  if (content.staleMissing) summaryRows.push(["Stale / Missing", `${positions.filter(position => position.dataStatus === "STALE").length} / ${positions.filter(position => position.dataStatus === "MISSING" || position.dataStatus === "FAIL").length}`]);
+  if (content.averageIv) summaryRows.push(["Avg Mark / Bid / Ask IV", `${formatCompact(average(positions.map(position => position.markIV)), "markIV")} / ${formatCompact(average(positions.map(position => position.bidIV)), "bidIV")} / ${formatCompact(average(positions.map(position => position.askIV)), "askIV")}`]);
+  if (content.openInterestVolume) summaryRows.push(["OI / Volume", `${formatCompact(sum(positions.map(position => position.openInterest ?? null)))} / ${formatCompact(sum(positions.map(position => position.volume ?? null)))}`]);
+  if (content.netGrossQty) summaryRows.push(["Net / Gross Qty", `${formatCompact(sum(held.map(position => position.netQty)))} / ${formatCompact(sum(held.map(position => Math.abs(position.netQty))))}`]);
+  if (content.grossNotional) summaryRows.push(["Gross Notional", `$${formatCompact(sum(held.map(position => position.notionalSizeUSD === null ? null : Math.abs(position.notionalSizeUSD))))}`]);
+  if (content.mvEntry) summaryRows.push(["MV / Entry", `$${formatCompact(sum(held.map(position => position.MV)))} / $${formatCompact(sum(held.map(position => position.entryCost)))}`]);
+  if (content.upl) summaryRows.push(["UPL", `$${formatCompact(sum(held.map(position => position.UPL)))}`]);
+  if (content.maxRoll) summaryRows.push(["Max Roll Priority", formatCompact(held.length ? Math.max(...held.map(position => position.rollPriority.total)) : null, "rollPriority")]);
+  const greekRows: Array<[string, string]> = [];
+  if (content.totalDelta) {
+    greekRows.push(["Unit Delta · Min / Median / Max", `${formatCompact(unitDelta.min)} / ${formatCompact(unitDelta.median)} / ${formatCompact(unitDelta.max)}`]);
+    greekRows.push(["Total Delta XAU · Sum", `${formatCompact(sum(held.map(position => position.totalDeltaXAU)))} oz`]);
+  }
+  if (content.totalGamma) greekRows.push(["Total Gamma XAU · Sum", formatCompact(sum(held.map(position => position.totalGammaXAU)))]);
+  if (content.totalTheta) greekRows.push(["Total Theta USD/day · Sum", `$${formatCompact(sum(held.map(position => position.totalThetaUSD)))}`]);
+  if (content.totalVega) greekRows.push(["Total Vega USD/vol · Sum", `$${formatCompact(sum(held.map(position => position.totalVegaUSD)))}`]);
+
+  return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-6xl"><DialogHeader><DialogTitle>EXPIRY {expiry} · 全面数据</DialogTitle><DialogDescription>基于当前热力图筛选与 Metric；Greeks 默认只展示 Delta，可在“设置”中开启 Gamma、Theta、Vega。</DialogDescription></DialogHeader><div className="grid grid-cols-3 gap-px bg-border/60 text-center"><div className="bg-background p-2"><p className="text-[9px] text-muted-foreground">{METRIC_LABELS[metric]} · MIN</p><strong className="font-mono text-sm">{formatCompact(selectedMetric.min, metric)}</strong></div><div className="bg-background p-2"><p className="text-[9px] text-muted-foreground">MEDIAN</p><strong className="font-mono text-sm">{formatCompact(selectedMetric.median, metric)}</strong></div><div className="bg-background p-2"><p className="text-[9px] text-muted-foreground">MAX</p><strong className="font-mono text-sm">{formatCompact(selectedMetric.max, metric)}</strong></div></div><div className="grid shrink-0 gap-2 md:grid-cols-2"><section className="border border-border/60 p-2"><h3 className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">Expiry / Market / Position</h3><div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[10px]">{summaryRows.map(([label, value]) => <div key={label} className="contents"><span className="text-muted-foreground">{label}</span><span className="text-right font-mono">{value}</span></div>)}</div></section><section className="border border-border/60 p-2"><h3 className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">Greeks / Risk</h3>{greekRows.length ? <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[10px]">{greekRows.map(([label, value]) => <div key={label} className="contents"><span className="text-muted-foreground">{label}</span><span className="text-right font-mono">{value}</span></div>)}</div> : <p className="text-[10px] text-muted-foreground">Greeks 已在设置中隐藏。</p>}</section></div><div className="min-h-0 flex-1 overflow-auto border border-border/60"><table className="w-full border-collapse text-[9px]"><thead className="sticky top-0 z-10 bg-background text-muted-foreground"><tr><th className="p-1 text-left">Instrument</th><th className="p-1 text-right">Strike</th><th className="p-1">C/P</th><th className="p-1">Position</th><th className="p-1 text-right">{METRIC_LABELS[metric]}</th><th className="p-1 text-right">Mark</th><th className="p-1 text-right">Bid / Ask</th><th className="p-1 text-right">Mark IV</th>{content.totalDelta && <><th className="p-1 text-right">Unit Δ</th><th className="p-1 text-right">Total Δ</th></>}{content.totalGamma && <th className="p-1 text-right">Total Γ</th>}{content.totalTheta && <th className="p-1 text-right">Total Θ</th>}{content.totalVega && <th className="p-1 text-right">Total Vega</th>}<th className="p-1">Status</th></tr></thead><tbody>{[...positions].sort((left, right) => left.strike - right.strike || left.callPut.localeCompare(right.callPut)).map(position => <tr key={position.id} className="border-t border-border/40 font-mono"><td className="max-w-44 truncate p-1" title={position.instrument}>{position.instrument}</td><td className="p-1 text-right">{formatPrice(position.strike)}</td><td className="p-1 text-center">{position.callPut === "call" ? "C" : "P"}</td><td className="p-1 text-center">{position.positionKind === "listed" ? "LISTED" : formatCompact(position.netQty)}</td><td className="p-1 text-right font-semibold text-primary">{formatCompact(metric === "DTE" ? position.dte : metric === "rollPriority" ? position.rollPriority.total : metric === "unitDelta" ? position.unitDelta : metric === "totalDelta" ? position.totalDeltaXAU : metric === "gamma" ? position.totalGammaXAU : metric === "theta" ? position.totalThetaUSD : metric === "vega" ? position.totalVegaUSD : metric === "markIV" ? position.markIV : metric === "bidIV" ? position.bidIV : metric === "askIV" ? position.askIV : metric === "ivSpread" ? position.ivSpread : metric === "qty" ? position.netQty : metric === "notionalSize" ? position.notionalSizeUSD : metric === "bidDollarNotional" ? position.bidDollarNotional : metric === "askDollarNotional" ? position.askDollarNotional : metric === "bidAskDollarNotional" ? position.bidAskDollarNotional : metric === "MV" ? position.MV : metric === "UPL" ? position.UPL : position.distanceToStrike, metric)}</td><td className="p-1 text-right">{formatPrice(position.markPrice)}</td><td className="p-1 text-right">{formatPrice(position.bid)} / {formatPrice(position.ask)}</td><td className="p-1 text-right">{formatCompact(position.markIV, "markIV")}</td>{content.totalDelta && <><td className="p-1 text-right">{formatCompact(position.unitDelta)}</td><td className="p-1 text-right">{formatCompact(position.totalDeltaXAU)}</td></>}{content.totalGamma && <td className="p-1 text-right">{formatCompact(position.totalGammaXAU)}</td>}{content.totalTheta && <td className="p-1 text-right">{formatCompact(position.totalThetaUSD)}</td>}{content.totalVega && <td className="p-1 text-right">{formatCompact(position.totalVegaUSD)}</td>}<td className="p-1 text-center">{position.dataStatus}</td></tr>)}</tbody></table></div><p className="text-[9px] text-muted-foreground">Selected Metric: {selectedMetric.validCount} valid · {selectedMetric.missingCount} missing。MISSING 不会静默按 0 处理。</p></DialogContent></Dialog>;
+}
+
 export default function Matrix() {
   const { data: positions, isLoading } = trpc.positions.list.useQuery();
   const { data: formulas } = trpc.formulas.list.useQuery();
@@ -183,6 +227,7 @@ export default function Matrix() {
   const [spotUnderlying, setSpotUnderlying] = useState<RiskUnderlying | "XAU">("GLD");
   const [highlightCellKey, setHighlightCellKey] = useState<string | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<EnrichedRiskPosition | null>(null);
+  const [selectedExpiry, setSelectedExpiry] = useState<ExpirySelection | null>(null);
   const [cardsVisible, setCardsVisible] = useState(false);
   const [dataErrorHelp, setDataErrorHelp] = useState(false);
   const [customRanges, setCustomRanges] = useState<Partial<Record<HeatmapMetric, MetricRange>>>(() => {
@@ -542,14 +587,15 @@ export default function Matrix() {
           sequentialMagnitude={sequentialMagnitude}
           heldCellContent={settings.heatmapHeldCellContent}
           hoverContent={settings.heatmapHoverContent}
-          expiryHoverContent={settings.heatmapExpiryHoverContent}
           onSelectPosition={setSelectedPosition}
+          onSelectExpiry={(expiry, expiryPositions) => setSelectedExpiry({ expiry, positions: expiryPositions })}
         />
       )}
 
       <ExpiryPanel positions={heldFiltered} gldSpot={displaySpots.GLD} />
       {visibleSections.scenario && <ScenarioStrip positions={heldFiltered} spots={displaySpots} />}
       <PositionDetailDialog position={selectedPosition} content={settings.heatmapDetailContent} onClose={() => setSelectedPosition(null)} />
+      <ExpiryDetailDialog selection={selectedExpiry} metric={metric} content={settings.heatmapExpiryHoverContent} onClose={() => setSelectedExpiry(null)} />
     </div>
   );
 }

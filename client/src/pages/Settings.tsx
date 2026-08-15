@@ -312,9 +312,9 @@ export default function Settings() {
       </Card>
 
       <Card className="glass-card">
-        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><MessageSquareText className="h-4 w-4 text-cyan-300" />Expiry Hover 弹窗内容</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><MessageSquareText className="h-4 w-4 text-cyan-300" />Expiry 完整数据弹窗内容</CardTitle></CardHeader>
         <CardContent>
-          <p className="mb-4 text-xs text-muted-foreground">控制鼠标移到 Expiry 表头时的综合数据。默认隐藏 Roll、Theta、Vega、Gamma，其余字段可独立开关。</p>
+          <p className="mb-4 text-xs text-muted-foreground">Hover 固定跟随当前 Metric 显示 Min / Median / Max；本区控制点击 Expiry 后完整数据弹窗的汇总字段。Greeks 默认只显示 Delta，隐藏 Gamma、Theta、Vega。</p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{expiryHoverContentLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`expiry-hover-content-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] text-muted-foreground">{description}</p></div><Switch id={`expiry-hover-content-${key}`} checked={draft.heatmapExpiryHoverContent[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapExpiryHoverContent: { ...current.heatmapExpiryHoverContent, [key]: checked } }))} aria-label={`Expiry Hover 显示 ${label}`} /></div>)}</div>
         </CardContent>
       </Card>

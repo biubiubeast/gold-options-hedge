@@ -206,7 +206,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   },
   heatmapFilterOptions: {
     dataset: { chain: true, live: true, mock100: true, mock200: true },
-    underlying: { GLD: true, XAUT: true, BTC: true, all: true },
+    underlying: { GLD: true, XAUT: true, BTC: true, all: false },
     callPut: { call: true, put: true, combined: false },
     expiryBucket: { all: true, expired: true, "0-2": true, "3-7": true, "8-30": true, "31+": true },
     status: { all: true, LIVE: true, STALE: true, WARN: true, MISSING: true, FAIL: true },

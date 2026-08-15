@@ -4,8 +4,8 @@ import {
 } from "@/lib/portfolio";
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY = "gold-options-portfolio-settings-v6";
-const LEGACY_STORAGE_KEYS = ["gold-options-portfolio-settings-v5", "gold-options-portfolio-settings-v4", "gold-options-portfolio-settings-v3", "gold-options-portfolio-settings-v2"];
+const STORAGE_KEY = "gold-options-portfolio-settings-v7";
+const LEGACY_STORAGE_KEYS = ["gold-options-portfolio-settings-v6", "gold-options-portfolio-settings-v5", "gold-options-portfolio-settings-v4", "gold-options-portfolio-settings-v3", "gold-options-portfolio-settings-v2"];
 const SETTINGS_EVENT = "gold-options-portfolio-settings-change";
 
 function loadSettings(): PortfolioSettings {
@@ -34,7 +34,7 @@ function loadSettings(): PortfolioSettings {
       },
       heatmapFilterOptions: {
         dataset: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.dataset, ...saved.heatmapFilterOptions?.dataset },
-        underlying: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.underlying, ...saved.heatmapFilterOptions?.underlying },
+        underlying: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.underlying, ...saved.heatmapFilterOptions?.underlying, ...(!current ? { all: false } : {}) },
         callPut: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.callPut, ...saved.heatmapFilterOptions?.callPut },
         expiryBucket: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.expiryBucket, ...saved.heatmapFilterOptions?.expiryBucket },
         status: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.status, ...saved.heatmapFilterOptions?.status },
