@@ -123,6 +123,7 @@ export interface HeatLegendBin {
 export interface MetricDistribution {
   min: number | null;
   median: number | null;
+  average: number | null;
   max: number | null;
   validCount: number;
   missingCount: number;
@@ -311,6 +312,7 @@ export function metricDistribution(positions: EnrichedRiskPosition[], metric: He
   return {
     min: values.length ? values[0] : null,
     median: values.length ? percentile(values, 0.5) : null,
+    average: values.length ? values.reduce((total, value) => total + value, 0) / values.length : null,
     max: values.length ? values[values.length - 1] : null,
     validCount: values.length,
     missingCount: eligible.length - values.length,

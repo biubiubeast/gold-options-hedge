@@ -150,13 +150,15 @@ describe("institutional risk heatmap acceptance", () => {
       { ...source[1], unitDelta: null },
       { ...source[2], unitDelta: 0.7 },
     ];
-    expect(metricDistribution(positions, "unitDelta")).toEqual({
+    const distribution = metricDistribution(positions, "unitDelta");
+    expect(distribution).toMatchObject({
       min: 0.1,
       median: 0.4,
       max: 0.7,
       validCount: 2,
       missingCount: 1,
     });
+    expect(distribution.average).toBeCloseTo(0.4);
   });
 
   it("calculates editable top-of-book dollar notionals and preserves missing size", () => {

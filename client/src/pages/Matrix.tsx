@@ -174,6 +174,7 @@ function ExpiryDetailDialog({ selection, metric, content, onClose }: { selection
   const unitDelta = metricDistribution(positions, "unitDelta");
   const latestQuote = positions.map(position => position.quoteTime).filter((value): value is string => Boolean(value)).sort().at(-1)?.slice(0, 19).replace("T", " ") ?? "MISSING";
   const summaryRows: Array<[string, string]> = [];
+  summaryRows.push([`${METRIC_LABELS[metric]} · Average`, formatCompact(selectedMetric.average, metric)]);
   if (content.heldListed) summaryRows.push(["Held / Listed", `${held.length} / ${positions.length - held.length}`]);
   summaryRows.push(["DTE", `${positions[0]?.dte ?? "MISSING"}d`]);
   if (content.worstStatus) summaryRows.push(["Worst Status", worstStatus(positions)]);
