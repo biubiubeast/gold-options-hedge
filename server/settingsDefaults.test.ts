@@ -19,6 +19,9 @@ describe("operator display defaults", () => {
   it("hides the heatmap chain and position-only hint rows by default", () => {
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.chainStatusBanner).toBe(false);
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.positionOnlyMetricBanner).toBe(false);
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.chainContractCount).toBe(false);
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapChainContractCountLabel).toContain("Call + Put");
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapChainContractCountLabel).toContain("筛选前");
   });
 
   it("hides the ALL underlying option by default", () => {

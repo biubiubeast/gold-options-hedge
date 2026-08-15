@@ -71,11 +71,12 @@ const heatmapSectionLabels: Array<[keyof PortfolioSettings["heatmapVisibleSectio
   ["scenario", "情景分析", "显示热力图底部 XAU / IV / Day Shock 分析；默认隐藏"],
   ["chainStatusBanner", "期权链状态提示", "显示筛选区下方 GLD / XAUT / BTC FULL CHAIN 行情来源与更新时间；默认隐藏"],
   ["positionOnlyMetricBanner", "Position-only Metric 提示", "显示 Qty、Notional、MV 等仅按持仓着色的口径说明；默认隐藏"],
+  ["chainContractCount", "完整期权链合约数", "在顶部显示 Call + Put、筛选前的原始期权链合约数；默认隐藏"],
 ];
 
 const fixedOptionGroups = [
   ["dataset", "Data / 数据集", [["chain", "完整期权链"], ["live", "持仓行情"], ["mock100", "Mock 100"], ["mock200", "Mock 200"]]],
-  ["underlying", "Underlying", [["GLD", "GLD"], ["XAUT", "XAUT"], ["BTC", "BTC"], ["all", "ALL"]]],
+  ["underlying", "Underlying", [["GLD", "GLD/USD - OPRA"], ["XAUT", "XAUT/USDT - Bybit"], ["BTC", "BTC/USDT - Bybit"], ["all", "ALL UNDERLYINGS"]]],
   ["callPut", "C/P", [["call", "CALL"], ["put", "PUT"], ["combined", "COMBINED"]]],
   ["expiryBucket", "DTE", [["all", "ALL"], ["expired", "EXPIRED"], ["0-2", "0–2"], ["3-7", "3–7"], ["8-30", "8–30"], ["31+", "31+"]]],
   ["status", "Data Status", [["all", "ALL"], ["LIVE", "LIVE"], ["STALE", "STALE"], ["WARN", "WARN"], ["MISSING", "MISSING"], ["FAIL", "FAIL"]]],
@@ -155,6 +156,7 @@ export default function Settings() {
     }
     const validated: PortfolioSettings = {
       ...draft,
+      heatmapChainContractCountLabel: draft.heatmapChainContractCountLabel.trim().slice(0, 80) || DEFAULT_PORTFOLIO_SETTINGS.heatmapChainContractCountLabel,
       marketAutoRefreshMinutes: numeric(String(draft.marketAutoRefreshMinutes), 60, 1),
       xautContractMultiplier: numeric(String(draft.xautContractMultiplier), 1, Number.EPSILON),
       gldContractMultiplier: numeric(String(draft.gldContractMultiplier), 100, Number.EPSILON),
@@ -240,7 +242,7 @@ export default function Settings() {
 
       <Card className="glass-card">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Eye className="h-4 w-4 text-primary" />风险热力图模块显示</CardTitle></CardHeader>
-        <CardContent><p className="mb-4 text-xs text-muted-foreground">控制交易屏幕上较占空间的分析模块和筛选区下方提示条。所有项目默认隐藏，打开后保存即可生效。</p><div className="grid gap-2 md:grid-cols-3">{heatmapSectionLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`heatmap-section-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div><Switch id={`heatmap-section-${key}`} checked={draft.heatmapVisibleSections[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapVisibleSections: { ...current.heatmapVisibleSections, [key]: checked } }))} aria-label={`热力图显示 ${label}`} /></div>)}</div></CardContent>
+        <CardContent className="space-y-4"><p className="text-xs text-muted-foreground">控制交易屏幕上较占空间的分析模块和筛选区下方提示条。所有项目默认隐藏，打开后保存即可生效。</p><div className="grid gap-2 md:grid-cols-3">{heatmapSectionLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`heatmap-section-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div><Switch id={`heatmap-section-${key}`} checked={draft.heatmapVisibleSections[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapVisibleSections: { ...current.heatmapVisibleSections, [key]: checked } }))} aria-label={`热力图显示 ${label}`} /></div>)}</div><div className="rounded-md border border-border/60 p-3"><Label htmlFor="chain-contract-count-label" className="text-xs">顶部链合约数显示文案</Label><Input id="chain-contract-count-label" className="mt-2" maxLength={80} value={draft.heatmapChainContractCountLabel} onChange={event => setDraft(current => ({ ...current, heatmapChainContractCountLabel: event.target.value }))} /><p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">仅在开启“完整期权链合约数”时使用。该数字是数据源返回的完整 Call + Put 合约数，位于 Underlying、C/P、Status 等页面筛选之前；不是持仓数、方格数或当前 Call/Put 数量。</p></div></CardContent>
       </Card>
 
       <Card className="glass-card">

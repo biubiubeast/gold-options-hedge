@@ -6,6 +6,7 @@ import {
   formatCompact,
   formatPrice,
   formatSpotPrice,
+  formatStrikeDistanceFromSpot,
   heatColor,
   magnitudeHeatColor,
   metricDistribution,
@@ -128,7 +129,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
   const columnValues = transpose ? displayStrikes : expiries;
   const rowValues = transpose ? expiries : displayStrikes;
   const columnMin = fitAll ? 1 : Math.max(8, Math.round(cellSize * 2.6));
-  const axisWidth = fitAll ? 52 : 82;
+  const axisWidth = fitAll ? 68 : 82;
   const template = `${axisWidth}px repeat(${columnValues.length}, minmax(${columnMin}px, 1fr))`;
   const minWidth = fitAll ? 0 : Math.max(480, axisWidth + columnValues.length * columnMin);
   const rowHeight = fitAll
@@ -169,14 +170,14 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
             const strikeColumn = transpose ? Number(column) : null;
             const isSpotColumn = strikeColumn !== null && range.nearestStrike === strikeColumn;
             const isAtmColumn = strikeColumn !== null && atmStrikes.has(strikeColumn);
-            const label = <button type="button" data-expiry-header={!transpose ? String(column) : undefined} aria-label={!transpose ? `Expiry ${String(column)} summary` : undefined} data-spot-column={isSpotColumn ? "true" : undefined} className={`sticky top-0 z-20 flex h-6 items-center justify-center truncate border-b border-r border-border/40 bg-background px-0.5 font-mono text-[8px] ${isSpotColumn ? "border-x-amber-300/70 text-amber-300" : "text-foreground/75"}`} title={String(column)}>{transpose ? formatPrice(strikeColumn) : String(column).slice(5)}{isAtmColumn ? " · ATM" : ""}</button>;
+            const label = <button type="button" data-expiry-header={!transpose ? String(column) : undefined} aria-label={!transpose ? `Expiry ${String(column)} summary` : undefined} data-spot-column={isSpotColumn ? "true" : undefined} className={`sticky top-0 z-20 flex h-6 items-center justify-center truncate border-b border-r border-border/40 bg-background px-0.5 font-mono text-[8px] ${isSpotColumn ? "border-x-amber-300/70 text-amber-300" : "text-foreground/75"}`} title={transpose ? `Strike ${formatPrice(strikeColumn)} · ${formatStrikeDistanceFromSpot(strikeColumn!, spot)} vs spot` : String(column)}>{transpose ? formatPrice(strikeColumn) : String(column).slice(5)}{isAtmColumn ? " · ATM" : ""}</button>;
             return transpose ? <div key={String(column)} className="contents">{isSpotColumn ? <SpotPriceTooltip spot={spot}>{label}</SpotPriceTooltip> : label}</div> : <ExpiryTooltip key={String(column)} expiry={String(column)} positions={cells.filter(cell => cell.expiry === String(column)).flatMap(cell => cell.positions)} metric={metric} onSelectExpiry={onSelectExpiry}>{label}</ExpiryTooltip>;
           })}
           {rowValues.flatMap(row => {
             const rowStrike = transpose ? null : Number(row);
             const isSpotRow = rowStrike !== null && range.nearestStrike === rowStrike;
-            const zone = rowStrike === null ? "NEUTRAL" : zoneFor(rowStrike, spot, callPut, atmStrikes);
-            const axisLabel = <button type="button" data-expiry-header={transpose ? String(row) : undefined} aria-label={transpose ? `Expiry ${String(row)} summary` : undefined} data-spot-row={isSpotRow ? "true" : undefined} style={{ height: rowHeight }} className={`sticky left-0 z-10 flex items-center justify-between overflow-hidden border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{rowStrike !== null && <span className="text-[7px]">{isSpotRow ? "ATM" : !fitAll && zone !== "NEUTRAL" ? zone : ""}</span>}</button>;
+            const strikeDistance = rowStrike === null ? null : formatStrikeDistanceFromSpot(rowStrike, spot);
+            const axisLabel = <button type="button" data-expiry-header={transpose ? String(row) : undefined} aria-label={transpose ? `Expiry ${String(row)} summary` : undefined} data-spot-row={isSpotRow ? "true" : undefined} title={rowStrike === null ? String(row) : `Strike ${formatPrice(rowStrike)} · ${strikeDistance} vs spot`} style={{ height: rowHeight }} className={`sticky left-0 z-10 flex items-center justify-between overflow-hidden border-b border-r bg-background px-1 font-mono text-[8px] ${isSpotRow ? "border-y-amber-300/80 bg-amber-400/10 text-amber-300" : "border-border/40 text-foreground/75"}`}><span>{transpose ? String(row).slice(5) : formatPrice(rowStrike)}</span>{strikeDistance !== null && <span className="text-[7px]">{strikeDistance}</span>}</button>;
             const axis = transpose ? <ExpiryTooltip key={`axis-${String(row)}`} expiry={String(row)} positions={cells.filter(cell => cell.expiry === String(row)).flatMap(cell => cell.positions)} metric={metric} onSelectExpiry={onSelectExpiry}>{axisLabel}</ExpiryTooltip> : <div key={`axis-${String(row)}`} className="contents">{isSpotRow ? <SpotPriceTooltip spot={spot}>{axisLabel}</SpotPriceTooltip> : axisLabel}</div>;
             const buttons = columnValues.map(column => {
               const expiry = transpose ? String(row) : String(column);

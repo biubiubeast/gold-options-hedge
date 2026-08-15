@@ -337,6 +337,19 @@ export function spotRangeState(strikes: number[], spot: number): SpotRangeState 
   };
 }
 
+/** Signed strike distance versus spot: (strike - spot) / spot. */
+export function strikeDistanceFromSpot(strike: number, spot: number): number | null {
+  if (!Number.isFinite(strike) || !Number.isFinite(spot) || spot <= 0) return null;
+  return (strike - spot) / spot;
+}
+
+export function formatStrikeDistanceFromSpot(strike: number, spot: number): string {
+  const distance = strikeDistanceFromSpot(strike, spot);
+  if (distance === null) return "MISSING";
+  const percentage = distance * 100;
+  return `${percentage < 0 ? "−" : "+"}${Math.abs(percentage).toFixed(2)}%`;
+}
+
 /** Return exactly the closest listed strike levels to spot (ties: lower first). */
 export function nearestStrikeLevels(strikes: number[], spot: number, count = 1): number[] {
   if (!Number.isFinite(spot) || spot <= 0 || count <= 0) return [];

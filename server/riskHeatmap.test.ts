@@ -8,12 +8,14 @@ import {
   exerciseControl,
   finiteOrNull,
   formatSpotPrice,
+  formatStrikeDistanceFromSpot,
   generateMockPositions,
   magnitudeHeatColor,
   metricDistribution,
   metricValue,
   nearestStrikeLevels,
   spotRangeState,
+  strikeDistanceFromSpot,
 } from "../shared/riskHeatmap";
 import { DEFAULT_FORMULAS } from "../shared/marketTypes";
 
@@ -79,6 +81,14 @@ describe("institutional risk heatmap acceptance", () => {
     expect(formatSpotPrice(401)).toBe("401.00");
     expect(formatSpotPrice(4366.6)).toBe("4,366.60");
     expect(formatSpotPrice(null)).toBe("MISSING");
+  });
+
+  it("replaces ITM/OTM labels with signed strike distance versus spot", () => {
+    expect(strikeDistanceFromSpot(110, 100)).toBeCloseTo(0.1);
+    expect(formatStrikeDistanceFromSpot(110, 100)).toBe("+10.00%");
+    expect(formatStrikeDistanceFromSpot(90, 100)).toBe("−10.00%");
+    expect(formatStrikeDistanceFromSpot(100, 100)).toBe("+0.00%");
+    expect(formatStrikeDistanceFromSpot(100, 0)).toBe("MISSING");
   });
 
   it("covers 0DTE, expired, adjusted, missing and stale without silent zeroes", () => {

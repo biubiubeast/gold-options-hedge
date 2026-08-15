@@ -52,6 +52,12 @@ function initialDataset(): DatasetMode {
   return requested === "200" ? "mock200" : requested === "100" ? "mock100" : "chain";
 }
 
+function formatHongKongAsOf(value: Date | string | number) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "MISSING · HKT (UTC+8)";
+  return `${date.toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Hong_Kong" })} HKT (UTC+8)`;
+}
+
 function NativeSelect({ label, value, options, onChange, className = "" }: {
   label: string;
   value: string;
@@ -500,6 +506,20 @@ export default function Matrix() {
     || ((underlying === "XAUT" || underlying === "all") && xautChainFetching && !xautChain)
     || ((underlying === "BTC" || underlying === "all") && btcChainFetching && !btcChain)
   );
+  const selectedChainCount = dataset !== "chain" ? null
+    : underlying === "GLD" ? gldChain?.contractCount ?? null
+    : underlying === "XAUT" ? xautChain?.contractCount ?? null
+    : underlying === "BTC" ? btcChain?.contractCount ?? null
+    : (gldChain?.contractCount ?? 0) + (xautChain?.contractCount ?? 0) + (btcChain?.contractCount ?? 0);
+  const selectedChainTimestamp = dataset !== "chain" ? asOf
+    : underlying === "GLD" ? gldChain?.timestamp ?? asOf
+    : underlying === "XAUT" ? xautChain?.timestamp ?? asOf
+    : underlying === "BTC" ? btcChain?.timestamp ?? asOf
+    : [gldChain?.timestamp, xautChain?.timestamp, btcChain?.timestamp]
+      .map(value => value === undefined ? Number.NaN : new Date(value).getTime())
+      .filter(Number.isFinite)
+      .reduce((latest, value) => Math.max(latest, value), asOf.getTime());
+  const chainCountLabel = settings.heatmapChainContractCountLabel.trim() || "完整期权链合约数（Call + Put，筛选前）";
   if ((isLoading && (dataset === "live" || dataset === "chain")) || waitingForChain) return <div className="flex h-64 flex-col items-center justify-center gap-2"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="text-xs text-muted-foreground">读取 {underlying === "all" ? "GLD + XAUT + BTC" : underlying} 完整期权链…</p></div>;
 
   return (
@@ -507,10 +527,10 @@ export default function Matrix() {
       <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-1">
         <div className="flex min-w-0 items-baseline gap-2">
           <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">风险热力图</h1>
-          <span className="font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held · {filtered.length} instruments · {cells.length} cells{gldChain && (underlying === "GLD" || underlying === "all") ? ` · ${gldChain.contractCount} GLD` : ""}{xautChain && (underlying === "XAUT" || underlying === "all") ? ` · ${xautChain.contractCount} XAUT` : ""}{btcChain && (underlying === "BTC" || underlying === "all") ? ` · ${btcChain.contractCount} BTC` : ""}</span>
+          <span data-testid="heatmap-scope-stats" className="truncate font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held positions · {filtered.length} filtered contracts · {cells.length} cells · {expiries.length} expiries · {strikes.length} strikes{visibleSections.chainContractCount && selectedChainCount !== null ? ` · ${underlying === "all" ? "ALL" : underlying} ${chainCountLabel}: ${selectedChainCount.toLocaleString("en-US")}` : ""}</span>
         </div>
         <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
-          <span>As-of {dataset === "chain" ? new Date(underlying === "XAUT" ? xautChain?.timestamp ?? asOf : underlying === "BTC" ? btcChain?.timestamp ?? asOf : gldChain?.timestamp ?? asOf).toLocaleString("zh-CN", { hour12: false }) : asOf.toLocaleTimeString("zh-CN", { hour12: false })}</span>
+          <span data-testid="heatmap-as-of" className="whitespace-nowrap">As-of {formatHongKongAsOf(selectedChainTimestamp)}</span>
           {visibleSections.dataError && <button type="button" onClick={() => setDataErrorHelp(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground"><Info className="h-3 w-3" />Largest Data Error</button>}
           {visibleSections.decisionCards && <button type="button" onClick={() => setCardsVisible(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground">{cardsVisible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{cardsVisible ? "Hide Cards" : "Show Cards"}</button>}
           {settings.pageMarketRefreshButtons.matrix && <MarketRefreshButton compact />}
@@ -528,7 +548,7 @@ export default function Matrix() {
           { value: "mock100", label: "MOCK 100" },
           { value: "mock200", label: "MOCK 200" },
         ].filter(option => enabledOptions.dataset[option.value as DatasetMode])} />}
-        {visibleFilters.underlying && <NativeSelect className="min-w-[90px] flex-1" label="UNDERLYING" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "BTC", label: "BTC" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.underlying[option.value as keyof typeof enabledOptions.underlying])} />}
+        {visibleFilters.underlying && <NativeSelect className="min-w-[180px] flex-[1.6]" label="UNDERLYING" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD/USD - OPRA" }, { value: "XAUT", label: "XAUT/USDT - Bybit" }, { value: "BTC", label: "BTC/USDT - Bybit" }, { value: "all", label: "ALL UNDERLYINGS" }].filter(option => enabledOptions.underlying[option.value as keyof typeof enabledOptions.underlying])} />}
         {visibleFilters.venue && <NativeSelect className="min-w-[100px] flex-1" label="VENUE" value={venue} onChange={setVenue} options={[{ value: "all", label: "ALL" }, ...filterOptions.venue.map(value => ({ value, label: value }))]} />}
         {visibleFilters.broker && <NativeSelect className="min-w-[100px] flex-1" label="BROKER" value={broker} onChange={setBroker} options={[{ value: "all", label: "ALL" }, ...filterOptions.broker.map(value => ({ value, label: value }))]} />}
         {visibleFilters.account && <NativeSelect className="min-w-[110px] flex-1" label="ACCOUNT" value={account} onChange={setAccount} options={[{ value: "all", label: "ALL" }, ...filterOptions.account.map(value => ({ value, label: value }))]} />}

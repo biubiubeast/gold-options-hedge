@@ -147,7 +147,9 @@ export type PortfolioSettings = {
     scenario: boolean;
     chainStatusBanner: boolean;
     positionOnlyMetricBanner: boolean;
+    chainContractCount: boolean;
   };
+  heatmapChainContractCountLabel: string;
   xautContractMultiplier: number;
   gldContractMultiplier: number;
   btcContractMultiplier: number;
@@ -318,7 +320,9 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     scenario: false,
     chainStatusBanner: false,
     positionOnlyMetricBanner: false,
+    chainContractCount: false,
   },
+  heatmapChainContractCountLabel: "完整期权链合约数（Call + Put，筛选前）",
   xautContractMultiplier: 1,
   gldContractMultiplier: 100,
   btcContractMultiplier: 1,
