@@ -85,7 +85,7 @@ const fixedOptionGroups = [
   ["status", "Data Status", [["all", "ALL"], ["LIVE", "LIVE"], ["STALE", "STALE"], ["WARN", "WARN"], ["MISSING", "MISSING"], ["FAIL", "FAIL"]]],
   ["scale", "Color Scale", [["quantile", "QUANTILE"], ["log", "LOG"], ["symmetric", "ZERO-CENTER"]]],
   ["spot", "Spot", [["GLD", "GLD"], ["XAUT", "XAUT"], ["BTC", "BTC"], ["XAU", "XAU"]]],
-  ["label", "Label", [["none", "NONE"], ["held", "HELD METRIC"], ["top", "TOP 15%"], ["bottom", "BOTTOM 15%"], ["all", "ALL"]]],
+  ["label", "Label", [["none", "NONE"], ["held", "POSITION METRIC"], ["top", "TOP 15%"], ["bottom", "BOTTOM 15%"], ["all", "ALL"]]],
   ["hover", "Hover Preset", [["risk", "RISK"], ["market", "MARKET"], ["pnl", "PNL"], ["all", "ALL"]]],
 ] as const;
 
@@ -315,7 +315,7 @@ export default function Settings() {
       <Card className="glass-card">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Filter className="h-4 w-4 text-amber-300" />持仓方格内容显示设置</CardTitle></CardHeader>
         <CardContent>
-          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">控制持仓方格右侧的识别码。三个项目可独立显示或隐藏；热力图 Label 的 HELD METRIC 仍单独控制方格中的 Metric 数值。注意：S 表示 STALE（行情过期），不是 Stable。</p>
+          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">控制持仓方格右侧的识别码。三个项目可独立显示或隐藏；热力图 Label 的 POSITION METRIC 仍单独控制持仓方格中的 Metric 数值。注意：S 表示 STALE（行情过期），不是 Stable。</p>
           <div className="grid gap-2 sm:grid-cols-3">
             {heldCellContentLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-amber-300/20 bg-amber-300/[0.03] p-3">
               <div className="min-w-0"><Label htmlFor={`held-cell-content-${key}`} className="text-xs font-medium">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div>
