@@ -30,7 +30,7 @@ export function AdminPageGate({ page, children }: { page: AdminPasswordPage; chi
       <CardHeader><CardTitle className="flex items-center gap-2"><ShieldAlert className="h-5 w-5 text-red-300" />页面权限受限</CardTitle></CardHeader>
       <CardContent>
         <p className="mb-5 text-sm leading-relaxed text-muted-foreground">当前登录用户无权打开此页面。设置页面仅允许 xauadmin；其他页面由 xauadmin 在设置中为 xauwhales 开启或关闭。</p>
-        <div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => setLocation("/positions")}><LockKeyhole className="mr-2 h-4 w-4" />仓位管理</Button><Button onClick={() => setLocation("/matrix")}>风险热力图</Button></div>
+        <div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => setLocation("/positions")}><LockKeyhole className="mr-2 h-4 w-4" />仓位管理</Button><Button onClick={() => setLocation("/matrix")}>市场热力图</Button></div>
       </CardContent>
     </Card>
   </div>;

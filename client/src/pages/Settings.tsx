@@ -9,6 +9,8 @@ import { trpc } from "@/lib/trpc";
 import { DEFAULT_PORTFOLIO_SETTINGS, type PortfolioSettings } from "@/lib/portfolio";
 import { METRIC_LABELS, type HeatmapMetric } from "@shared/riskHeatmap";
 import { DEFAULT_VIEWER_PAGE_PERMISSIONS, type ViewerPage, type ViewerPagePermissions } from "@shared/access";
+import { resolveGldContractMultiplier, resolveGldXauMultiplier, resolveXautContractMultiplier, resolveXautXauMultiplier } from "@shared/formulaEngine";
+import { POSITION_SOURCE_DEFAULTS } from "@shared/positionExcel";
 import { CheckCircle2, Clock3, Database, Eye, Filter, LockKeyhole, MessageSquareText, MousePointerClick, RefreshCw, RotateCcw, Scale, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -54,7 +56,7 @@ const heatmapClickActionLabels: Array<[keyof PortfolioSettings["heatmapClickActi
 const pageEntryLabels: Array<[keyof PortfolioSettings["visiblePages"], string, string]> = [
   ["dashboard", "Dashboard", "总持仓汇总与风险数据"],
   ["positions", "仓位管理", "xauadmin 导航默认显示"],
-  ["matrix", "风险热力图", "xauadmin 导航默认显示"],
+  ["matrix", "市场热力图", "xauadmin 导航默认显示"],
   ["formulas", "公式管理", "公式说明、编辑与恢复"],
   ["dataSources", "数据来源", "行情 API 与延迟说明"],
   ["settings", "设置", "仅 xauadmin 可访问"],
@@ -63,7 +65,7 @@ const pageEntryLabels: Array<[keyof PortfolioSettings["visiblePages"], string, s
 const viewerPageLabels: Array<[ViewerPage, string, string]> = [
   ["dashboard", "Dashboard", "总持仓汇总与风险数据"],
   ["positions", "仓位管理", "默认允许 xauwhales 使用"],
-  ["matrix", "风险热力图", "默认允许 xauwhales 使用"],
+  ["matrix", "市场热力图", "默认允许 xauwhales 使用"],
   ["formulas", "公式管理", "默认不允许；公式编辑仍仅管理员可操作"],
   ["dataSources", "数据来源", "默认不允许"],
 ];
@@ -135,6 +137,11 @@ export default function Settings() {
   const [viewerPages, setViewerPages] = useState<ViewerPagePermissions>(DEFAULT_VIEWER_PAGE_PERMISSIONS);
   const [lastRefreshAt, setLastRefreshAt] = useState(readLastMarketRefreshAt);
   const { data: positions } = trpc.positions.list.useQuery();
+  const { data: formulas } = trpc.formulas.list.useQuery();
+  const gldXauMultiplier = resolveGldXauMultiplier(formulas?.length ? formulas : [], draft.gldSpotScaleOverride ?? 0.092);
+  const xautXauMultiplier = resolveXautXauMultiplier(formulas?.length ? formulas : [], draft.xautSpotScaleOverride ?? 1);
+  const gldContractMultiplier = resolveGldContractMultiplier(formulas?.length ? formulas : [], draft.gldContractMultiplier);
+  const xautContractMultiplier = resolveXautContractMultiplier(formulas?.length ? formulas : [], draft.xautContractMultiplier);
   const viewerPagesQuery = trpc.access.viewerPages.useQuery();
   const accessUtils = trpc.useUtils();
   const updateViewerPages = trpc.access.updateViewerPages.useMutation({
@@ -147,7 +154,7 @@ export default function Settings() {
   const dynamicFilterOptions = {
     venue: [...new Set(["Bybit", "Cboe / OPRA", "OPRA", ...(positions ?? []).map(position => position.venue).filter((value): value is string => Boolean(value))])].sort(),
     broker: [...new Set(["MARKET CHAIN", "SignalPlus", "Manual fallback", ...(positions ?? []).map(position => position.venue || (position.underlying === "XAUT" ? "SignalPlus" : "Manual fallback"))])].sort(),
-    account: [...new Set(["LISTED-NO-POSITION", "LOCAL-HEDGE", ...(positions ?? []).map(position => position.sourceAccount).filter((value): value is string => Boolean(value))])].sort(),
+    account: [...new Set(["LISTED-NO-POSITION", POSITION_SOURCE_DEFAULTS.GLD.sourceAccount, POSITION_SOURCE_DEFAULTS.XAUT.sourceAccount, POSITION_SOURCE_DEFAULTS.BTC.sourceAccount, ...(positions ?? []).map(position => position.sourceAccount).filter((value): value is string => Boolean(value))])].sort(),
   };
 
   useEffect(() => setDraft(settings), [settings]);
@@ -182,7 +189,7 @@ export default function Settings() {
       xautSpotScaleOverride: draft.xautSpotScaleOverride === null ? null : numeric(String(draft.xautSpotScaleOverride), 1, Number.EPSILON),
     };
     setSettings(validated);
-    toast.success("全站参数已保存并同步到 Dashboard、仓位、风险热力图和详情页");
+    toast.success("全站参数已保存并同步到 Dashboard、仓位、市场热力图和详情页");
   };
 
   const reset = () => {
@@ -224,7 +231,7 @@ export default function Settings() {
               <p className="mb-2 text-xs font-semibold">页面内部的更新市场数据按钮</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor="positions-refresh-button" className="text-xs">仓位管理</Label><p className="mt-1 text-[10px] text-muted-foreground">默认隐藏页面内部按钮</p></div><Switch id="positions-refresh-button" checked={draft.pageMarketRefreshButtons.positions} onCheckedChange={checked => setDraft(current => ({ ...current, pageMarketRefreshButtons: { ...current.pageMarketRefreshButtons, positions: checked } }))} aria-label="仓位管理显示更新市场数据按钮" /></div>
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor="matrix-refresh-button" className="text-xs">风险热力图</Label><p className="mt-1 text-[10px] text-muted-foreground">默认隐藏页面内部按钮</p></div><Switch id="matrix-refresh-button" checked={draft.pageMarketRefreshButtons.matrix} onCheckedChange={checked => setDraft(current => ({ ...current, pageMarketRefreshButtons: { ...current.pageMarketRefreshButtons, matrix: checked } }))} aria-label="风险热力图显示更新市场数据按钮" /></div>
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor="matrix-refresh-button" className="text-xs">市场热力图</Label><p className="mt-1 text-[10px] text-muted-foreground">默认隐藏页面内部按钮</p></div><Switch id="matrix-refresh-button" checked={draft.pageMarketRefreshButtons.matrix} onCheckedChange={checked => setDraft(current => ({ ...current, pageMarketRefreshButtons: { ...current.pageMarketRefreshButtons, matrix: checked } }))} aria-label="市场热力图显示更新市场数据按钮" /></div>
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">全站最顶部的“更新市场数据”按钮始终保留显示，不受这里控制。</p>
             </div>
@@ -245,14 +252,14 @@ export default function Settings() {
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Scale className="h-4 w-4 text-primary" />XAU 统一量纲与合约默认值</CardTitle></CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <Label htmlFor="gld-xau-scale">GLD/XAU · Multiplier XAU</Label>
-              <Input id="gld-xau-scale" className="mt-1" type="number" min="0.000001" step="0.001" value={draft.gldSpotScaleOverride ?? ""} onChange={event => setDraft(current => ({ ...current, gldSpotScaleOverride: event.target.value === "" ? null : Number(event.target.value) }))} />
-              <p className="mt-1 text-xs text-muted-foreground">默认 0.092。新增 GLD 仓位时自动带入；已有仓位若已记录 Multiplier XAU，保留其实际值。</p>
+              <Label htmlFor="gld-xau-scale">GLD/XAU · Multiplier XAU（公式管理）</Label>
+              <Input id="gld-xau-scale" className="mt-1 font-mono" value={gldXauMultiplier} readOnly disabled />
+              <p className="mt-1 text-xs text-muted-foreground">当前值来自可编辑内置公式 <code>gld_xau_multiplier</code>，默认 0.092。请在“公式管理 → XAU 量纲转换”中编辑；保存公式后会立即重算标准 GLD 的 Delta/Gamma 与仓位数据。调整合约的逐仓位实际 deliverable 仍优先。</p>
             </div>
-            <div><Label htmlFor="gld-contract">GLD Contract Multiplier</Label><Input id="gld-contract" className="mt-1" type="number" min="0.0001" step="1" value={draft.gldContractMultiplier} onChange={event => setDraft(current => ({ ...current, gldContractMultiplier: Number(event.target.value) }))} /><p className="mt-1 text-[11px] text-muted-foreground">仅用于缺失 deliverable 的 fallback；标准值 100 shares。</p></div>
-            <div><Label htmlFor="xaut-contract">XAUT Contract Multiplier</Label><Input id="xaut-contract" className="mt-1" type="number" min="0.0001" step="0.01" value={draft.xautContractMultiplier} onChange={event => setDraft(current => ({ ...current, xautContractMultiplier: Number(event.target.value) }))} /><p className="mt-1 text-[11px] text-muted-foreground">实际合约规格优先，默认 fallback 为 1。</p></div>
+            <div><Label htmlFor="gld-contract">GLD Contract Multiplier（公式管理）</Label><Input id="gld-contract" className="mt-1 font-mono" value={gldContractMultiplier} readOnly disabled /><p className="mt-1 text-[11px] text-muted-foreground">当前值来自 <code>gld_contract_multiplier</code>，默认每张 100 shares。</p></div>
+            <div><Label htmlFor="xaut-contract">XAUT Contract Multiplier（公式管理）</Label><Input id="xaut-contract" className="mt-1 font-mono" value={xautContractMultiplier} readOnly disabled /><p className="mt-1 text-[11px] text-muted-foreground">当前值来自 <code>xaut_contract_multiplier</code>，默认每张 1 XAUT。</p></div>
             <div><Label htmlFor="btc-contract">BTC Contract Multiplier</Label><Input id="btc-contract" className="mt-1" type="number" min="0.00000001" step="0.01" value={draft.btcContractMultiplier} onChange={event => setDraft(current => ({ ...current, btcContractMultiplier: Number(event.target.value) }))} /><p className="mt-1 text-[11px] text-muted-foreground">Bybit BTC 期权数量以 BTC 计；默认 fallback 为 1。</p></div>
-            <div><Label htmlFor="xaut-xau-scale">XAUT/XAU override</Label><Input id="xaut-xau-scale" className="mt-1" type="number" min="0.000001" step="0.0001" placeholder="留空按现价自动" value={draft.xautSpotScaleOverride ?? ""} onChange={event => setDraft(current => ({ ...current, xautSpotScaleOverride: event.target.value === "" ? null : Number(event.target.value) }))} /></div>
+            <div><Label htmlFor="xaut-xau-scale">XAUT/XAU · Multiplier XAU（公式管理）</Label><Input id="xaut-xau-scale" className="mt-1 font-mono" value={xautXauMultiplier} readOnly disabled /><p className="mt-1 text-[11px] text-muted-foreground">当前值来自 <code>xaut_xau_multiplier</code>，默认 1。</p></div>
             <div><Label htmlFor="btc-xau-scale">BTC/XAU override</Label><Input id="btc-xau-scale" className="mt-1" type="number" min="0.000001" step="0.0001" placeholder="留空按 BTC÷XAU 自动" value={draft.btcSpotScaleOverride ?? ""} onChange={event => setDraft(current => ({ ...current, btcSpotScaleOverride: event.target.value === "" ? null : Number(event.target.value) }))} /></div>
             <div><Label htmlFor="gld-fallback-iv">GLD fallback IV</Label><Input id="gld-fallback-iv" className="mt-1" type="number" min="0.0001" step="0.01" value={draft.gldFallbackIv} onChange={event => setDraft(current => ({ ...current, gldFallbackIv: Number(event.target.value) }))} /></div>
             <div className="sm:col-span-2"><Label htmlFor="risk-free-rate">Risk-free Rate</Label><Input id="risk-free-rate" className="mt-1" type="number" step="0.001" value={draft.riskFreeRate} onChange={event => setDraft(current => ({ ...current, riskFreeRate: Number(event.target.value) }))} /></div>
@@ -261,7 +268,7 @@ export default function Settings() {
       </div>
 
       <Card className="glass-card">
-        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Eye className="h-4 w-4 text-primary" />风险热力图模块显示</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Eye className="h-4 w-4 text-primary" />市场热力图模块显示</CardTitle></CardHeader>
         <CardContent className="space-y-4"><p className="text-xs text-muted-foreground">控制交易屏幕上较占空间的分析模块和筛选区下方提示条。所有项目默认隐藏，打开后保存即可生效。</p><div className="grid gap-2 md:grid-cols-3">{heatmapSectionLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`heatmap-section-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div><Switch id={`heatmap-section-${key}`} checked={draft.heatmapVisibleSections[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapVisibleSections: { ...current.heatmapVisibleSections, [key]: checked } }))} aria-label={`热力图显示 ${label}`} /></div>)}</div><div className="rounded-md border border-border/60 p-3"><Label htmlFor="chain-contract-count-label" className="text-xs">顶部链合约数显示文案</Label><Input id="chain-contract-count-label" className="mt-2" maxLength={80} value={draft.heatmapChainContractCountLabel} onChange={event => setDraft(current => ({ ...current, heatmapChainContractCountLabel: event.target.value }))} /><p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">仅在开启“完整期权链合约数”时使用。该数字是数据源返回的完整 Call + Put 合约数，位于 Underlying、C/P、Status 等页面筛选之前；不是持仓数、方格数或当前 Call/Put 数量。</p></div></CardContent>
       </Card>
 
@@ -281,7 +288,7 @@ export default function Settings() {
       <Card className="glass-card">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><SlidersHorizontal className="h-4 w-4 text-primary" />筛选项内部选项设置</CardTitle></CardHeader>
         <CardContent className="space-y-5">
-          <p className="text-xs leading-relaxed text-muted-foreground">决定每个下拉框里可以选择什么。当前已选择项若被隐藏，风险热力图会自动切换到该组第一个可用项。每组至少保留一个选项。</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">决定每个下拉框里可以选择什么。当前已选择项若被隐藏，市场热力图会自动切换到该组第一个可用项。每组至少保留一个选项。</p>
           <div>
             <p className="mb-2 text-xs font-semibold">Metric</p>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">

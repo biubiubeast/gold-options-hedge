@@ -30,6 +30,23 @@ export const POSITION_EXCEL_HEADERS = [
   "Raw Margin Type",
 ] as const;
 
+export type PositionUnderlying = "XAUT" | "GLD" | "BTC";
+
+export const POSITION_SOURCE_DEFAULTS: Record<PositionUnderlying, { sourceAccount: string; venue: string }> = {
+  GLD: {
+    sourceAccount: "KGI-Dinobot-GLD1",
+    venue: "KGI manual order",
+  },
+  XAUT: {
+    sourceAccount: "SPTT-Dino-Bybit1",
+    venue: "Bybit via SignalPlus Trading Terminal",
+  },
+  BTC: {
+    sourceAccount: "LOCAL-HEDGE",
+    venue: "Bybit",
+  },
+};
+
 export type ImportMode = "replace" | "upsert";
 
 export type ImportedPosition = {

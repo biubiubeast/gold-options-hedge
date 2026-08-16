@@ -25,7 +25,7 @@ export function MarketRefreshButton({ compact = false }: { compact?: boolean }) 
       className="gap-1.5 whitespace-nowrap border-primary/40 text-primary"
       onClick={() => refresh.mutate({ gldMultiplierXau: settings.gldSpotScaleOverride, xautMultiplierXau: settings.xautSpotScaleOverride, btcMultiplierXau: settings.btcSpotScaleOverride })}
       disabled={refresh.isPending}
-      title="联网刷新每条持仓的 Mark、IV、Bid/Ask、Unit/Total Greeks、MV 与 UPL，写入当前服务器仓位记录并用于随后导出的 Excel"
+      title="联网刷新 Mark、IV、Bid/Ask 和 Unit Greeks，再按公式管理中的 GLD/XAUT XAU 量纲、每张合约规格与 Total Greeks 公式重算并写入服务器，供页面和 Excel 导出使用"
       data-testid="refresh-market-data"
     >
       <RefreshCw className={`h-3.5 w-3.5 ${refresh.isPending ? "animate-spin" : ""}`} />

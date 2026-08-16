@@ -26,7 +26,7 @@ export default function Formulas() {
   const utils = trpc.useUtils();
   const { data: formulas, isLoading } = trpc.formulas.list.useQuery();
   const updateMutation = trpc.formulas.update.useMutation({
-    onSuccess: () => { utils.formulas.list.invalidate(); toast.success("公式已生效"); setEditingId(null); },
+    onSuccess: async result => { await utils.invalidate(); toast.success(`公式已生效，已重算 ${result.recalculated} 条仓位`); setEditingId(null); },
     onError: error => toast.error(error.message),
   });
   const createMutation = trpc.formulas.create.useMutation({
@@ -38,11 +38,11 @@ export default function Formulas() {
     onError: error => toast.error(error.message),
   });
   const resetMutation = trpc.formulas.reset.useMutation({
-    onSuccess: () => { utils.formulas.list.invalidate(); toast.success("已恢复默认并立即生效"); },
+    onSuccess: async result => { await utils.invalidate(); toast.success(`已恢复默认并重算 ${result.recalculated} 条仓位`); },
     onError: error => toast.error(error.message),
   });
   const resetAllMutation = trpc.formulas.resetAll.useMutation({
-    onSuccess: () => { utils.formulas.list.invalidate(); toast.success("所有公式已恢复默认"); },
+    onSuccess: async result => { await utils.invalidate(); toast.success(`所有公式已恢复默认，已重算 ${result.recalculated} 条仓位`); },
     onError: error => toast.error(error.message),
   });
 
@@ -68,7 +68,7 @@ export default function Formulas() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gold-gradient">公式管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">这里的表达式直接驱动 GLD 模型估值、组合估值与 Greeks 汇总</p>
+          <p className="text-sm text-muted-foreground mt-1">这里的表达式直接驱动 GLD/XAUT 的 XAU 量纲、每张合约规格、模型估值与 Greeks 汇总</p>
         </div>
         <div className="flex gap-2">
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -92,7 +92,7 @@ export default function Formulas() {
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="p-4 text-xs text-muted-foreground leading-relaxed">
           支持 <code>+ - * / ^</code>、括号，以及 <code>sqrt / ln / exp / abs / min / max / pow / N / PDF</code>。变量名和可用变量写在各公式说明中；要复用自定义公式，只需在另一条表达式中写它的名称，例如 <code>current_value + my_adjustment</code>。系统会阻止未知变量和循环引用；错误公式不会保存。
-          <br />可用变量：<code>S, K, T, r, sigma, entryPrice, quantity, fee, markPrice, contractMultiplier, currentValue, entryCost, underlyingPrice, xauUsdPrice, delta, gamma, theta, vega, spotScale</code>。
+          <br />可用变量：<code>S, K, T, r, sigma, entryPrice, quantity, fee, markPrice, contractMultiplier, currentValue, entryCost, underlyingPrice, xauUsdPrice, delta, gamma, theta, vega, spotScale</code>。四个全局规格公式 <code>gld_xau_multiplier / xaut_xau_multiplier / gld_contract_multiplier / xaut_contract_multiplier</code> 必须返回不依赖行情变量的正数。
         </CardContent>
       </Card>
 
@@ -101,10 +101,11 @@ export default function Formulas() {
           <details open>
             <summary className="cursor-pointer text-sm font-semibold">完整使用说明：公式如何影响页面、哪些规则不是表达式</summary>
             <div className="mt-3 grid gap-3 text-xs text-muted-foreground lg:grid-cols-2">
-              <div className="border border-border/60 p-3"><strong className="text-foreground">1. 编辑与发布</strong><p className="mt-1 leading-relaxed">点击任一公式的“编辑”，可同时修改表达式、业务说明和生效位置。点击“验证并保存”后，系统检查语法、未知变量和循环引用；通过后 Dashboard、仓位估值、矩阵、情景分析会在下一次查询/渲染时使用新公式。内置公式可单独恢复，也可恢复所有默认。</p></div>
-              <div className="border border-border/60 p-3"><strong className="text-foreground">2. 市场数据与公式的边界</strong><p className="mt-1 leading-relaxed">Mark、IV、Bid/Ask 和 Unit Greeks 来自行情源，不由这里的公式生成；只有缺少 GLD Greeks 时，Black-Scholes 才使用可编辑模型公式估算。点击“更新市场数据”会重新获取行情并重算 Total Greeks、MV、UPL。</p></div>
-              <div className="border border-border/60 p-3"><strong className="text-foreground">3. Largest Data Error</strong><p className="mt-1 leading-relaxed">这是固定的数据质量排序，不是交易公式：FAIL &gt; MISSING &gt; STALE &gt; WARN &gt; LIVE；同级按 Quote Age 最大排序。缺 Source、Mark、Multiplier 或 Greeks 显示 MISSING；Quote Age 超过 15 分钟显示 STALE。该规则为安全校验，不能被自定义表达式改成静默的 0。</p></div>
-              <div className="border border-border/60 p-3"><strong className="text-foreground">4. 热力颜色、固定范围与 Roll Priority</strong><p className="mt-1 leading-relaxed">热力颜色为低值绿色、中值黄色、高值红色；默认按当前 metric 做 99 分位裁剪。矩阵页可为每个 metric 单独保存固定 MIN/MAX，切换 GLD/XAUT 时继续使用同一范围以便横向比较。Roll Priority 是透明加权 heuristic（DTE、Theta/MV、距 Strike、Delta、Spread、Time Value、Hedge Contribution、Residual Improvement），详情可在矩阵格弹窗展开。</p></div>
+              <div className="border border-border/60 p-3"><strong className="text-foreground">1. 编辑与发布</strong><p className="mt-1 leading-relaxed">点击任一公式的“编辑”，可同时修改表达式、业务说明和生效位置。点击“验证并保存”后，系统检查语法、未知变量和循环引用，并立即重算服务器中的仓位数据；Dashboard、仓位管理、市场热力图、详情和随后导出的 Excel 使用同一结果。内置公式可单独恢复，也可恢复所有默认。</p></div>
+              <div className="border border-border/60 p-3"><strong className="text-foreground">2. GLD/XAUT 量纲与合约规格</strong><p className="mt-1 leading-relaxed"><code>gld_xau_multiplier = 0.092</code>、<code>xaut_xau_multiplier = 1</code> 定义 XAU 统一量纲；<code>gld_contract_multiplier = 100</code>、<code>xaut_contract_multiplier = 1</code> 定义每张期权对应的标的数量。Total Delta 乘一次 XAU 比例，Total Gamma 乘比例平方；Theta/Vega 已是 USD 量纲，不乘 XAU 比例，但仍乘合约数量。调整或非标准合约继续优先采用逐仓位实际规格。</p></div>
+              <div className="border border-border/60 p-3"><strong className="text-foreground">3. 市场数据与公式的边界</strong><p className="mt-1 leading-relaxed">Mark、IV、Bid/Ask 和 Unit Greeks 来自行情源，不由这里的公式生成；只有缺少 GLD Greeks 时，Black-Scholes 才使用可编辑模型公式估算。点击“更新市场数据”会重新获取行情，并按当前 GLD/XAUT 量纲、合约规格和 Total Greeks 公式重算、写入 MV、UPL 和 Greeks。</p></div>
+              <div className="border border-border/60 p-3"><strong className="text-foreground">4. Largest Data Error</strong><p className="mt-1 leading-relaxed">这是固定的数据质量排序，不是交易公式：FAIL &gt; MISSING &gt; STALE &gt; WARN &gt; LIVE；同级按 Quote Age 最大排序。缺 Source、Mark、Multiplier 或 Greeks 显示 MISSING；Quote Age 超过 15 分钟显示 STALE。该规则为安全校验，不能被自定义表达式改成静默的 0。</p></div>
+              <div className="border border-border/60 p-3"><strong className="text-foreground">5. 热力颜色、固定范围与 Roll Priority</strong><p className="mt-1 leading-relaxed">热力颜色为低值绿色、中值黄色、高值红色；默认按当前 metric 做 99 分位裁剪。矩阵页可为每个 metric 单独保存固定 MIN/MAX，切换 GLD/XAUT 时继续使用同一范围以便横向比较。Roll Priority 是透明加权 heuristic（DTE、Theta/MV、距 Strike、Delta、Spread、Time Value、Hedge Contribution、Residual Improvement），详情可在矩阵格弹窗展开。</p></div>
             </div>
           </details>
         </CardContent>

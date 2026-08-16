@@ -1,6 +1,16 @@
 import type { PositionRecord } from "./db";
 import { updatePositionsMarketData } from "./db";
 import {
+  DEFAULT_GLD_CONTRACT_MULTIPLIER,
+  DEFAULT_XAUT_CONTRACT_MULTIPLIER,
+  evaluateNamedFormula,
+  resolveGldContractMultiplier,
+  resolveGldXauMultiplier,
+  resolveXautContractMultiplier,
+  resolveXautXauMultiplier,
+} from "@shared/formulaEngine";
+import { DEFAULT_FORMULAS, type FormulaLike } from "@shared/marketTypes";
+import {
   clearMarketDataCache,
   getGldOptionQuotes,
   getGldPrice,
@@ -62,11 +72,160 @@ function statusFor(quote: NormalizedQuote): PositionRecord["dataStatus"] {
   return "LIVE";
 }
 
+function formulaNumber(
+  name: string,
+  variables: Record<string, number>,
+  formulas: readonly FormulaLike[],
+  fallback: number,
+): number {
+  try {
+    const value = evaluateNamedFormula(name, variables, formulas, new Set());
+    return Number.isFinite(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function effectiveContractMultiplier(
+  position: PositionRecord,
+  formulas: readonly FormulaLike[],
+): { value: number; raw: number | null; nonStandard: boolean } {
+  const raw = numberOrNull(position.contractMultiplier);
+  if (position.underlying === "GLD") {
+    const nonStandard = raw !== null && Math.abs(raw - DEFAULT_GLD_CONTRACT_MULTIPLIER) > 1e-9;
+    return { value: nonStandard ? raw : resolveGldContractMultiplier(formulas), raw, nonStandard };
+  }
+  if (position.underlying === "XAUT") {
+    const nonStandard = raw !== null && Math.abs(raw - DEFAULT_XAUT_CONTRACT_MULTIPLIER) > 1e-9;
+    return { value: nonStandard ? raw : resolveXautContractMultiplier(formulas), raw, nonStandard };
+  }
+  return { value: raw ?? 1, raw, nonStandard: false };
+}
+
+function effectiveMultiplierXau(args: {
+  position: PositionRecord;
+  nonStandardContract: boolean;
+  formulas: readonly FormulaLike[];
+  configuredScale?: number | null;
+  liveRatio?: number | null;
+}): number | null {
+  const { position, formulas } = args;
+  const imported = numberOrNull(position.multiplierXau);
+  if (position.underlying === "GLD") {
+    return args.nonStandardContract && imported !== null
+      ? imported
+      : resolveGldXauMultiplier(formulas, numberOrNull(args.configuredScale) ?? 0.092);
+  }
+  if (position.underlying === "XAUT") {
+    return args.nonStandardContract && imported !== null
+      ? imported
+      : resolveXautXauMultiplier(formulas, numberOrNull(args.configuredScale) ?? 1);
+  }
+  return imported
+    ?? numberOrNull(args.configuredScale)
+    ?? numberOrNull(args.liveRatio)
+    ?? null;
+}
+
+function formulaDrivenFields(args: {
+  position: PositionRecord;
+  markPrice: number | null;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  contractMultiplier: number;
+  multiplierXau: number | null;
+  underlyingPrice?: number;
+  xauPrice?: number;
+  formulas: readonly FormulaLike[];
+}) {
+  const { position, markPrice, delta, gamma, theta, vega, contractMultiplier, multiplierXau, formulas } = args;
+  const quantity = Number(position.quantity);
+  const entryPrice = Number(position.entryPrice);
+  const fee = Number(position.fee);
+  const baseVariables = {
+    entryPrice,
+    quantity,
+    fee,
+    markPrice: markPrice ?? 0,
+    contractMultiplier,
+    delta: delta ?? 0,
+    gamma: gamma ?? 0,
+    theta: theta ?? 0,
+    vega: vega ?? 0,
+    spotScale: multiplierXau ?? 0,
+    underlyingPrice: args.underlyingPrice ?? 0,
+    xauUsdPrice: args.xauPrice ?? 0,
+  };
+  const entryValue = entryPrice * quantity * contractMultiplier;
+  const entryCost = formulaNumber("entry_cost", baseVariables, formulas, entryValue + fee);
+  const marketValue = markPrice === null
+    ? null
+    : formulaNumber("current_value", baseVariables, formulas, markPrice * quantity * contractMultiplier);
+  const upl = marketValue === null
+    ? null
+    : formulaNumber("pnl", { ...baseVariables, entryCost, currentValue: marketValue }, formulas, marketValue - entryCost);
+  const totalDelta = multiplierXau === null || delta === null ? null : formulaNumber(
+    "total_delta_xau", baseVariables, formulas, delta * quantity * contractMultiplier * multiplierXau,
+  );
+  const totalGamma = multiplierXau === null || gamma === null ? null : formulaNumber(
+    "total_gamma_xau", baseVariables, formulas, gamma * quantity * contractMultiplier * multiplierXau ** 2,
+  );
+  const totalTheta = theta === null ? null : formulaNumber(
+    "total_theta", baseVariables, formulas, theta * quantity * contractMultiplier,
+  );
+  const totalVega = vega === null ? null : formulaNumber(
+    "total_vega", baseVariables, formulas, vega * quantity * contractMultiplier,
+  );
+  return { entryValue, entryCost, marketValue, upl, totalDelta, totalGamma, totalTheta, totalVega };
+}
+
+/** Recomputes persisted formula-derived fields immediately after a formula edit/reset. */
+export async function recalculatePositionFormulaData(
+  userId: number,
+  positions: PositionRecord[],
+  customFormulas: readonly FormulaLike[],
+) {
+  const formulas = customFormulas.length ? customFormulas : DEFAULT_FORMULAS;
+  const updates = positions.map(position => {
+    const contract = effectiveContractMultiplier(position, formulas);
+    const contractMultiplier = contract.value;
+    const multiplierXau = effectiveMultiplierXau({ position, nonStandardContract: contract.nonStandard, formulas });
+    const fields = formulaDrivenFields({
+      position,
+      markPrice: numberOrNull(position.importedMarkPrice),
+      delta: numberOrNull(position.entryDelta),
+      gamma: numberOrNull(position.unitGamma),
+      theta: numberOrNull(position.unitTheta),
+      vega: numberOrNull(position.unitVega),
+      contractMultiplier,
+      multiplierXau,
+      formulas,
+    });
+    return { id: position.id, data: {
+      multiplierXau: stringNumber(multiplierXau),
+      entryValue: stringNumber(fields.entryValue),
+      importedEntryCost: stringNumber(fields.entryCost),
+      importedMarketValue: stringNumber(fields.marketValue),
+      importedUnrealizedPnl: stringNumber(fields.upl),
+      importedUnrealizedPnlPct: stringNumber(fields.upl === null || fields.entryCost === 0 ? null : fields.upl / fields.entryCost),
+      importedTotalDeltaXau: stringNumber(fields.totalDelta),
+      importedTotalGammaXau: stringNumber(fields.totalGamma),
+      importedTotalThetaUsdDay: stringNumber(fields.totalTheta),
+      importedTotalVegaUsdVol: stringNumber(fields.totalVega),
+    } };
+  });
+  return updatePositionsMarketData(userId, updates);
+}
+
 export async function refreshPositionMarketData(
   userId: number,
   positions: PositionRecord[],
   scaleOverrides?: { gldMultiplierXau?: number | null; xautMultiplierXau?: number | null; btcMultiplierXau?: number | null },
+  customFormulas: readonly FormulaLike[] = DEFAULT_FORMULAS,
 ) {
+  const formulas = customFormulas.length ? customFormulas : DEFAULT_FORMULAS;
   clearMarketDataCache();
   const gldPositions = positions.filter(position => position.underlying === "GLD");
   const [xautTickers, btcTickers, gldQuotes, xautSpot, btcSpot, gldSpot, xauSpot] = await Promise.all([
@@ -110,30 +269,39 @@ export async function refreshPositionMarketData(
       continue;
     }
     sources.add(quote.source);
-    const quantity = Number(position.quantity);
-    const contractMultiplier = numberOrNull(position.contractMultiplier) ?? (position.underlying === "GLD" ? 100 : 1);
+    const contract = effectiveContractMultiplier(position, formulas);
+    const contractMultiplier = contract.value;
     const underlyingPrice = position.underlying === "GLD" ? (gldSpot?.price ?? 0) : position.underlying === "BTC" ? (btcSpot?.price ?? 0) : (xautSpot?.price ?? 0);
     const xauPrice = xauSpot?.price ?? xautSpot?.price ?? 0;
     const configuredScale = position.underlying === "GLD" ? scaleOverrides?.gldMultiplierXau : position.underlying === "BTC" ? scaleOverrides?.btcMultiplierXau : scaleOverrides?.xautMultiplierXau;
-    const multiplierXau = numberOrNull(position.multiplierXau)
-      ?? numberOrNull(configuredScale)
-      ?? (underlyingPrice > 0 && xauPrice > 0 ? underlyingPrice / xauPrice : position.underlying === "XAUT" ? 1 : null);
-    const entryValue = Number(position.entryPrice) * quantity * contractMultiplier;
-    const entryCost = entryValue + Number(position.fee);
-    const marketValue = quote.markPrice * quantity * contractMultiplier;
-    const upl = marketValue - entryCost;
-    const totalDelta = multiplierXau === null ? null : quote.delta * quantity * contractMultiplier * multiplierXau;
-    const totalGamma = multiplierXau === null ? null : quote.gamma * quantity * contractMultiplier * multiplierXau ** 2;
-    const totalTheta = quote.theta * quantity * contractMultiplier;
-    const totalVega = quote.vega * quantity * contractMultiplier;
+    const multiplierXau = effectiveMultiplierXau({
+      position,
+      nonStandardContract: contract.nonStandard,
+      formulas,
+      configuredScale,
+      liveRatio: underlyingPrice > 0 && xauPrice > 0 ? underlyingPrice / xauPrice : null,
+    });
+    const fields = formulaDrivenFields({
+      position,
+      markPrice: quote.markPrice,
+      delta: quote.delta,
+      gamma: quote.gamma,
+      theta: quote.theta,
+      vega: quote.vega,
+      contractMultiplier,
+      multiplierXau,
+      underlyingPrice,
+      xauPrice,
+      formulas,
+    });
     updates.push({ id: position.id, data: {
       importedMarkPrice: stringNumber(quote.markPrice), markIv: stringNumber(quote.markIv), bid1Price: stringNumber(quote.bid), ask1Price: stringNumber(quote.ask),
       marketQuoteTime: new Date(quote.timestamp).toISOString(), marketSource: quote.source, lastMarketRefreshAt: refreshedAt,
       openInterest: stringNumber(quote.openInterest), optionVolume: stringNumber(quote.volume), entryDelta: stringNumber(quote.delta) ?? position.entryDelta,
       unitGamma: stringNumber(quote.gamma), unitTheta: stringNumber(quote.theta), unitVega: stringNumber(quote.vega),
-      multiplierXau: stringNumber(multiplierXau) ?? position.multiplierXau, importedMarketValue: stringNumber(marketValue), entryValue: stringNumber(entryValue),
-      importedEntryCost: stringNumber(entryCost), importedUnrealizedPnl: stringNumber(upl), importedUnrealizedPnlPct: stringNumber(entryCost === 0 ? null : upl / entryCost),
-      importedTotalDeltaXau: stringNumber(totalDelta), importedTotalGammaXau: stringNumber(totalGamma), importedTotalThetaUsdDay: stringNumber(totalTheta), importedTotalVegaUsdVol: stringNumber(totalVega),
+      multiplierXau: stringNumber(multiplierXau) ?? position.multiplierXau, importedMarketValue: stringNumber(fields.marketValue), entryValue: stringNumber(fields.entryValue),
+      importedEntryCost: stringNumber(fields.entryCost), importedUnrealizedPnl: stringNumber(fields.upl), importedUnrealizedPnlPct: stringNumber(fields.upl === null || fields.entryCost === 0 ? null : fields.upl / fields.entryCost),
+      importedTotalDeltaXau: stringNumber(fields.totalDelta), importedTotalGammaXau: stringNumber(fields.totalGamma), importedTotalThetaUsdDay: stringNumber(fields.totalTheta), importedTotalVegaUsdVol: stringNumber(fields.totalVega),
       dataStatus: statusFor(quote),
     } });
   }

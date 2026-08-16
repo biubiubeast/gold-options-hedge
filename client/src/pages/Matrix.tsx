@@ -9,6 +9,7 @@ import { buildChainRiskPositions, buildGldChainRiskPositions, buildLiveRiskPosit
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import { resolveHeatmapSpots } from "@/lib/spotSelection";
+import { resolveGldContractMultiplier, resolveGldXauMultiplier, resolveXautContractMultiplier, resolveXautXauMultiplier } from "@shared/formulaEngine";
 import type { PortfolioSettings } from "@/lib/portfolio";
 import {
   CENTERED_METRICS,
@@ -306,12 +307,14 @@ export default function Matrix() {
     const held = buildLiveRiskPositions({ views: liveViews, spots: liveSpots, settings, formulas });
     if (dataset !== "chain") return held;
     const heldKeys = new Set(held.map(position => `${position.underlying}|${position.expiry}|${position.strike}|${position.callPut}`));
-    const gldOzPerShare = liveSpots.xau > 0 && liveSpots.gld > 0 ? liveSpots.gld / liveSpots.xau : null;
-    const xautPerUnit = liveSpots.xau > 0 && liveSpots.xaut > 0 ? liveSpots.xaut / liveSpots.xau : null;
+    const gldOzPerShare = resolveGldXauMultiplier(formulas?.length ? formulas : [], settings.gldSpotScaleOverride ?? 0.092);
+    const xautPerUnit = resolveXautXauMultiplier(formulas?.length ? formulas : [], settings.xautSpotScaleOverride ?? 1);
     const btcPerUnit = liveSpots.xau > 0 && liveSpots.btc > 0 ? liveSpots.btc / liveSpots.xau : null;
+    const gldContractMultiplier = resolveGldContractMultiplier(formulas?.length ? formulas : [], settings.gldContractMultiplier);
+    const xautContractMultiplier = resolveXautContractMultiplier(formulas?.length ? formulas : [], settings.xautContractMultiplier);
     const listed = [
-      ...buildGldChainRiskPositions(gldChain?.quotes ?? [], gldOzPerShare),
-      ...buildChainRiskPositions(xautChain?.quotes ?? [], "XAUT", xautPerUnit),
+      ...buildGldChainRiskPositions(gldChain?.quotes ?? [], gldOzPerShare, gldContractMultiplier),
+      ...buildChainRiskPositions(xautChain?.quotes ?? [], "XAUT", xautPerUnit, xautContractMultiplier),
       ...buildChainRiskPositions(btcChain?.quotes ?? [], "BTC", btcPerUnit),
     ].filter(position => !heldKeys.has(`${position.underlying}|${position.expiry}|${position.strike}|${position.callPut}`));
     return [...held, ...listed];
@@ -526,7 +529,7 @@ export default function Matrix() {
     <div className={`matrix-fullscreen-shell flex h-[calc(100vh-5.5rem)] min-h-[560px] flex-col gap-1 overflow-hidden ${isFullscreen ? "matrix-pseudo-fullscreen" : ""}`} data-testid="institutional-risk-heatmap" data-fullscreen={isFullscreen ? "true" : "false"}>
       <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-1">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">风险热力图</h1>
+          <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">市场热力图</h1>
           <span data-testid="heatmap-scope-stats" className="truncate font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held positions · {filtered.length} filtered contracts · {cells.length} cells · {expiries.length} expiries · {strikes.length} strikes{visibleSections.chainContractCount && selectedChainCount !== null ? ` · ${underlying === "all" ? "ALL" : underlying} ${chainCountLabel}: ${selectedChainCount.toLocaleString("en-US")}` : ""}</span>
         </div>
         <div className="flex items-center gap-2 text-[9px] text-muted-foreground">

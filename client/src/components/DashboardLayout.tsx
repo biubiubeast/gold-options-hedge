@@ -27,7 +27,7 @@ import { trpc } from "@/lib/trpc";
 const menuItems = [
   { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { key: "positions", icon: ListPlus, label: "仓位管理", path: "/positions" },
-  { key: "matrix", icon: Grid3X3, label: "风险热力图", path: "/matrix" },
+  { key: "matrix", icon: Grid3X3, label: "市场热力图", path: "/matrix" },
   { key: "formulas", icon: Calculator, label: "公式管理", path: "/formulas" },
   { key: "dataSources", icon: Database, label: "数据来源", path: "/data-sources" },
   { key: "settings", icon: Settings, label: "设置", path: "/settings" },

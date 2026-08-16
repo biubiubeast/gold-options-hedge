@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 import { calculatePosition, getPositionMarketData } from "@/lib/portfolio";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
+import { resolveGldContractMultiplier, resolveGldXauMultiplier, resolveXautContractMultiplier, resolveXautXauMultiplier } from "@shared/formulaEngine";
 
 const money = (value: number) => new Intl.NumberFormat("zh-CN", {
   style: "currency",
@@ -54,8 +55,10 @@ export default function Dashboard() {
   const gldPrice = spotPrices?.gld?.price ?? 0;
   const xauPrice = spotPrices?.gold?.price ?? 0;
   const btcPrice = spotPrices?.btc?.price ?? 0;
-  const automaticXautScale = xauPrice > 0 ? xautPrice / xauPrice : 1;
-  const automaticGldScale = xauPrice > 0 ? gldPrice / xauPrice : 0.1;
+  const gldXauMultiplier = resolveGldXauMultiplier(formulas?.length ? formulas : [], settings.gldSpotScaleOverride ?? 0.092);
+  const xautXauMultiplier = resolveXautXauMultiplier(formulas?.length ? formulas : [], settings.xautSpotScaleOverride ?? 1);
+  const gldContractMultiplier = resolveGldContractMultiplier(formulas?.length ? formulas : [], settings.gldContractMultiplier);
+  const xautContractMultiplier = resolveXautContractMultiplier(formulas?.length ? formulas : [], settings.xautContractMultiplier);
 
   const expiries = useMemo(() => [...new Set((positions || []).map(position => position.expiry))].sort(), [positions]);
   const strikes = useMemo(() => [...new Set((positions || []).map(position => position.strike))]
@@ -105,10 +108,6 @@ export default function Dashboard() {
   const updateNumber = (key: keyof typeof settings, raw: string, fallback: number) => {
     const value = Number(raw);
     setSettings(current => ({ ...current, [key]: Number.isFinite(value) ? value : fallback }));
-  };
-
-  const updateOverride = (key: "xautSpotScaleOverride" | "gldSpotScaleOverride", raw: string) => {
-    setSettings(current => ({ ...current, [key]: raw === "" ? null : Number(raw) }));
   };
 
   return (
@@ -180,19 +179,19 @@ export default function Dashboard() {
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">XAUT 合约乘数</Label>
-            <Input className="mt-1" type="number" step="0.01" value={settings.xautContractMultiplier} onChange={event => updateNumber("xautContractMultiplier", event.target.value, 1)} />
+            <Input className="mt-1 font-mono" value={xautContractMultiplier} readOnly disabled title="在公式管理中编辑 xaut_contract_multiplier" />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">GLD 合约乘数</Label>
-            <Input className="mt-1" type="number" step="1" value={settings.gldContractMultiplier} onChange={event => updateNumber("gldContractMultiplier", event.target.value, 100)} />
+            <Input className="mt-1 font-mono" value={gldContractMultiplier} readOnly disabled title="在公式管理中编辑 gld_contract_multiplier" />
           </div>
           <div>
-            <Label className="text-xs text-muted-foreground">XAUT→XAU 比例（留空自动）</Label>
-            <Input className="mt-1" type="number" step="0.0001" placeholder={`自动 ${automaticXautScale.toFixed(4)}`} value={settings.xautSpotScaleOverride ?? ""} onChange={event => updateOverride("xautSpotScaleOverride", event.target.value)} />
+            <Label className="text-xs text-muted-foreground">XAUT→XAU 公式量纲</Label>
+            <Input className="mt-1 font-mono" value={xautXauMultiplier} readOnly disabled title="在公式管理中编辑 xaut_xau_multiplier" />
           </div>
           <div>
-            <Label className="text-xs text-muted-foreground">GLD→XAU 比例（留空自动）</Label>
-            <Input className="mt-1" type="number" step="0.0001" placeholder={`自动 ${automaticGldScale.toFixed(4)}`} value={settings.gldSpotScaleOverride ?? ""} onChange={event => updateOverride("gldSpotScaleOverride", event.target.value)} />
+            <Label className="text-xs text-muted-foreground">GLD→XAU 公式量纲</Label>
+            <Input className="mt-1 font-mono" value={gldXauMultiplier} readOnly disabled title="在公式管理中编辑 gld_xau_multiplier" />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">无风险利率</Label>

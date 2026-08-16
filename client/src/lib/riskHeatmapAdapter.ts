@@ -6,6 +6,8 @@ import {
 } from "@/lib/portfolio";
 import { finiteOrNull, type DataStatus, type RiskPosition } from "@shared/riskHeatmap";
 import type { FormulaLike } from "@shared/marketTypes";
+import { DEFAULT_GLD_CONTRACT_MULTIPLIER, DEFAULT_XAUT_CONTRACT_MULTIPLIER } from "@shared/formulaEngine";
+import { POSITION_SOURCE_DEFAULTS } from "@shared/positionExcel";
 
 export type LivePositionView = {
   position: PortfolioPosition;
@@ -37,15 +39,16 @@ export function buildLiveRiskPositions(args: {
       settings,
     });
     const importedMultiplier = finiteOrNull(position.contractMultiplier);
-    const multiplier = importedMultiplier ?? (position.underlying === "GLD"
-      ? settings.gldContractMultiplier
-      : position.underlying === "BTC" ? settings.btcContractMultiplier : settings.xautContractMultiplier);
+    const multiplier = finiteOrNull(calculated.contractMultiplier);
     const importedOunces = finiteOrNull(position.multiplierXau);
-    const ounces = importedOunces ?? (position.underlying === "GLD"
-      ? settings.gldSpotScaleOverride ?? (spots.xau > 0 && spots.gld > 0 ? spots.gld / spots.xau : null)
-      : position.underlying === "BTC"
-        ? settings.btcSpotScaleOverride ?? (spots.xau > 0 && spots.btc > 0 ? spots.btc / spots.xau : null)
-        : settings.xautSpotScaleOverride ?? (spots.xau > 0 && spots.xaut > 0 ? spots.xaut / spots.xau : null));
+    const ounces = finiteOrNull(calculated.spotScale);
+    const contractAdjusted = position.underlying === "GLD"
+      && importedMultiplier !== null
+      && Math.abs(importedMultiplier - DEFAULT_GLD_CONTRACT_MULTIPLIER) > 1e-9;
+    const xautNonStandard = position.underlying === "XAUT"
+      && importedMultiplier !== null
+      && Math.abs(importedMultiplier - DEFAULT_XAUT_CONTRACT_MULTIPLIER) > 1e-9;
+    const sourceDefaults = POSITION_SOURCE_DEFAULTS[position.underlying];
     const positionTime = position.referenceDate
       ? `${position.referenceDate}T23:59:59.000Z`
       : position.updatedAt instanceof Date
@@ -53,20 +56,24 @@ export function buildLiveRiskPositions(args: {
       : typeof position.updatedAt === "string" ? position.updatedAt : null;
     const riskPosition: RiskPosition = {
       id: String(position.id),
-      venue: position.venue || (position.underlying === "GLD" ? "OPRA" : "Bybit"),
-      broker: position.venue || (position.underlying === "GLD" ? "Manual fallback" : "SignalPlus / Bybit"),
-      account: position.sourceAccount || "LOCAL-HEDGE",
+      venue: position.venue || sourceDefaults.venue,
+      broker: position.venue || sourceDefaults.venue,
+      account: position.sourceAccount || sourceDefaults.sourceAccount,
       underlying: position.underlying,
       instrument: position.instrument || `${position.underlying}-${position.expiry.replaceAll("-", "")}-${position.strike}-${position.optionType === "call" ? "C" : "P"}`,
       callPut: position.optionType,
       expiry: position.expiry,
       strike: Number(position.strike),
       netQty: Number(position.quantity),
-      contractMultiplier: Number.isFinite(multiplier) && multiplier > 0 ? multiplier : null,
-      deliverableSource: importedMultiplier !== null
-        ? `Excel imported · ${position.importSource ?? "position snapshot"}`
-        : "fallback account setting · contract master not connected",
-      contractAdjusted: position.underlying === "GLD" && importedMultiplier !== null && Math.abs(importedMultiplier - 100) > 1e-9,
+      contractMultiplier: multiplier !== null && Number.isFinite(multiplier) && multiplier > 0 ? multiplier : null,
+      deliverableSource: (contractAdjusted || xautNonStandard) && importedOunces !== null
+        ? `Adjusted contract / Excel actual · ${position.importSource ?? "position snapshot"}`
+        : position.underlying === "GLD" || position.underlying === "XAUT"
+          ? `Formula · ${position.underlying === "GLD" ? "gld_contract_multiplier + gld_xau_multiplier" : "xaut_contract_multiplier + xaut_xau_multiplier"}`
+          : importedOunces !== null
+            ? `Position snapshot · ${position.importSource ?? "manual"}`
+            : "fallback account setting / live ratio",
+      contractAdjusted,
       gldOzPerShare: position.underlying === "GLD" ? finiteOrNull(ounces) : null,
       underlyingOzPerUnit: position.underlying !== "GLD" ? finiteOrNull(ounces) : null,
       markPrice: market.available ? finiteOrNull(market.markPrice) : null,
@@ -119,7 +126,12 @@ type ChainQuote = {
   marketAvailable?: boolean;
 };
 
-export function buildChainRiskPositions(quotes: ChainQuote[], underlying: "GLD" | "XAUT" | "BTC", xauPerUnit: number | null): RiskPosition[] {
+export function buildChainRiskPositions(
+  quotes: ChainQuote[],
+  underlying: "GLD" | "XAUT" | "BTC",
+  xauPerUnit: number | null,
+  standardContractMultiplier?: number,
+): RiskPosition[] {
   return quotes.map(quote => {
     const marketAvailable = quote.marketAvailable !== false;
     return ({
@@ -133,7 +145,7 @@ export function buildChainRiskPositions(quotes: ChainQuote[], underlying: "GLD" 
     expiry: quote.expiry,
     strike: quote.strike,
     netQty: 0,
-    contractMultiplier: underlying === "GLD" ? 100 : 1,
+    contractMultiplier: standardContractMultiplier ?? (underlying === "GLD" ? 100 : 1),
     deliverableSource: underlying === "GLD"
       ? "OCC standard GLD contract display · verify adjusted deliverables with broker contract master"
       : "Bybit V5 instrument specification",
@@ -166,6 +178,6 @@ export function buildChainRiskPositions(quotes: ChainQuote[], underlying: "GLD" 
   });
 }
 
-export function buildGldChainRiskPositions(quotes: ChainQuote[], gldOzPerShare: number | null): RiskPosition[] {
-  return buildChainRiskPositions(quotes, "GLD", gldOzPerShare);
+export function buildGldChainRiskPositions(quotes: ChainQuote[], gldOzPerShare: number | null, contractMultiplier?: number): RiskPosition[] {
+  return buildChainRiskPositions(quotes, "GLD", gldOzPerShare, contractMultiplier);
 }

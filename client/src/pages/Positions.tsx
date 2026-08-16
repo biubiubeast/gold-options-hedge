@@ -10,10 +10,18 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Info, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { PositionExcelPreview } from "@shared/positionExcel";
+import { POSITION_SOURCE_DEFAULTS, type PositionExcelPreview } from "@shared/positionExcel";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { calculatePosition, getPositionMarketData, type PortfolioPosition } from "@/lib/portfolio";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import {
+  DEFAULT_GLD_CONTRACT_MULTIPLIER,
+  DEFAULT_XAUT_CONTRACT_MULTIPLIER,
+  resolveGldContractMultiplier,
+  resolveGldXauMultiplier,
+  resolveXautContractMultiplier,
+  resolveXautXauMultiplier,
+} from "@shared/formulaEngine";
 
 interface PositionForm {
   underlying: "XAUT" | "GLD" | "BTC";
@@ -39,7 +47,7 @@ interface PositionForm {
 
 const defaultForm: PositionForm = {
   underlying: "XAUT", expiry: "", strike: "", optionType: "call", entryPrice: "", quantity: "", fee: "0", entryDelta: "",
-  sourceAccount: "", venue: "", instrument: "", currency: "USDT", referenceDate: "", importedMarkPrice: "",
+  sourceAccount: POSITION_SOURCE_DEFAULTS.XAUT.sourceAccount, venue: POSITION_SOURCE_DEFAULTS.XAUT.venue, instrument: "", currency: "USDT", referenceDate: "", importedMarkPrice: "",
   multiplierXau: "1", contractMultiplier: "1", unitGamma: "", unitTheta: "", unitVega: "",
 };
 
@@ -82,6 +90,10 @@ export default function Positions() {
   const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
   const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, { refetchInterval: 10_000 });
   const { settings } = usePortfolioSettings();
+  const gldXauMultiplier = resolveGldXauMultiplier(formulas?.length ? formulas : [], settings.gldSpotScaleOverride ?? 0.092);
+  const xautXauMultiplier = resolveXautXauMultiplier(formulas?.length ? formulas : [], settings.xautSpotScaleOverride ?? 1);
+  const gldContractMultiplier = resolveGldContractMultiplier(formulas?.length ? formulas : [], settings.gldContractMultiplier);
+  const xautContractMultiplier = resolveXautContractMultiplier(formulas?.length ? formulas : [], settings.xautContractMultiplier);
   const exportExcelQuery = trpc.positions.exportExcel.useQuery(undefined, { enabled: false });
   const previewMutation = trpc.positions.previewExcel.useMutation({ onError: error => toast.error(error.message) });
   const importMutation = trpc.positions.importExcel.useMutation({
@@ -162,15 +174,15 @@ export default function Positions() {
     else createMutation.mutate(payload);
   };
 
-  const handleEdit = (position: any) => {
+  const handleEdit = (position: PortfolioPosition) => {
     setEditId(position.id);
     setForm({
       underlying: position.underlying, expiry: position.expiry, strike: position.strike, optionType: position.optionType,
       entryPrice: position.entryPrice, quantity: position.quantity, fee: position.fee, entryDelta: position.entryDelta,
-      sourceAccount: position.sourceAccount ?? "", venue: position.venue ?? "", instrument: position.instrument ?? "",
+      sourceAccount: position.sourceAccount ?? POSITION_SOURCE_DEFAULTS[position.underlying].sourceAccount, venue: position.venue ?? POSITION_SOURCE_DEFAULTS[position.underlying].venue, instrument: position.instrument ?? "",
       currency: position.currency ?? (position.underlying === "GLD" ? "USD" : "USDT"), referenceDate: position.referenceDate ?? "",
-      importedMarkPrice: position.importedMarkPrice ?? "", multiplierXau: position.multiplierXau ?? (position.underlying === "XAUT" ? "1" : ""),
-      contractMultiplier: position.contractMultiplier ?? (position.underlying === "GLD" ? "100" : "1"), unitGamma: position.unitGamma ?? "",
+      importedMarkPrice: position.importedMarkPrice ?? "", multiplierXau: position.multiplierXau ?? (position.underlying === "GLD" ? String(gldXauMultiplier) : position.underlying === "XAUT" ? String(xautXauMultiplier) : ""),
+      contractMultiplier: position.contractMultiplier ?? (position.underlying === "GLD" ? String(gldContractMultiplier) : position.underlying === "XAUT" ? String(xautContractMultiplier) : String(settings.btcContractMultiplier)), unitGamma: position.unitGamma ?? "",
       unitTheta: position.unitTheta ?? "", unitVega: position.unitVega ?? "",
     });
     setOpen(true);
@@ -180,8 +192,8 @@ export default function Positions() {
     setEditId(null);
     setForm({
       ...defaultForm,
-      multiplierXau: String(settings.xautSpotScaleOverride ?? 1),
-      contractMultiplier: String(settings.xautContractMultiplier),
+      multiplierXau: String(xautXauMultiplier),
+      contractMultiplier: String(xautContractMultiplier),
     });
     setOpen(true);
   };
@@ -215,6 +227,18 @@ export default function Positions() {
     if (![xautSpot, gldSpot, btcSpot, xauSpot].every(Number.isFinite)) return null;
     const market = getPositionMarketData({ position: position as PortfolioPosition, xautTickers, btcTickers, gldSpot, formulas, settings });
     return calculatePosition({ position: position as PortfolioPosition, market, xautSpot, btcSpot, gldSpot, xauSpot, formulas, settings }).notionalSize;
+  };
+  const effectiveMultipliers = (position: NonNullable<typeof positions>[number]) => {
+    const importedContract = numeric(position.contractMultiplier);
+    if (position.underlying === "GLD") {
+      const adjusted = importedContract !== null && Math.abs(importedContract - DEFAULT_GLD_CONTRACT_MULTIPLIER) > 1e-9;
+      return { contract: adjusted ? importedContract : gldContractMultiplier, xau: adjusted ? numeric(position.multiplierXau) ?? gldXauMultiplier : gldXauMultiplier };
+    }
+    if (position.underlying === "XAUT") {
+      const nonStandard = importedContract !== null && Math.abs(importedContract - DEFAULT_XAUT_CONTRACT_MULTIPLIER) > 1e-9;
+      return { contract: nonStandard ? importedContract : xautContractMultiplier, xau: nonStandard ? numeric(position.multiplierXau) ?? xautXauMultiplier : xautXauMultiplier };
+    }
+    return { contract: importedContract ?? settings.btcContractMultiplier, xau: numeric(position.multiplierXau) ?? settings.btcSpotScaleOverride };
   };
 
   if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
@@ -275,7 +299,7 @@ export default function Positions() {
             <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
               <DialogHeader><DialogTitle>{editId ? "编辑仓位" : "添加新仓位"}</DialogTitle><DialogDescription>核心合约信息为必填；账户、快照和 Unit Greeks 可展开补充。</DialogDescription></DialogHeader>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <div><Label>Underlying *</Label><Select value={form.underlying} onValueChange={(value: "XAUT" | "GLD" | "BTC") => setForm({ ...form, underlying: value, currency: value === "GLD" ? "USD" : "USDT", contractMultiplier: String(value === "GLD" ? settings.gldContractMultiplier : value === "BTC" ? settings.btcContractMultiplier : settings.xautContractMultiplier), multiplierXau: String(value === "GLD" ? settings.gldSpotScaleOverride ?? 0.092 : value === "BTC" ? settings.btcSpotScaleOverride ?? "" : settings.xautSpotScaleOverride ?? 1) })}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="XAUT">XAUT</SelectItem><SelectItem value="GLD">GLD</SelectItem><SelectItem value="BTC">BTC</SelectItem></SelectContent></Select></div>
+                <div><Label>Underlying *</Label><Select value={form.underlying} onValueChange={(value: "XAUT" | "GLD" | "BTC") => { const defaults = POSITION_SOURCE_DEFAULTS[value]; setForm({ ...form, underlying: value, sourceAccount: defaults.sourceAccount, venue: defaults.venue, currency: value === "GLD" ? "USD" : "USDT", contractMultiplier: String(value === "GLD" ? gldContractMultiplier : value === "BTC" ? settings.btcContractMultiplier : xautContractMultiplier), multiplierXau: String(value === "GLD" ? gldXauMultiplier : value === "BTC" ? settings.btcSpotScaleOverride ?? "" : xautXauMultiplier) }); }}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="XAUT">XAUT</SelectItem><SelectItem value="GLD">GLD</SelectItem><SelectItem value="BTC">BTC</SelectItem></SelectContent></Select></div>
                 <div><Label>Call / Put *</Label><Select value={form.optionType} onValueChange={(value: "call" | "put") => setForm({ ...form, optionType: value })}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="call">Call</SelectItem><SelectItem value="put">Put</SelectItem></SelectContent></Select></div>
                 <div><Label>Expiry *</Label><Input type="date" value={form.expiry} onChange={event => setForm({ ...form, expiry: event.target.value })} className="mt-1" /></div>
                 <div><Label>Strike *</Label><Input type="number" step="0.01" value={form.strike} onChange={event => setForm({ ...form, strike: event.target.value })} className="mt-1" /></div>
@@ -312,12 +336,12 @@ export default function Positions() {
               <TableHeader><TableRow><TableHead>Source / Venue</TableHead><TableHead>Instrument</TableHead><TableHead>U</TableHead><TableHead>Expiry</TableHead><TableHead>Strike</TableHead><TableHead>C/P</TableHead><TableHead>Qty</TableHead><TableHead>Multiplier</TableHead><TableHead>Notional USD</TableHead><TableHead>Mark</TableHead><TableHead>Mark IV</TableHead><TableHead>Bid / Ask</TableHead><TableHead>Entry</TableHead><TableHead>MV</TableHead><TableHead>Entry Cost</TableHead><TableHead>UPL</TableHead><TableHead>Unit Δ</TableHead><TableHead>Total Δ XAU</TableHead><TableHead>Γ XAU</TableHead><TableHead>Θ USD/d</TableHead><TableHead>Vega USD/v</TableHead><TableHead>As-of / Source</TableHead><TableHead>Status</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
               <TableBody>{positions?.length ? positions.map(position => (
                 <TableRow key={position.id} className="hover:bg-secondary/30">
-                  <TableCell className="max-w-48"><p className="truncate text-xs" title={position.sourceAccount ?? ""}>{position.sourceAccount ?? "LOCAL-HEDGE"}</p><p className="truncate text-[10px] text-muted-foreground">{position.venue ?? "MANUAL"}</p></TableCell>
+                  <TableCell className="max-w-48"><p className="truncate text-xs" title={position.sourceAccount ?? POSITION_SOURCE_DEFAULTS[position.underlying].sourceAccount}>{position.sourceAccount ?? POSITION_SOURCE_DEFAULTS[position.underlying].sourceAccount}</p><p className="truncate text-[10px] text-muted-foreground">{position.venue ?? POSITION_SOURCE_DEFAULTS[position.underlying].venue}</p></TableCell>
                   <TableCell className="max-w-64 truncate font-mono text-[11px]" title={position.instrument ?? ""}>{position.instrument ?? `${position.underlying}-${position.expiry}-${position.strike}`}</TableCell>
                   <TableCell><Badge variant={position.underlying === "XAUT" ? "default" : "secondary"}>{position.underlying}</Badge></TableCell>
                   <TableCell className="font-mono text-xs">{position.expiry}</TableCell><TableCell className="font-mono">{position.strike}</TableCell>
                   <TableCell><Badge variant="outline" className={position.optionType === "call" ? "text-green-400" : "text-red-400"}>{position.optionType.toUpperCase()}</Badge></TableCell>
-                  <TableCell className="font-mono">{position.quantity}</TableCell><TableCell className="font-mono text-xs">{position.contractMultiplier ?? (position.underlying === "GLD" ? "100" : "1")} × {position.multiplierXau ?? "—"} XAU</TableCell>
+                  <TableCell className="font-mono">{position.quantity}</TableCell><TableCell className="font-mono text-xs">{effectiveMultipliers(position).contract} × {effectiveMultipliers(position).xau ?? "—"} XAU</TableCell>
                   <TableCell className="font-mono" title="Signed Qty × contract multiplier × current underlying spot">{notionalSize(position) === null ? "—" : `$${money(notionalSize(position))}`}</TableCell>
                   <TableCell className="font-mono">{position.importedMarkPrice ?? "—"}</TableCell>
                   <TableCell className="font-mono">{position.markIv ? `${(Number(position.markIv) * 100).toFixed(2)}%` : "—"}</TableCell>

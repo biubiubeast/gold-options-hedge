@@ -1,5 +1,13 @@
 import { blackScholes, timeToExpiry } from "@shared/blackScholes";
-import { evaluateNamedFormula } from "@shared/formulaEngine";
+import {
+  DEFAULT_GLD_CONTRACT_MULTIPLIER,
+  DEFAULT_XAUT_CONTRACT_MULTIPLIER,
+  evaluateNamedFormula,
+  resolveGldContractMultiplier,
+  resolveGldXauMultiplier,
+  resolveXautContractMultiplier,
+  resolveXautXauMultiplier,
+} from "@shared/formulaEngine";
 import { DEFAULT_FORMULAS, type FormulaLike } from "@shared/marketTypes";
 import type { DataStatus } from "@shared/riskHeatmap";
 import type { HeatmapMetric } from "@shared/riskHeatmap";
@@ -618,21 +626,41 @@ export function calculatePosition(args: {
   const entryPrice = numberOf(position.entryPrice);
   const fee = numberOf(position.fee);
   const importedContractMultiplier = finiteImported(position.contractMultiplier);
-  const contractMultiplier = importedContractMultiplier && importedContractMultiplier > 0
-    ? importedContractMultiplier
-    : position.underlying === "GLD" ? settings.gldContractMultiplier
-    : position.underlying === "BTC" ? settings.btcContractMultiplier
-    : settings.xautContractMultiplier;
+  const adjustedGldContract = position.underlying === "GLD"
+    && importedContractMultiplier !== null
+    && Math.abs(importedContractMultiplier - DEFAULT_GLD_CONTRACT_MULTIPLIER) > 1e-9;
+  const adjustedXautContract = position.underlying === "XAUT"
+    && importedContractMultiplier !== null
+    && Math.abs(importedContractMultiplier - DEFAULT_XAUT_CONTRACT_MULTIPLIER) > 1e-9;
+  const contractMultiplier = position.underlying === "GLD"
+    ? adjustedGldContract
+      ? importedContractMultiplier
+      : resolveGldContractMultiplier(formulas, settings.gldContractMultiplier)
+    : position.underlying === "XAUT"
+      ? adjustedXautContract
+        ? importedContractMultiplier
+        : resolveXautContractMultiplier(formulas, settings.xautContractMultiplier)
+      : importedContractMultiplier && importedContractMultiplier > 0
+        ? importedContractMultiplier
+        : settings.btcContractMultiplier;
   const underlyingPrice = position.underlying === "GLD" ? args.gldSpot : position.underlying === "BTC" ? args.btcSpot : args.xautSpot;
   const automaticScale = args.xauSpot > 0 && underlyingPrice > 0 ? underlyingPrice / args.xauSpot : 1;
   const override = position.underlying === "GLD"
     ? settings.gldSpotScaleOverride
     : position.underlying === "BTC" ? settings.btcSpotScaleOverride : settings.xautSpotScaleOverride;
   const importedSpotScale = finiteImported(position.multiplierXau);
-  const spotScale = importedSpotScale ?? override ?? calculate("spot_scale", {
-    underlyingPrice,
-    xauUsdPrice: args.xauSpot || underlyingPrice || 1,
-  }, formulas, automaticScale);
+  const spotScale = position.underlying === "GLD"
+    ? adjustedGldContract && importedSpotScale !== null
+      ? importedSpotScale
+      : resolveGldXauMultiplier(formulas, settings.gldSpotScaleOverride ?? 0.092)
+    : position.underlying === "XAUT"
+      ? adjustedXautContract && importedSpotScale !== null
+        ? importedSpotScale
+        : resolveXautXauMultiplier(formulas, settings.xautSpotScaleOverride ?? 1)
+      : importedSpotScale ?? override ?? calculate("spot_scale", {
+        underlyingPrice,
+        xauUsdPrice: args.xauSpot || underlyingPrice || 1,
+      }, formulas, automaticScale);
 
   const baseVariables = {
     entryPrice,

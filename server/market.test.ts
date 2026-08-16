@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { blackScholes } from "../shared/blackScholes";
-import { evaluateExpression, evaluateNamedFormula, validateFormula } from "../shared/formulaEngine";
+import {
+  evaluateExpression,
+  evaluateNamedFormula,
+  resolveGldContractMultiplier,
+  resolveGldXauMultiplier,
+  resolveXautContractMultiplier,
+  resolveXautXauMultiplier,
+  validateFormula,
+} from "../shared/formulaEngine";
 import { DEFAULT_FORMULAS } from "../shared/marketTypes";
 import { buildOccOptionSymbol } from "./marketData";
 
@@ -13,6 +21,31 @@ describe("formula engine", () => {
   it("rejects unknown variables and circular references", () => {
     expect(validateFormula("unknown + 1", DEFAULT_FORMULAS)).toMatchObject({ valid: false });
     expect(validateFormula("loop + 1", [...DEFAULT_FORMULAS, { name: "loop", expression: "loop + 1" }])).toMatchObject({ valid: false });
+  });
+
+  it("uses editable GLD/XAUT XAU and contract multipliers in all affected Greeks", () => {
+    const overrides: Record<string, string> = {
+      gld_xau_multiplier: "0.1",
+      xaut_xau_multiplier: "0.9",
+      gld_contract_multiplier: "200",
+      xaut_contract_multiplier: "2",
+    };
+    const custom = DEFAULT_FORMULAS.map(formula => overrides[formula.name]
+      ? { ...formula, expression: overrides[formula.name] }
+      : formula);
+    const spotScale = resolveGldXauMultiplier(custom);
+    const variables = {
+      delta: 0.5, gamma: 0.02, theta: -0.1, vega: 0.2,
+      quantity: 2, contractMultiplier: resolveGldContractMultiplier(custom), spotScale,
+    };
+    expect(spotScale).toBe(0.1);
+    expect(resolveXautXauMultiplier(custom)).toBe(0.9);
+    expect(resolveGldContractMultiplier(custom)).toBe(200);
+    expect(resolveXautContractMultiplier(custom)).toBe(2);
+    expect(evaluateNamedFormula("total_delta_xau", variables, custom)).toBe(20);
+    expect(evaluateNamedFormula("total_gamma_xau", variables, custom)).toBeCloseTo(0.08, 10);
+    expect(evaluateNamedFormula("total_theta", variables, custom)).toBe(-40);
+    expect(evaluateNamedFormula("total_vega", variables, custom)).toBe(80);
   });
 });
 

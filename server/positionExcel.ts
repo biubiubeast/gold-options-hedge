@@ -1,11 +1,22 @@
 import ExcelJS from "exceljs";
 import {
   POSITION_EXCEL_HEADERS,
+  POSITION_SOURCE_DEFAULTS,
   type ImportedPosition,
   type PositionExcelPreview,
   type PositionExcelTotal,
 } from "@shared/positionExcel";
 import type { PositionRecord } from "./db";
+import {
+  DEFAULT_GLD_CONTRACT_MULTIPLIER,
+  DEFAULT_XAUT_CONTRACT_MULTIPLIER,
+  evaluateNamedFormula,
+  resolveGldContractMultiplier,
+  resolveGldXauMultiplier,
+  resolveXautContractMultiplier,
+  resolveXautXauMultiplier,
+} from "@shared/formulaEngine";
+import { DEFAULT_FORMULAS, type FormulaLike } from "@shared/marketTypes";
 
 const ERROR_TOKENS = new Set(["#REF!", "#NAME?", "#N/A", "#VALUE!", "#DIV/0!", "#NUM!"]);
 const cleanText = (value: unknown): string => String(value ?? "").replace(/[\u3000\u00a0]/g, " ").trim();
@@ -80,6 +91,7 @@ function inferContractMultiplier(args: {
   const inferred = candidates[0];
   if (inferred && Math.abs(inferred - 100) < 0.5) return 100;
   if (inferred && Math.abs(inferred - 1) < 0.05) return 1;
+  if (inferred) return Number(inferred.toFixed(10));
   return args.underlying === "GLD" ? 100 : 1;
 }
 
@@ -170,6 +182,7 @@ export async function parsePositionWorkbook(buffer: Buffer, fileName: string): P
       const rowWarnings = [markPrice, entryPrice, multiplierXau, totalDelta, totalGamma, totalTheta, totalVega].filter(value => value === null).length;
       if (rowWarnings) warnings.push(`第 ${rowNumber} 行 ${instrument}：有 ${rowWarnings} 个行情/Greeks 字段缺失，将显示 WARN/MISSING`);
       const currencyText = cleanText(rawCellValue(row.getCell(column("Currency")))).toUpperCase();
+      const sourceDefaults = POSITION_SOURCE_DEFAULTS[underlying];
       positions.push({
         underlying,
         expiry,
@@ -179,8 +192,8 @@ export async function parsePositionWorkbook(buffer: Buffer, fileName: string): P
         quantity: numericString(netQty, 10)!,
         fee: numericString(fee, 10)!,
         entryDelta: numericString(unitDelta ?? 0, 10)!,
-        sourceAccount: cleanText(rawCellValue(row.getCell(column("Source Account")))) || null,
-        venue: cleanText(rawCellValue(row.getCell(column("Venue")))) || null,
+        sourceAccount: cleanText(rawCellValue(row.getCell(column("Source Account")))) || sourceDefaults.sourceAccount,
+        venue: cleanText(rawCellValue(row.getCell(column("Venue")))) || sourceDefaults.venue,
         instrument,
         product: cleanText(rawCellValue(row.getCell(column("Product")))) || null,
         currency: currencyText === "USDT" ? "USDT" : "USD",
@@ -257,7 +270,59 @@ export async function parsePositionWorkbook(buffer: Buffer, fileName: string): P
 const numberValue = (value: unknown): number | null => numberOrNull(value);
 const isoToDate = (value: string | null | undefined): Date | null => value ? new Date(`${value}T00:00:00Z`) : null;
 
-export async function createPositionWorkbook(positions: PositionRecord[]): Promise<Buffer> {
+function formulaValue(name: string, variables: Record<string, number>, formulas: readonly FormulaLike[], fallback: number) {
+  try {
+    const result = evaluateNamedFormula(name, variables, formulas, new Set());
+    return Number.isFinite(result) ? result : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function exportPositionValues(position: PositionRecord, formulas: readonly FormulaLike[]) {
+  const rawContractMultiplier = numberValue(position.contractMultiplier);
+  const nonStandardGld = position.underlying === "GLD" && rawContractMultiplier !== null
+    && Math.abs(rawContractMultiplier - DEFAULT_GLD_CONTRACT_MULTIPLIER) > 1e-9;
+  const nonStandardXaut = position.underlying === "XAUT" && rawContractMultiplier !== null
+    && Math.abs(rawContractMultiplier - DEFAULT_XAUT_CONTRACT_MULTIPLIER) > 1e-9;
+  const contractMultiplier = position.underlying === "GLD"
+    ? nonStandardGld ? rawContractMultiplier! : resolveGldContractMultiplier(formulas)
+    : position.underlying === "XAUT"
+      ? nonStandardXaut ? rawContractMultiplier! : resolveXautContractMultiplier(formulas)
+      : rawContractMultiplier ?? 1;
+  const rawMultiplierXau = numberValue(position.multiplierXau);
+  const multiplierXau = position.underlying === "GLD"
+    ? nonStandardGld && rawMultiplierXau !== null ? rawMultiplierXau : resolveGldXauMultiplier(formulas)
+    : position.underlying === "XAUT"
+      ? nonStandardXaut && rawMultiplierXau !== null ? rawMultiplierXau : resolveXautXauMultiplier(formulas)
+      : rawMultiplierXau;
+  const quantity = Number(position.quantity);
+  const entryPrice = Number(position.entryPrice);
+  const fee = Number(position.fee);
+  const markPrice = numberValue(position.importedMarkPrice);
+  const delta = numberValue(position.entryDelta);
+  const gamma = numberValue(position.unitGamma);
+  const theta = numberValue(position.unitTheta);
+  const vega = numberValue(position.unitVega);
+  const baseVariables = {
+    entryPrice, quantity, fee, markPrice: markPrice ?? 0, contractMultiplier,
+    delta: delta ?? 0, gamma: gamma ?? 0, theta: theta ?? 0, vega: vega ?? 0,
+    spotScale: multiplierXau ?? 0, underlyingPrice: 0, xauUsdPrice: 0,
+  };
+  const entryValue = entryPrice * quantity * contractMultiplier;
+  const entryCost = formulaValue("entry_cost", baseVariables, formulas, entryValue + fee);
+  const marketValue = markPrice === null ? null : formulaValue("current_value", baseVariables, formulas, markPrice * quantity * contractMultiplier);
+  const upl = marketValue === null ? null : formulaValue("pnl", { ...baseVariables, currentValue: marketValue, entryCost }, formulas, marketValue - entryCost);
+  const totalDelta = multiplierXau === null || delta === null ? null : formulaValue("total_delta_xau", baseVariables, formulas, delta * quantity * contractMultiplier * multiplierXau);
+  const totalGamma = multiplierXau === null || gamma === null ? null : formulaValue("total_gamma_xau", baseVariables, formulas, gamma * quantity * contractMultiplier * multiplierXau ** 2);
+  const totalTheta = theta === null ? null : formulaValue("total_theta", baseVariables, formulas, theta * quantity * contractMultiplier);
+  const totalVega = vega === null ? null : formulaValue("total_vega", baseVariables, formulas, vega * quantity * contractMultiplier);
+  const xauEq = multiplierXau === null ? null : quantity * contractMultiplier * multiplierXau;
+  return { contractMultiplier, multiplierXau, xauEq, entryValue, entryCost, marketValue, upl, totalDelta, totalGamma, totalTheta, totalVega };
+}
+
+export async function createPositionWorkbook(positions: PositionRecord[], customFormulas: readonly FormulaLike[] = DEFAULT_FORMULAS): Promise<Buffer> {
+  const formulas = customFormulas.length ? customFormulas : DEFAULT_FORMULAS;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Gold Options Hedge";
   workbook.created = new Date();
@@ -279,28 +344,22 @@ export async function createPositionWorkbook(positions: PositionRecord[]): Promi
     : (["XAUT", "GLD"] as const);
   const detailStart = 3 + totalUnderlyings.length;
   const value = (position: PositionRecord, key: keyof PositionRecord) => numberValue(position[key]);
+  const calculated = new Map(ordered.map(position => [position.id, exportPositionValues(position, formulas)]));
 
   for (let index = 0; index < ordered.length; index += 1) {
     const position = ordered[index];
     const rowNumber = detailStart + index;
     const netQty = Number(position.quantity);
-    const contractMultiplier = value(position, "contractMultiplier") ?? (position.underlying === "GLD" ? 100 : 1);
-    const multiplierXau = value(position, "multiplierXau") ?? (position.underlying === "XAUT" ? 1 : null);
+    const formulaValues = calculated.get(position.id)!;
+    const contractMultiplier = formulaValues.contractMultiplier;
+    const multiplierXau = formulaValues.multiplierXau;
     const markPrice = value(position, "importedMarkPrice");
     const entryPrice = Number(position.entryPrice);
     const fee = Number(position.fee);
-    const marketValue = markPrice === null ? null : markPrice * netQty * contractMultiplier;
-    const entryValue = entryPrice * netQty * contractMultiplier;
-    const entryCost = entryValue + fee;
-    const upl = marketValue === null ? null : marketValue - entryCost;
-    const xauEq = multiplierXau === null ? null : netQty * contractMultiplier * multiplierXau;
-    const totalDelta = value(position, "importedTotalDeltaXau") ?? (multiplierXau === null ? null : Number(position.entryDelta) * netQty * contractMultiplier * multiplierXau);
-    const totalGamma = value(position, "importedTotalGammaXau") ?? (multiplierXau === null || !position.unitGamma ? null : Number(position.unitGamma) * netQty * contractMultiplier * multiplierXau ** 2);
-    const totalTheta = value(position, "importedTotalThetaUsdDay") ?? (!position.unitTheta ? null : Number(position.unitTheta) * netQty * contractMultiplier);
-    const totalVega = value(position, "importedTotalVegaUsdVol") ?? (!position.unitVega ? null : Number(position.unitVega) * netQty * contractMultiplier);
+    const { marketValue, entryValue, entryCost, upl, xauEq, totalDelta, totalGamma, totalTheta, totalVega } = formulaValues;
     const raw = [
-      position.sourceAccount ?? "LOCAL-HEDGE",
-      position.venue ?? (position.underlying === "XAUT" ? "Bybit" : "KGI manual order"),
+      position.sourceAccount ?? POSITION_SOURCE_DEFAULTS[position.underlying].sourceAccount,
+      position.venue ?? POSITION_SOURCE_DEFAULTS[position.underlying].venue,
       position.instrument ?? `${position.underlying}-${position.expiry}-${position.strike}-${position.optionType === "call" ? "C" : "P"}`,
       position.underlying,
       position.product ?? `${position.underlying} Option`,
@@ -341,14 +400,15 @@ export async function createPositionWorkbook(positions: PositionRecord[]): Promi
     const rowNumber = 3 + offset;
     const detail = ordered.filter(position => position.underlying === underlying);
     const sum = (key: keyof PositionRecord) => detail.reduce((total, position) => total + (numberValue(position[key]) ?? 0), 0);
+    const calculatedSum = (key: keyof ReturnType<typeof exportPositionValues>) => detail.reduce((total, position) => total + (numberValue(calculated.get(position.id)?.[key]) ?? 0), 0);
     const netQty = detail.reduce((total, position) => total + Number(position.quantity), 0);
     const qtyLong = detail.reduce((total, position) => total + (numberValue(position.qtyLong) ?? Math.max(Number(position.quantity), 0)), 0);
     const qtyShort = detail.reduce((total, position) => total + (numberValue(position.qtyShort) ?? Math.max(-Number(position.quantity), 0)), 0);
-    const multiplierXau = detail.map(position => numberValue(position.multiplierXau)).find(item => item !== null) ?? (underlying === "XAUT" ? 1 : null);
+    const multiplierXau = detail.map(position => calculated.get(position.id)?.multiplierXau ?? null).find(item => item !== null) ?? null;
     const row = sheet.getRow(rowNumber);
     row.values = [
-      detail[0]?.sourceAccount ?? (underlying === "XAUT" ? "SPTT-Dino-Bybit1" : "KGI-Dinobot-GLD1"),
-      detail[0]?.venue ?? (underlying === "XAUT" ? "Bybit via SignalPlus Trading Terminal" : "KGI manual order"),
+      detail[0]?.sourceAccount ?? POSITION_SOURCE_DEFAULTS[underlying].sourceAccount,
+      detail[0]?.venue ?? POSITION_SOURCE_DEFAULTS[underlying].venue,
       "Total",
       underlying,
       `${underlying} Option`,
@@ -360,20 +420,20 @@ export async function createPositionWorkbook(positions: PositionRecord[]): Promi
       qtyShort,
       netQty,
       multiplierXau,
-      sum("xauEqNetQty"),
+      calculatedSum("xauEq"),
       isoToDate(latestDate),
       null,
       null,
-      sum("importedMarketValue"),
-      sum("entryValue"),
+      calculatedSum("marketValue"),
+      calculatedSum("entryValue"),
       sum("fee"),
-      sum("importedEntryCost") || detail.reduce((total, position) => total + Number(position.entryPrice) * Number(position.quantity) * (numberValue(position.contractMultiplier) ?? (underlying === "GLD" ? 100 : 1)) + Number(position.fee), 0),
-      sum("importedUnrealizedPnl"),
+      calculatedSum("entryCost"),
+      calculatedSum("upl"),
       null,
-      sum("importedTotalDeltaXau"),
-      sum("importedTotalGammaXau"),
-      sum("importedTotalThetaUsdDay"),
-      sum("importedTotalVegaUsdVol"),
+      calculatedSum("totalDelta"),
+      calculatedSum("totalGamma"),
+      calculatedSum("totalTheta"),
+      calculatedSum("totalVega"),
       detail[0]?.rawMarginMode ?? null,
       detail[0]?.rawMarginType ?? null,
     ];
@@ -420,17 +480,20 @@ export async function createPositionWorkbook(positions: PositionRecord[]): Promi
     ["Total Delta XAU", 17], ["Total Gamma XAU", 17], ["Theta USD/day", 16], ["Vega USD/vol", 16],
     ["Market Value", 15], ["UPL", 15], ["Source", 30], ["Quote As-of", 23], ["Refresh At", 23], ["Status", 11],
   ].map(([header, width]) => ({ header: String(header), key: String(header), width: Number(width) }));
-  for (const position of ordered) audit.addRow({
+  for (const position of ordered) {
+    const formulaValues = calculated.get(position.id)!;
+    audit.addRow({
     Instrument: position.instrument ?? `${position.underlying}-${position.expiry}-${position.strike}-${position.optionType}`,
     Underlying: position.underlying, Expiry: isoToDate(position.expiry), Strike: Number(position.strike), "Call/Put": position.optionType === "call" ? "Call" : "Put",
     "Mark Price": value(position, "importedMarkPrice"), "Mark IV": value(position, "markIv"), Bid1: value(position, "bid1Price"), Ask1: value(position, "ask1Price"),
     "Unit Delta": Number(position.entryDelta), "Unit Gamma": value(position, "unitGamma"), "Unit Theta": value(position, "unitTheta"), "Unit Vega": value(position, "unitVega"),
-    "Open Interest": value(position, "openInterest"), Volume: value(position, "optionVolume"), "Total Delta XAU": value(position, "importedTotalDeltaXau"),
-    "Total Gamma XAU": value(position, "importedTotalGammaXau"), "Theta USD/day": value(position, "importedTotalThetaUsdDay"), "Vega USD/vol": value(position, "importedTotalVegaUsdVol"),
-    "Market Value": value(position, "importedMarketValue"), UPL: value(position, "importedUnrealizedPnl"), Source: position.marketSource ?? position.importSource ?? "MISSING",
+    "Open Interest": value(position, "openInterest"), Volume: value(position, "optionVolume"), "Total Delta XAU": formulaValues.totalDelta,
+    "Total Gamma XAU": formulaValues.totalGamma, "Theta USD/day": formulaValues.totalTheta, "Vega USD/vol": formulaValues.totalVega,
+    "Market Value": formulaValues.marketValue, UPL: formulaValues.upl, Source: position.marketSource ?? position.importSource ?? "MISSING",
     "Quote As-of": position.marketQuoteTime ? new Date(position.marketQuoteTime) : null, "Refresh At": position.lastMarketRefreshAt ? new Date(position.lastMarketRefreshAt) : null,
     Status: position.dataStatus ?? "MISSING",
-  });
+    });
+  }
   audit.getRow(1).eachCell(cell => { cell.style = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F33" } }, font: { bold: true, color: { argb: "FFFFFFFF" } }, alignment: { vertical: "middle", wrapText: true } }; });
   audit.autoFilter = { from: "A1", to: `Y${Math.max(1, audit.rowCount)}` };
   for (const columnNumber of [6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18, 19, 20, 21]) audit.getColumn(columnNumber).numFmt = "#,##0.0000;[Red](#,##0.0000);-";

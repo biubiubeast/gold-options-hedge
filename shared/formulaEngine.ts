@@ -1,5 +1,10 @@
 import type { FormulaLike } from "./marketTypes";
 
+export const DEFAULT_GLD_XAU_MULTIPLIER = 0.092;
+export const DEFAULT_XAUT_XAU_MULTIPLIER = 1;
+export const DEFAULT_GLD_CONTRACT_MULTIPLIER = 100;
+export const DEFAULT_XAUT_CONTRACT_MULTIPLIER = 1;
+
 type Token =
   | { type: "number"; value: number }
   | { type: "identifier"; value: string }
@@ -202,6 +207,52 @@ export function evaluateNamedFormula(
   const stack = new Set(parentStack);
   stack.add(name);
   return evaluateExpression(formula.expression, variables, formulas, stack);
+}
+
+/**
+ * Returns the editable standard GLD share-to-XAU conversion ratio.
+ * The formula is deliberately evaluated without market variables so it remains
+ * a stable, auditable global conversion parameter rather than a moving spot ratio.
+ */
+function resolvePositiveConstantFormula(
+  name: string,
+  formulas: readonly FormulaLike[],
+  fallback: number,
+): number {
+  try {
+    const value = evaluateNamedFormula(name, {}, formulas, new Set());
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function resolveGldXauMultiplier(
+  formulas: readonly FormulaLike[],
+  fallback = DEFAULT_GLD_XAU_MULTIPLIER,
+): number {
+  return resolvePositiveConstantFormula("gld_xau_multiplier", formulas, fallback);
+}
+
+export function resolveXautXauMultiplier(
+  formulas: readonly FormulaLike[],
+  fallback = DEFAULT_XAUT_XAU_MULTIPLIER,
+): number {
+  return resolvePositiveConstantFormula("xaut_xau_multiplier", formulas, fallback);
+}
+
+export function resolveGldContractMultiplier(
+  formulas: readonly FormulaLike[],
+  fallback = DEFAULT_GLD_CONTRACT_MULTIPLIER,
+): number {
+  return resolvePositiveConstantFormula("gld_contract_multiplier", formulas, fallback);
+}
+
+export function resolveXautContractMultiplier(
+  formulas: readonly FormulaLike[],
+  fallback = DEFAULT_XAUT_CONTRACT_MULTIPLIER,
+): number {
+  return resolvePositiveConstantFormula("xaut_contract_multiplier", formulas, fallback);
 }
 
 export function validateFormula(

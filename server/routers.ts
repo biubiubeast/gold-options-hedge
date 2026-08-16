@@ -18,15 +18,22 @@ import {
   getBtcSpotPrice,
 } from "./marketData";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
-import { validateFormula } from "@shared/formulaEngine";
+import { evaluateNamedFormula, validateFormula } from "@shared/formulaEngine";
 import { createPositionWorkbook, parsePositionWorkbook } from "./positionExcel";
-import { refreshPositionMarketData } from "./positionMarketRefresh";
+import { recalculatePositionFormulaData, refreshPositionMarketData } from "./positionMarketRefresh";
 import { createAuthSession, revokeAuthToken } from "./auth";
 
 const numericString = z.string().trim().refine(value => {
   const parsed = Number(value);
   return Number.isFinite(parsed);
 }, "必须是有效数字");
+
+const positiveConstantFormulaNames = new Set([
+  "gld_xau_multiplier",
+  "xaut_xau_multiplier",
+  "gld_contract_multiplier",
+  "xaut_contract_multiplier",
+]);
 
 const positionFields = {
   underlying: z.enum(["XAUT", "GLD", "BTC"]),
@@ -200,11 +207,13 @@ export const appRouter = router({
       btcMultiplierXau: z.number().positive().nullable().optional(),
     }).optional()).mutation(async ({ ctx, input }) => {
       const positions = await db.getPositionsByUser(ctx.user.id);
-      return refreshPositionMarketData(ctx.user.id, positions, input);
+      const formulas = await db.getFormulasByUser(ctx.user.id);
+      return refreshPositionMarketData(ctx.user.id, positions, input, formulas);
     }),
     exportExcel: protectedProcedure.query(async ({ ctx }) => {
       const positions = await db.getPositionsByUser(ctx.user.id);
-      const workbook = await createPositionWorkbook(positions);
+      const formulas = await db.getFormulasByUser(ctx.user.id);
+      const workbook = await createPositionWorkbook(positions, formulas);
       return {
         fileName: `DinoSignal持仓_${new Date().toISOString().slice(0, 10).replaceAll("-", "")}.xlsx`,
         mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -282,8 +291,22 @@ export const appRouter = router({
       );
       const validation = validateFormula(input.expression, nextFormulas);
       if (!validation.valid) throw new Error(`公式无效：${validation.error}`);
+      if (positiveConstantFormulaNames.has(current.name)) {
+        let multiplier: number;
+        try {
+          multiplier = evaluateNamedFormula(current.name, {}, nextFormulas, new Set());
+        } catch {
+          throw new Error(`${current.name} 不能引用 S、现价等市场变量；请输入正数常量或仅引用其他常量公式`);
+        }
+        if (!Number.isFinite(multiplier) || multiplier <= 0) {
+          throw new Error(`${current.name} 必须是不依赖市场变量的正数`);
+        }
+      }
       await db.updateFormula(input.id, ctx.user.id, input);
-      return { success: true } as const;
+      const updatedFormulas = await db.getFormulasByUser(ctx.user.id);
+      const positions = await db.getPositionsByUser(ctx.user.id);
+      const recalculated = await recalculatePositionFormulaData(ctx.user.id, positions, updatedFormulas);
+      return { success: true, recalculated } as const;
     }),
     delete: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const formulas = await db.getFormulasByUser(ctx.user.id);
@@ -299,11 +322,17 @@ export const appRouter = router({
     }),
     reset: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       await db.resetFormula(input.id, ctx.user.id);
-      return { success: true } as const;
+      const formulas = await db.getFormulasByUser(ctx.user.id);
+      const positions = await db.getPositionsByUser(ctx.user.id);
+      const recalculated = await recalculatePositionFormulaData(ctx.user.id, positions, formulas);
+      return { success: true, recalculated } as const;
     }),
     resetAll: adminProcedure.mutation(async ({ ctx }) => {
       await db.resetAllFormulas(ctx.user.id);
-      return { success: true } as const;
+      const formulas = await db.getFormulasByUser(ctx.user.id);
+      const positions = await db.getPositionsByUser(ctx.user.id);
+      const recalculated = await recalculatePositionFormulaData(ctx.user.id, positions, formulas);
+      return { success: true, recalculated } as const;
     }),
   }),
 });

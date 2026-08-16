@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { POSITION_EXCEL_HEADERS } from "../shared/positionExcel";
 import { createPositionWorkbook, parsePositionWorkbook } from "./positionExcel";
 import type { PositionRecord } from "./db";
+import { DEFAULT_FORMULAS } from "../shared/marketTypes";
 
 async function fixtureWorkbook() {
   const workbook = new ExcelJS.Workbook();
@@ -31,6 +32,21 @@ describe("position Excel import/export", () => {
     expect(Number(gld.unitVega)).toBeCloseTo(0.4, 10);
   });
 
+  it("fills the required GLD/XAUT source-account and venue defaults when cells are blank", async () => {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await fixtureWorkbook() as any);
+    const sheet = workbook.getWorksheet("期权持仓_XAUT_GLD")!;
+    for (const rowNumber of [5, 6]) {
+      sheet.getCell(`A${rowNumber}`).value = null;
+      sheet.getCell(`B${rowNumber}`).value = null;
+    }
+    const preview = await parsePositionWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), "blank-source.xlsx");
+    const xaut = preview.positions.find(position => position.underlying === "XAUT")!;
+    const gld = preview.positions.find(position => position.underlying === "GLD")!;
+    expect(xaut).toMatchObject({ sourceAccount: "SPTT-Dino-Bybit1", venue: "Bybit via SignalPlus Trading Terminal" });
+    expect(gld).toMatchObject({ sourceAccount: "KGI-Dinobot-GLD1", venue: "KGI manual order" });
+  });
+
   it("exports a workbook that round-trips through the same template", async () => {
     const preview = await parsePositionWorkbook(await fixtureWorkbook(), "source.xlsx");
     const now = new Date("2026-08-11T00:00:00.000Z");
@@ -46,5 +62,28 @@ describe("position Excel import/export", () => {
     expect(roundTrip.summary.detailRows).toBe(2);
     expect(roundTrip.totals.find(total => total.underlying === "GLD")?.netQty).toBe(2);
     expect(roundTrip.positions.find(position => position.underlying === "XAUT")?.instrument).toBe("XAUT-20260828-3400-C");
+  });
+
+  it("exports current editable GLD/XAUT contract multipliers and recalculated Greeks", async () => {
+    const preview = await parsePositionWorkbook(await fixtureWorkbook(), "source.xlsx");
+    const now = new Date("2026-08-11T00:00:00.000Z");
+    const records: PositionRecord[] = preview.positions.map((position, index) => ({ ...position, id: index + 1, userId: 1, createdAt: now, updatedAt: now }));
+    const overrides: Record<string, string> = { gld_contract_multiplier: "200", xaut_contract_multiplier: "2" };
+    const formulas = DEFAULT_FORMULAS.map(formula => overrides[formula.name] ? { ...formula, expression: overrides[formula.name] } : formula);
+    const exported = await createPositionWorkbook(records, formulas);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(exported as any);
+    const sheet = workbook.getWorksheet("期权持仓_XAUT_GLD")!;
+    const result = (address: string) => {
+      const value = sheet.getCell(address).value as any;
+      return Number(value && typeof value === "object" && "result" in value ? value.result : value);
+    };
+    expect(result("R5")).toBe(1200);
+    expect(result("X5")).toBe(10);
+    expect(result("R6")).toBe(2800);
+    expect(result("X6")).toBeCloseTo(18.4, 10);
+    expect(result("Y6")).toBeCloseTo(0.16, 10);
+    expect(sheet.getCell("A5").value).toBe("ACC-X");
+    expect(sheet.getCell("B6").value).toBe("KGI");
   });
 });
