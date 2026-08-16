@@ -9,7 +9,7 @@ import { trpc } from "@/lib/trpc";
 import { DEFAULT_PORTFOLIO_SETTINGS, type PortfolioSettings } from "@/lib/portfolio";
 import { METRIC_LABELS, type HeatmapMetric } from "@shared/riskHeatmap";
 import { DEFAULT_VIEWER_PAGE_PERMISSIONS, type ViewerPage, type ViewerPagePermissions } from "@shared/access";
-import { CheckCircle2, Clock3, Database, Eye, Filter, LockKeyhole, MessageSquareText, RefreshCw, RotateCcw, Scale, ShieldAlert, SlidersHorizontal } from "lucide-react";
+import { CheckCircle2, Clock3, Database, Eye, Filter, LockKeyhole, MessageSquareText, MousePointerClick, RefreshCw, RotateCcw, Scale, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -44,6 +44,11 @@ const heldCellContentLabels: Array<[keyof PortfolioSettings["heatmapHeldCellCont
   ["underlying", "Underlying · X/G/B", "X=XAUT、G=GLD、B=BTC、M=同格包含多个标的"],
   ["callPut", "Option Type · C/P", "C=Call、P=Put、C/P=同格同时包含 Call 与 Put"],
   ["dataStatus", "Data Status · L/S/W/M/F", "L=LIVE、S=STALE、W=WARN、M=MISSING、F=FAIL"],
+];
+
+const heatmapClickActionLabels: Array<[keyof PortfolioSettings["heatmapClickActions"], string, string]> = [
+  ["cellDetail", "点击方格打开完整数据", "默认关闭；Hover 仍正常显示，开启后点击方格才打开完整合约详情"],
+  ["expiryDetail", "点击 Expiry 打开完整数据", "默认关闭；Expiry Hover 的 Metric 汇总仍正常显示，开启后点击到期日才打开全面数据"],
 ];
 
 const pageEntryLabels: Array<[keyof PortfolioSettings["visiblePages"], string, string]> = [
@@ -311,6 +316,19 @@ export default function Settings() {
             {heldCellContentLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-amber-300/20 bg-amber-300/[0.03] p-3">
               <div className="min-w-0"><Label htmlFor={`held-cell-content-${key}`} className="text-xs font-medium">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div>
               <Switch id={`held-cell-content-${key}`} checked={draft.heatmapHeldCellContent[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapHeldCellContent: { ...current.heatmapHeldCellContent, [key]: checked } }))} aria-label={`持仓方格显示 ${label}`} />
+            </div>)}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="glass-card">
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><MousePointerClick className="h-4 w-4 text-cyan-300" />热力图点击行为</CardTitle></CardHeader>
+        <CardContent>
+          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">两个完整数据弹窗默认关闭，避免交易员查看热力图时误触。关闭只影响点击动作，不影响方格 Hover、Expiry Hover 或热力颜色。</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {heatmapClickActionLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-cyan-300/20 bg-cyan-300/[0.03] p-3">
+              <div className="min-w-0"><Label htmlFor={`heatmap-click-${key}`} className="text-xs font-medium">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div>
+              <Switch id={`heatmap-click-${key}`} checked={draft.heatmapClickActions[key]} onCheckedChange={checked => setDraft(current => ({ ...current, heatmapClickActions: { ...current.heatmapClickActions, [key]: checked } }))} aria-label={label} />
             </div>)}
           </div>
         </CardContent>

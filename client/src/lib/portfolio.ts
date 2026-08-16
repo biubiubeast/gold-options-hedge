@@ -95,6 +95,10 @@ export type PortfolioSettings = {
     positions: boolean;
     matrix: boolean;
   };
+  heatmapClickActions: {
+    cellDetail: boolean;
+    expiryDetail: boolean;
+  };
   heatmapVisibleFilters: {
     dataset: boolean;
     underlying: boolean;
@@ -184,6 +188,10 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   pageMarketRefreshButtons: {
     positions: false,
     matrix: false,
+  },
+  heatmapClickActions: {
+    cellDetail: false,
+    expiryDetail: false,
   },
   heatmapVisibleFilters: {
     dataset: false,

@@ -20,6 +20,13 @@ describe("operator display defaults", () => {
     });
   });
 
+  it("keeps heatmap click-through detail dialogs disabled by default", () => {
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapClickActions).toEqual({
+      cellDetail: false,
+      expiryDetail: false,
+    });
+  });
+
   it("hides the heatmap chain and position-only hint rows by default", () => {
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.chainStatusBanner).toBe(false);
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.positionOnlyMetricBanner).toBe(false);

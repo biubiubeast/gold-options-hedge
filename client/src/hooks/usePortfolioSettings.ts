@@ -32,6 +32,10 @@ function loadSettings(): PortfolioSettings {
         ...DEFAULT_PORTFOLIO_SETTINGS.pageMarketRefreshButtons,
         ...saved.pageMarketRefreshButtons,
       },
+      heatmapClickActions: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.heatmapClickActions,
+        ...saved.heatmapClickActions,
+      },
       heatmapFilterOptions: {
         dataset: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.dataset, ...saved.heatmapFilterOptions?.dataset },
         underlying: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.underlying, ...saved.heatmapFilterOptions?.underlying, ...(!current ? { all: false } : {}) },

@@ -608,6 +608,8 @@ export default function Matrix() {
           sequentialMagnitude={sequentialMagnitude}
           heldCellContent={settings.heatmapHeldCellContent}
           hoverContent={settings.heatmapHoverContent}
+          cellDetailEnabled={settings.heatmapClickActions.cellDetail}
+          expiryDetailEnabled={settings.heatmapClickActions.expiryDetail}
           onSelectPosition={setSelectedPosition}
           onSelectExpiry={(expiry, expiryPositions) => setSelectedExpiry({ expiry, positions: expiryPositions })}
         />
