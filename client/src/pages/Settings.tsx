@@ -81,7 +81,7 @@ const heatmapSectionLabels: Array<[keyof PortfolioSettings["heatmapVisibleSectio
 
 const fixedOptionGroups = [
   ["dataset", "Data / 数据集", [["chain", "完整期权链"], ["live", "持仓行情"], ["mock100", "Mock 100"], ["mock200", "Mock 200"]]],
-  ["underlying", "Underlying", [["GLD", "GLD/USD - OPRA"], ["XAUT", "XAUT/USDT - Bybit"], ["BTC", "BTC/USDT - Bybit"], ["all", "ALL UNDERLYINGS"]]],
+  ["underlying", "Underlying", [["GLD", "GLD/USD - Cboe"], ["XAUT", "XAUT/USDT - Bybit"], ["BTC", "BTC/USDT - Bybit"], ["all", "ALL UNDERLYINGS"]]],
   ["callPut", "C/P", [["call", "CALL"], ["put", "PUT"], ["combined", "COMBINED"]]],
   ["expiryBucket", "DTE", [["all", "ALL"], ["expired", "EXPIRED"], ["0-2", "0–2"], ["3-7", "3–7"], ["8-30", "8–30"], ["31+", "31+"]]],
   ["status", "Data Status", [["all", "ALL"], ["LIVE", "LIVE"], ["STALE", "STALE"], ["WARN", "WARN"], ["MISSING", "MISSING"], ["FAIL", "FAIL"]]],
@@ -97,10 +97,10 @@ const hoverContentLabels: Array<[keyof PortfolioSettings["heatmapHoverContent"],
   ["unitGamma", "Unit Gamma", "默认隐藏"], ["totalGamma", "Total Gamma", "默认隐藏"],
   ["unitTheta", "Unit Theta", "默认隐藏"], ["totalTheta", "Total Theta", "默认隐藏"],
   ["unitVega", "Unit Vega", "默认隐藏"], ["totalVega", "Total Vega", "默认隐藏"],
-  ["dteRoll", "DTE / Roll", "到期天数和 Roll Priority"], ["qtyNotional", "Qty / Notional", "持仓数量和名义本金"],
+  ["dteRoll", "DTE / Roll", "到期天数和 Roll Priority"], ["qtyNotional", "Qty", "持仓数量"],
   ["markIv", "Mark / IV", "Mark 价格与 IV"], ["bidAsk", "Bid / Ask", "盘口价格"],
   ["bidAskIv", "Bid IV / Ask IV", "盘口隐含波动率"], ["ivSpread", "IV Spread", "Ask IV − Bid IV"],
-  ["sourceQuote", "Source / Quote As-of", "行情来源和时间"], ["openInterestVolume", "OI / Volume", "未平仓量与成交量"],
+  ["sourceQuote", "Source / Quote As-of", "行情来源和时间"],
   ["mvEntry", "MV / Entry", "市场价值与成本"], ["upl", "UPL", "未实现盈亏"],
 ];
 
@@ -275,7 +275,7 @@ export default function Settings() {
       <Card className="glass-card">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Filter className="h-4 w-4 text-primary" />热力图筛选器显示设置</CardTitle></CardHeader>
         <CardContent>
-          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">默认显示 Underlying、C/P、Metric、Label、Hover，以及色标上下限、Strike 排序、方格尺寸、Fit All、Fullscreen。隐藏业务筛选器后，该条件自动恢复为非限制状态；隐藏视图控制不会改变当前热力图计算。</p>
+          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">默认显示 Underlying、C/P、Metric、Label、Hover，以及色标上下限、方格尺寸、Fullscreen；Strike 排序与 Fit All 默认隐藏。隐藏业务筛选器后，该条件自动恢复为非限制状态；隐藏视图控制不会改变当前热力图计算。</p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {heatmapFilterLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3">
               <div className="min-w-0"><Label htmlFor={`heatmap-filter-${key}`} className="text-xs font-medium">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div>

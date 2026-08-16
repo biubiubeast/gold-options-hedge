@@ -5,6 +5,8 @@ import {
   buildHeatScale,
   calculateScenario,
   enrichRiskPositions,
+  expiryBucketMatchesDte,
+  expiryHeldMetricTotal,
   exerciseControl,
   finiteOrNull,
   formatSpotPrice,
@@ -169,6 +171,27 @@ describe("institutional risk heatmap acceptance", () => {
       missingCount: 1,
     });
     expect(distribution.average).toBeCloseTo(0.4);
+  });
+
+  it("shows active expiries by default and keeps expired contracts behind the explicit audit filter", () => {
+    expect(expiryBucketMatchesDte(-2, "all")).toBe(false);
+    expect(expiryBucketMatchesDte(-2, "expired")).toBe(true);
+    expect(expiryBucketMatchesDte(0, "all")).toBe(true);
+    expect(expiryBucketMatchesDte(2, "0-2")).toBe(true);
+    expect(expiryBucketMatchesDte(Number.NaN, "all")).toBe(false);
+  });
+
+  it("adds held-only totals to Expiry hover for additive position metrics", () => {
+    const source = enrichRiskPositions(generateMockPositions(3, 51, asOf), spots, asOf);
+    const positions = [
+      { ...source[0], positionKind: "held" as const, totalDeltaXAU: 12, notionalSizeUSD: 1000, netQty: 3 },
+      { ...source[1], positionKind: "held" as const, totalDeltaXAU: -2, notionalSizeUSD: -200, netQty: -1 },
+      { ...source[2], positionKind: "listed" as const, totalDeltaXAU: 999, notionalSizeUSD: 999_000, netQty: 999 },
+    ];
+    expect(expiryHeldMetricTotal(positions, "totalDelta")).toEqual({ label: "Total Delta", value: 10 });
+    expect(expiryHeldMetricTotal(positions, "notionalSize")).toEqual({ label: "Total Notional Size USD", value: 800 });
+    expect(expiryHeldMetricTotal(positions, "qty")).toEqual({ label: "Total Qty", value: 2 });
+    expect(expiryHeldMetricTotal(positions, "markIV")).toBeNull();
   });
 
   it("calculates editable top-of-book dollar notionals and preserves missing size", () => {

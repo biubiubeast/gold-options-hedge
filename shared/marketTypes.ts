@@ -163,7 +163,7 @@ export const DEFAULT_FORMULAS = [
     category: "valuation",
     expression: "bidDollarNotional + askDollarNotional",
     description: "Bid+Ask 一档美元名义深度 = Bid Dollar Notional + Ask Dollar Notional，用于比较合约盘口两侧总可见深度。",
-    usedIn: "市场热力图 Bid Ask Dollar Notional metric、方格 Hover 与完整详情；任一侧缺失时显示 MISSING 且不参与色标",
+    usedIn: "市场热力图 Bid+Ask Dollar Notional metric、方格 Hover 与完整详情；任一侧缺失时显示 MISSING 且不参与色标",
     defaultExpression: "bidDollarNotional + askDollarNotional",
   },
   {

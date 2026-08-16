@@ -4,13 +4,14 @@ import {
 } from "@/lib/portfolio";
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY = "gold-options-portfolio-settings-v7";
-const LEGACY_STORAGE_KEYS = ["gold-options-portfolio-settings-v6", "gold-options-portfolio-settings-v5", "gold-options-portfolio-settings-v4", "gold-options-portfolio-settings-v3", "gold-options-portfolio-settings-v2"];
+const STORAGE_KEY = "gold-options-portfolio-settings-v8";
+const LEGACY_STORAGE_KEYS = ["gold-options-portfolio-settings-v7", "gold-options-portfolio-settings-v6", "gold-options-portfolio-settings-v5", "gold-options-portfolio-settings-v4", "gold-options-portfolio-settings-v3", "gold-options-portfolio-settings-v2"];
 const SETTINGS_EVENT = "gold-options-portfolio-settings-change";
 
 function loadSettings(): PortfolioSettings {
   try {
     const current = localStorage.getItem(STORAGE_KEY);
+    const previousVersion = localStorage.getItem("gold-options-portfolio-settings-v7");
     const legacy = LEGACY_STORAGE_KEYS.map(key => localStorage.getItem(key)).find(Boolean);
     const saved = JSON.parse(current || legacy || "{}") as Partial<PortfolioSettings>;
     const migrated = {
@@ -22,7 +23,8 @@ function loadSettings(): PortfolioSettings {
       },
       heatmapVisibleFilters: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleFilters,
-        ...(current ? saved.heatmapVisibleFilters : {}),
+        ...(current || previousVersion ? saved.heatmapVisibleFilters : {}),
+        ...(!current && previousVersion ? { reverseStrikes: false, fitAll: false } : {}),
       },
       visiblePages: {
         ...DEFAULT_PORTFOLIO_SETTINGS.visiblePages,

@@ -9,6 +9,7 @@ import {
   formatStrikeDistanceFromSpot,
   heatColor,
   magnitudeHeatColor,
+  expiryHeldMetricTotal,
   metricDistribution,
   metricValue,
   nearestStrikeLevels,
@@ -80,7 +81,7 @@ function TooltipPosition({ position, metric, preset, content }: { position: Enri
     if (content.dteRoll) rows.push(["DTE / Roll", `${position.dte}d / ${position.rollPriority.total.toFixed(0)}`]);
   }
   if (preset === "market" || preset === "all") {
-    if (content.qtyNotional) rows.push(["Qty / Notional", `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`]);
+    if (content.qtyNotional) rows.push(["Qty", formatCompact(position.netQty)]);
     if (content.markIv) rows.push(["Mark / IV", `${formatPrice(position.markPrice)} / ${formatCompact(position.markIV, "markIV")}`]);
     if (content.bidAsk) {
       rows.push(["Bid / Ask", `${formatPrice(position.bid)} / ${formatPrice(position.ask)}`]);
@@ -90,10 +91,9 @@ function TooltipPosition({ position, metric, preset, content }: { position: Enri
     if (content.bidAskIv) rows.push(["Bid IV / Ask IV", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")}`]);
     if (content.ivSpread) rows.push(["IV spread", formatCompact(position.ivSpread, "ivSpread")]);
     if (content.sourceQuote) rows.push(["Source / Quote As-of", `${position.source ?? "MISSING"} / ${position.quoteTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`]);
-    if (content.openInterestVolume) rows.push(["OI / Volume", `${formatCompact(position.openInterest ?? null)} / ${formatCompact(position.volume ?? null)}`]);
   }
   if (preset === "pnl" || preset === "all") {
-    if (content.qtyNotional) rows.push(["Qty / Multiplier", `${formatCompact(position.netQty)} / ${formatCompact(position.contractMultiplier)}`]);
+    if (content.qtyNotional && preset === "pnl") rows.push(["Qty", formatCompact(position.netQty)]);
     if (content.mvEntry) rows.push(["MV / Entry", `$${formatCompact(position.MV)} / $${formatCompact(position.entryCost)}`]);
     if (content.upl) rows.push(["UPL", `$${formatCompact(position.UPL)}`]);
   }
@@ -106,17 +106,25 @@ function SpotPriceTooltip({ spot, children }: { spot: number; children: ReactEle
 
 function ExpiryTooltip({ expiry, positions, metric, detailEnabled, onSelectExpiry, children }: { expiry: string; positions: EnrichedRiskPosition[]; metric: HeatmapMetric; detailEnabled: boolean; onSelectExpiry: Props["onSelectExpiry"]; children: ReactElement<{ onClick?: MouseEventHandler }> }) {
   const distribution = metricDistribution(positions, metric);
+  const heldTotal = expiryHeldMetricTotal(positions, metric);
+  const heldTotalValue = heldTotal === null
+    ? null
+    : heldTotal.label === "Total Delta"
+      ? `${formatCompact(heldTotal.value, metric)} oz`
+      : heldTotal.label === "Total Notional Size USD"
+        ? `$${formatCompact(heldTotal.value, metric)}`
+        : formatCompact(heldTotal.value, metric);
   return <Tooltip delayDuration={100}><TooltipTrigger asChild>{cloneElement(children, { onClick: event => {
     children.props.onClick?.(event);
     if (detailEnabled) onSelectExpiry(expiry, positions);
-  } })}</TooltipTrigger><TooltipContent side="bottom" sideOffset={4} collisionPadding={10} className="z-[110] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">EXPIRY {expiry}</strong><span className="text-[9px] text-primary">{METRIC_LABELS[metric]}</span></div><div className="mt-2 grid grid-cols-4 gap-px bg-border/60 text-center"><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MIN</p><strong className="font-mono text-[11px]">{formatCompact(distribution.min, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MEDIAN</p><strong className="font-mono text-[11px]">{formatCompact(distribution.median, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">AVERAGE</p><strong className="font-mono text-[11px]">{formatCompact(distribution.average, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MAX</p><strong className="font-mono text-[11px]">{formatCompact(distribution.max, metric)}</strong></div></div><div className="mt-1 flex justify-between text-[9px] text-muted-foreground"><span>Valid {distribution.validCount} · Missing {distribution.missingCount}</span>{detailEnabled && <span>点击查看全面数据</span>}</div></TooltipContent></Tooltip>;
+  } })}</TooltipTrigger><TooltipContent side="bottom" sideOffset={4} collisionPadding={10} className="z-[110] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">EXPIRY {expiry}</strong><span className="text-[9px] text-primary">{METRIC_LABELS[metric]}</span></div><div className="mt-2 grid grid-cols-4 gap-px bg-border/60 text-center"><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MIN</p><strong className="font-mono text-[11px]">{formatCompact(distribution.min, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MEDIAN</p><strong className="font-mono text-[11px]">{formatCompact(distribution.median, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">AVERAGE</p><strong className="font-mono text-[11px]">{formatCompact(distribution.average, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MAX</p><strong className="font-mono text-[11px]">{formatCompact(distribution.max, metric)}</strong></div></div>{heldTotal && <div className="mt-1 flex items-center justify-between border border-primary/25 bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">{heldTotal.label}</span><strong className="font-mono text-primary">{heldTotalValue}</strong></div>}<div className="mt-1 flex justify-between text-[9px] text-muted-foreground"><span>Valid {distribution.validCount} · Missing {distribution.missingCount}</span>{detailEnabled && <span>点击查看全面数据</span>}</div></TooltipContent></Tooltip>;
 }
 
 function HeatmapScopeTooltip({ positions, metric, label }: { positions: EnrichedRiskPosition[]; metric: HeatmapMetric; label: string }) {
   const [open, setOpen] = useState(false);
   const distribution = useMemo(() => metricDistribution(positions, metric), [metric, positions]);
   const underlyings = useMemo(() => [...new Set(positions.map(position => position.underlying))], [positions]);
-  const underlyingLabels = { GLD: "GLD/USD - OPRA", XAUT: "XAUT/USDT - Bybit", BTC: "BTC/USDT - Bybit" } as const;
+  const underlyingLabels = { GLD: "GLD/USD - Cboe", XAUT: "XAUT/USDT - Bybit", BTC: "BTC/USDT - Bybit" } as const;
   const scopeLabel = underlyings.length === 1 ? underlyingLabels[underlyings[0]] : underlyings.length > 1 ? "ALL UNDERLYINGS" : "CURRENT UNDERLYING";
   const eligibilityLabel = HELD_ONLY_HEATMAP_METRICS.has(metric) ? "Held positions only" : "All filtered option contracts";
   return <Tooltip delayDuration={100} open={open} onOpenChange={setOpen}><TooltipTrigger asChild><button type="button" data-testid="heatmap-scope-summary-trigger" aria-label={`Current ${METRIC_LABELS[metric]} summary for all expiries and strikes`} className="sticky left-0 top-0 z-30 flex h-6 items-center border-b border-r border-border/60 bg-background px-1 text-[8px] text-muted-foreground hover:text-foreground focus-visible:ring-1 focus-visible:ring-primary" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onClick={() => setOpen(true)}>{label}</button></TooltipTrigger><TooltipContent data-testid="heatmap-scope-metric-summary" side="right" sideOffset={6} collisionPadding={10} className="z-[120] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{scopeLabel} · ALL EXPIRIES / STRIKES</strong><span className="text-[9px] text-primary">{METRIC_LABELS[metric]}</span></div><div className="mt-2 grid grid-cols-4 gap-px bg-border/60 text-center"><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MIN</p><strong className="font-mono text-[11px]">{formatCompact(distribution.min, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MEDIAN</p><strong className="font-mono text-[11px]">{formatCompact(distribution.median, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MAX</p><strong className="font-mono text-[11px]">{formatCompact(distribution.max, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">AVERAGE</p><strong className="font-mono text-[11px]">{formatCompact(distribution.average, metric)}</strong></div></div><div className="mt-1 flex items-center justify-between text-[9px] text-muted-foreground"><span>{eligibilityLabel}</span><span>Valid {distribution.validCount} · Missing {distribution.missingCount}</span></div></TooltipContent></Tooltip>;

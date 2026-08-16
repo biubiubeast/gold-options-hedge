@@ -20,7 +20,7 @@ export type HeatmapControlKey =
 export type HeatmapHoverField =
   | "selectedMetric" | "unitDelta" | "totalDelta" | "unitGamma" | "totalGamma" | "unitTheta" | "totalTheta"
   | "unitVega" | "totalVega" | "dteRoll" | "qtyNotional" | "markIv" | "bidAsk" | "bidAskIv"
-  | "ivSpread" | "sourceQuote" | "openInterestVolume" | "mvEntry" | "upl";
+  | "ivSpread" | "sourceQuote" | "mvEntry" | "upl";
 
 export type HeatmapDetailField =
   | "instrument" | "underlyingCallPut" | "expiryDte" | "strike" | "venueBrokerAccount" | "netQty"
@@ -223,9 +223,9 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     hover: true,
     range: true,
     transpose: false,
-    reverseStrikes: true,
+    reverseStrikes: false,
     cellSize: true,
-    fitAll: true,
+    fitAll: false,
     fullscreen: true,
   },
   heatmapFilterOptions: {
@@ -278,7 +278,6 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     bidAskIv: true,
     ivSpread: true,
     sourceQuote: true,
-    openInterestVolume: true,
     mvEntry: true,
     upl: true,
   },

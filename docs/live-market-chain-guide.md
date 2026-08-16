@@ -23,7 +23,7 @@
 - 黄色横线：Spot 最近的 Strike；页面打开后自动居中到 Spot，右侧 `CENTER SPOT` 可再次定位；
 - 鼠标悬停：按 HOVER 选择展示 Risk / Market / PnL / All；
 - 点击格子：完整行情、Greeks、Source、As-of、OI/Volume 和 Roll 解释；
-- Metric 可切换 Unit Delta、Total Delta、Mark IV、Bid IV、Ask IV、Ask−Bid IV Spread 等；IV 与 Delta 默认都使用低值蓝、高值红的 99 分位裁剪色标；上市未持仓合约的 Total 指标显示 MISSING，不伪造为 0。
+- Metric 可切换 Unit Delta、Total Delta、Mark IV、Bid IV、Ask IV、Bid Ask IV Spread 等；IV 与 Delta 默认都使用低值蓝、高值红的 99 分位裁剪色标；上市未持仓合约的 Total 指标显示 MISSING，不伪造为 0。
 - Cboe 本身不直接返回 Bid IV / Ask IV，系统分别用 Bid/Ask 价格、GLD Spot、Strike、DTE 和 4.5% 默认无风险利率反解 Black-Scholes IV；无法满足无套利边界的报价显示 MISSING。
 - `− / +` 调整单格高度；`Fit All` 根据当前窗口和行列数压缩矩阵，目标是在无需上下滚动时查看全部 Strike/Expiry。极端多列时轴标签会简化，但 Hover/点击仍保留完整数据。
 - `Transpose` 只交换轴；`Strike ↑/↓` 独立控制行权价从低到高或从高到低，不会改变风险数据。

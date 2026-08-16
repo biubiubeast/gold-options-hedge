@@ -18,6 +18,7 @@ import {
   aggregateHeatmapCellMetric,
   buildHeatScale,
   enrichRiskPositions,
+  expiryBucketMatchesDte,
   formatCompact,
   formatPrice,
   formatSpotPrice,
@@ -31,6 +32,7 @@ import {
   type ColorScaleMode,
   type DataStatus,
   type EnrichedRiskPosition,
+  type ExpiryBucket,
   type HeatmapMetric,
   type RiskUnderlying,
 } from "@shared/riskHeatmap";
@@ -38,7 +40,6 @@ import { ArrowLeftRight, ArrowUpDown, Eye, EyeOff, Info, Loader2, LocateFixed, M
 import { useEffect, useMemo, useState } from "react";
 
 type DatasetMode = "chain" | "live" | "mock100" | "mock200";
-type ExpiryBucket = "all" | "expired" | "0-2" | "3-7" | "8-30" | "31+";
 type SelectOption = { value: string; label: string };
 type MetricRange = { min: number; max: number };
 type ExpirySelection = { expiry: string; positions: EnrichedRiskPosition[] };
@@ -131,15 +132,6 @@ function buildDecisionCards(positions: EnrichedRiskPosition[]): DecisionCardMode
     card("roll", "Highest Roll Priority", roll, roll ? `${roll.rollPriority.total.toFixed(0)} / 100` : "MISSING", roll ? positionLabel(roll) : undefined),
     card("data", "Largest Data Error", dataError, dataError ? `${dataError.dataStatus}${dataError.quoteAgeSeconds !== null ? ` ${Math.round(dataError.quoteAgeSeconds / 60)}m` : ""}` : "MISSING", dataError ? `${positionLabel(dataError)} · ${dataError.source ?? "NO SOURCE"}` : undefined),
   ];
-}
-
-function expiryBucketMatches(position: EnrichedRiskPosition, bucket: ExpiryBucket) {
-  if (bucket === "all") return true;
-  if (bucket === "expired") return position.dte < 0;
-  if (bucket === "0-2") return position.dte >= 0 && position.dte <= 2;
-  if (bucket === "3-7") return position.dte >= 3 && position.dte <= 7;
-  if (bucket === "8-30") return position.dte >= 8 && position.dte <= 30;
-  return position.dte >= 31;
 }
 
 function PositionDetailDialog({ position, content, onClose }: { position: EnrichedRiskPosition | null; content: PortfolioSettings["heatmapDetailContent"]; onClose: () => void }) {
@@ -404,7 +396,7 @@ export default function Matrix() {
       if (document.fullscreenElement) await document.exitFullscreen();
       return;
     }
-    setFitAll(true);
+    setFitAll(false);
     setPseudoFullscreen(true);
     try {
       await document.documentElement.requestFullscreen();
@@ -419,7 +411,7 @@ export default function Matrix() {
     && (broker === "all" || position.broker === broker)
     && (account === "all" || position.account === account)
     && (callPut === "combined" || position.callPut === callPut)
-    && expiryBucketMatches(position, expiryBucket)
+    && expiryBucketMatchesDte(position.dte, expiryBucket)
     && (status === "all" || position.dataStatus === status),
   ), [account, broker, callPut, enriched, expiryBucket, status, underlying, venue]);
 
@@ -551,7 +543,7 @@ export default function Matrix() {
           { value: "mock100", label: "MOCK 100" },
           { value: "mock200", label: "MOCK 200" },
         ].filter(option => enabledOptions.dataset[option.value as DatasetMode])} />}
-        {visibleFilters.underlying && <NativeSelect className="w-[180px] flex-none" label="UNDERLYING" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD/USD - OPRA" }, { value: "XAUT", label: "XAUT/USDT - Bybit" }, { value: "BTC", label: "BTC/USDT - Bybit" }, { value: "all", label: "ALL UNDERLYINGS" }].filter(option => enabledOptions.underlying[option.value as keyof typeof enabledOptions.underlying])} />}
+        {visibleFilters.underlying && <NativeSelect className="w-[180px] flex-none" label="UNDERLYING" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD/USD - Cboe" }, { value: "XAUT", label: "XAUT/USDT - Bybit" }, { value: "BTC", label: "BTC/USDT - Bybit" }, { value: "all", label: "ALL UNDERLYINGS" }].filter(option => enabledOptions.underlying[option.value as keyof typeof enabledOptions.underlying])} />}
         {visibleFilters.venue && <NativeSelect className="min-w-[100px] flex-1" label="VENUE" value={venue} onChange={setVenue} options={[{ value: "all", label: "ALL" }, ...filterOptions.venue.map(value => ({ value, label: value }))]} />}
         {visibleFilters.broker && <NativeSelect className="min-w-[100px] flex-1" label="BROKER" value={broker} onChange={setBroker} options={[{ value: "all", label: "ALL" }, ...filterOptions.broker.map(value => ({ value, label: value }))]} />}
         {visibleFilters.account && <NativeSelect className="min-w-[110px] flex-1" label="ACCOUNT" value={account} onChange={setAccount} options={[{ value: "all", label: "ALL" }, ...filterOptions.account.map(value => ({ value, label: value }))]} />}

@@ -27,6 +27,7 @@ export type HeatmapMetric =
   | "distanceToStrike"
   | "rollPriority";
 export type ColorScaleMode = "quantile" | "log" | "symmetric";
+export type ExpiryBucket = "all" | "expired" | "0-2" | "3-7" | "8-30" | "31+";
 
 export interface RiskPosition {
   id: string;
@@ -194,12 +195,12 @@ export const METRIC_LABELS: Record<HeatmapMetric, string> = {
   markIV: "Mark IV",
   bidIV: "Bid IV",
   askIV: "Ask IV",
-  ivSpread: "Ask−Bid IV Spread",
+  ivSpread: "Bid Ask IV Spread",
   qty: "Qty / Position Size",
   notionalSize: "Notional Size USD",
   bidDollarNotional: "Bid Dollar Notional",
   askDollarNotional: "Ask Dollar Notional",
-  bidAskDollarNotional: "Bid Ask Dollar Notional",
+  bidAskDollarNotional: "Bid+Ask Dollar Notional",
   MV: "Market Value",
   UPL: "UPL",
   DTE: "DTE",
@@ -246,6 +247,17 @@ export function daysToExpiry(expiry: string, asOf: Date = new Date()): number {
   const expiryDay = Date.UTC(year, month - 1, day);
   const asOfDay = Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate());
   return Math.round((expiryDay - asOfDay) / DAY_MS);
+}
+
+/** Default ALL is the active market surface; expired contracts require an explicit audit filter. */
+export function expiryBucketMatchesDte(dte: number, bucket: ExpiryBucket): boolean {
+  if (!Number.isFinite(dte)) return false;
+  if (bucket === "all") return dte >= 0;
+  if (bucket === "expired") return dte < 0;
+  if (bucket === "0-2") return dte >= 0 && dte <= 2;
+  if (bucket === "3-7") return dte >= 3 && dte <= 7;
+  if (bucket === "8-30") return dte >= 8 && dte <= 30;
+  return dte >= 31;
 }
 
 export function positionLabel(position: Pick<RiskPosition, "underlying" | "expiry" | "strike" | "callPut">): string {
@@ -317,6 +329,31 @@ export function metricDistribution(positions: EnrichedRiskPosition[], metric: He
     validCount: values.length,
     missingCount: eligible.length - values.length,
   };
+}
+
+export type ExpiryHeldMetricTotal = {
+  label: "Total Delta" | "Total Notional Size USD" | "Total Qty";
+  value: number | null;
+};
+
+/** Additional Expiry summary shown only for additive position metrics. */
+export function expiryHeldMetricTotal(
+  positions: EnrichedRiskPosition[],
+  metric: HeatmapMetric,
+): ExpiryHeldMetricTotal | null {
+  const label = metric === "totalDelta"
+    ? "Total Delta"
+    : metric === "notionalSize"
+      ? "Total Notional Size USD"
+      : metric === "qty"
+        ? "Total Qty"
+        : null;
+  if (label === null) return null;
+  const held = positions.filter(position => position.positionKind !== "listed");
+  if (held.length === 0) return { label, value: null };
+  const values = held.map(position => metricValue(position, metric));
+  if (values.some(value => value === null || !Number.isFinite(value))) return { label, value: null };
+  return { label, value: (values as number[]).reduce((total, value) => total + value, 0) };
 }
 
 export function quoteAgeSeconds(position: RiskPosition, asOf: Date = new Date()): number | null {

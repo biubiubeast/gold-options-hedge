@@ -620,7 +620,7 @@ def build_manual() -> Document:
             ["Total Delta", "Unit Delta × Qty × 合约乘数 × 黄金换算", "有值的合约", "真实仓位的黄金方向风险集中在哪里"],
             ["Mark IV", "Mark Price 对应的隐含波动率", "有有效 IV 的合约", "波动率曲面哪里贵/便宜或异常"],
             ["Bid IV / Ask IV", "买一/卖一对应的隐含波动率", "有有效 IV 的合约", "两侧报价隐波与可成交区间"],
-            ["Ask-Bid IV Spread", "Ask IV − Bid IV", "有双边 IV 的合约", "哪一段波动率流动性最差"],
+            ["Bid Ask IV Spread", "Ask IV − Bid IV", "有双边 IV 的合约", "哪一段波动率流动性最差"],
         ],
         [1450, 3300, 1500, 3110],
     )
