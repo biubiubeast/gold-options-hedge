@@ -32,6 +32,10 @@ function loadSettings(): PortfolioSettings {
         ...DEFAULT_PORTFOLIO_SETTINGS.pageMarketRefreshButtons,
         ...saved.pageMarketRefreshButtons,
       },
+      positionsVisibleSections: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.positionsVisibleSections,
+        ...saved.positionsVisibleSections,
+      },
       heatmapClickActions: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapClickActions,
         ...saved.heatmapClickActions,

@@ -25,7 +25,7 @@ export function MarketRefreshButton({ compact = false }: { compact?: boolean }) 
       className="gap-1.5 whitespace-nowrap border-primary/40 text-primary"
       onClick={() => refresh.mutate({ gldMultiplierXau: settings.gldSpotScaleOverride, xautMultiplierXau: settings.xautSpotScaleOverride, btcMultiplierXau: settings.btcSpotScaleOverride })}
       disabled={refresh.isPending}
-      title="联网刷新每条持仓的 Mark、IV、Bid/Ask、Unit/Total Greeks、MV 与 UPL，并持久化到下次 Excel 导出"
+      title="联网刷新每条持仓的 Mark、IV、Bid/Ask、Unit/Total Greeks、MV 与 UPL，写入当前服务器仓位记录并用于随后导出的 Excel"
       data-testid="refresh-market-data"
     >
       <RefreshCw className={`h-3.5 w-3.5 ${refresh.isPending ? "animate-spin" : ""}`} />

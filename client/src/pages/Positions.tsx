@@ -334,7 +334,7 @@ export default function Positions() {
               )) : <TableRow><TableCell colSpan={24} className="py-12 text-center text-muted-foreground"><FileSpreadsheet className="mx-auto mb-2 h-8 w-8 opacity-50" />上传持仓 Excel，或添加第一条仓位</TableCell></TableRow>}</TableBody>
             </Table>
           </div>
-          <div className="flex items-center gap-2 border-t border-border/50 px-3 py-2 text-[11px] text-muted-foreground"><Info className="h-3.5 w-3.5" />Notional USD = signed Net Qty × actual contract multiplier × current underlying spot；它是标的名义金额，不是期权 MV。“更新市场数据”会持久化 Mark、IV、Bid/Ask、Greeks、MV、UPL、Source 与 As-of。</div>
+          {settings.positionsVisibleSections.marketPersistenceHint && <div className="flex items-center gap-2 border-t border-border/50 px-3 py-2 text-[11px] text-muted-foreground"><Info className="h-3.5 w-3.5 shrink-0" /><span>Notional USD = signed Net Qty × actual contract multiplier × current underlying spot；它是标的名义金额，不是期权 MV。“更新市场数据”会把 Mark、IV、Bid/Ask、Greeks、MV、UPL、Source 与 As-of 写入当前服务器的仓位记录，并用于页面和随后导出的 Excel；Render 免费实例重新部署或重建后可能恢复到部署时数据。</span></div>}
         </CardContent>
       </Card>
     </div>

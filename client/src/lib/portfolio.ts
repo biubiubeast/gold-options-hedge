@@ -95,6 +95,9 @@ export type PortfolioSettings = {
     positions: boolean;
     matrix: boolean;
   };
+  positionsVisibleSections: {
+    marketPersistenceHint: boolean;
+  };
   heatmapClickActions: {
     cellDetail: boolean;
     expiryDetail: boolean;
@@ -189,6 +192,9 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     positions: false,
     matrix: false,
   },
+  positionsVisibleSections: {
+    marketPersistenceHint: false,
+  },
   heatmapClickActions: {
     cellDetail: false,
     expiryDetail: false,
@@ -244,7 +250,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     scale: { quantile: true, log: true, symmetric: true },
     spot: { GLD: true, XAUT: true, BTC: true, XAU: true },
     label: { none: true, held: true, top: false, bottom: false, all: true },
-    hover: { risk: true, market: true, pnl: true, all: true },
+    hover: { risk: true, market: true, pnl: false, all: true },
   },
   heatmapHiddenDynamicOptions: { venue: [], broker: [], account: [] },
   heatmapHoverContent: {

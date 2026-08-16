@@ -212,7 +212,7 @@ export default function Settings() {
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><RefreshCw className="h-4 w-4 text-primary" />市场数据自动更新</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between gap-4 rounded-md border border-border/60 p-3">
-              <div><p className="text-sm font-medium">网页打开时自动更新持仓行情</p><p className="mt-1 text-xs text-muted-foreground">更新 Mark、IV、Bid/Ask、Greeks、MV、UPL、Source 与 As-of，并进入 Excel 导出。</p></div>
+              <div><p className="text-sm font-medium">网页打开时自动更新持仓行情</p><p className="mt-1 text-xs text-muted-foreground">更新 Mark、IV、Bid/Ask、Greeks、MV、UPL、Source 与 As-of，写入当前服务器仓位记录并用于随后导出的 Excel。</p></div>
               <Switch checked={draft.marketAutoRefreshEnabled} onCheckedChange={checked => setDraft(current => ({ ...current, marketAutoRefreshEnabled: checked }))} aria-label="自动更新市场数据" />
             </div>
             <div>
@@ -227,6 +227,10 @@ export default function Settings() {
                 <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor="matrix-refresh-button" className="text-xs">风险热力图</Label><p className="mt-1 text-[10px] text-muted-foreground">默认隐藏页面内部按钮</p></div><Switch id="matrix-refresh-button" checked={draft.pageMarketRefreshButtons.matrix} onCheckedChange={checked => setDraft(current => ({ ...current, pageMarketRefreshButtons: { ...current.pageMarketRefreshButtons, matrix: checked } }))} aria-label="风险热力图显示更新市场数据按钮" /></div>
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">全站最顶部的“更新市场数据”按钮始终保留显示，不受这里控制。</p>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3">
+              <div><Label htmlFor="positions-market-persistence-hint" className="text-xs">仓位管理底部市场数据说明</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">默认隐藏；开启后解释 Notional、行情字段写入范围、Excel 导出及 Render 免费实例的数据限制。</p></div>
+              <Switch id="positions-market-persistence-hint" checked={draft.positionsVisibleSections.marketPersistenceHint} onCheckedChange={checked => setDraft(current => ({ ...current, positionsVisibleSections: { ...current.positionsVisibleSections, marketPersistenceHint: checked } }))} aria-label="仓位管理显示底部市场数据说明" />
             </div>
             <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 rounded-md bg-secondary/25 p-3 text-xs">
               <Clock3 className="row-span-2 h-4 w-4 text-muted-foreground" />

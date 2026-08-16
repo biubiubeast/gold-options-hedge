@@ -20,6 +20,11 @@ describe("operator display defaults", () => {
     });
   });
 
+  it("hides the positions persistence hint and PNL hover preset by default", () => {
+    expect(DEFAULT_PORTFOLIO_SETTINGS.positionsVisibleSections.marketPersistenceHint).toBe(false);
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.hover.pnl).toBe(false);
+  });
+
   it("keeps heatmap click-through detail dialogs disabled by default", () => {
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapClickActions).toEqual({
       cellDetail: false,
