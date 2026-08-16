@@ -4,8 +4,10 @@ services:
     environment:
       PORT: 3000
       DATA_FILE: /app/data/portfolio.json
-      APP_USERNAME: ${APP_USERNAME:-admin}
+      APP_USERNAME: ${APP_USERNAME:-xauadmin}
       APP_PASSWORD: ${APP_PASSWORD:?请先在 .env 设置 APP_PASSWORD}
+      VIEWER_USERNAME: ${VIEWER_USERNAME:-xauwhales}
+      VIEWER_PASSWORD: ${VIEWER_PASSWORD:?请先在 .env 设置 VIEWER_PASSWORD}
       MARKETDATA_TOKEN: ${MARKETDATA_TOKEN:-}
       TRADIER_API_TOKEN: ${TRADIER_API_TOKEN:-}
     volumes:

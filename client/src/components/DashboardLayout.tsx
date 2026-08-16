@@ -13,7 +13,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, PanelLeft, Grid3X3, ListPlus, Calculator, Database, Settings, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { LayoutDashboard, PanelLeft, Grid3X3, ListPlus, Calculator, Database, Settings, ZoomIn, ZoomOut, RotateCcw, LogOut } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -22,6 +22,7 @@ import { LiveSpotBar } from "./LiveSpotBar";
 import { MarketRefreshButton } from "./MarketRefreshButton";
 import { AutoMarketRefresh } from "./AutoMarketRefresh";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import { trpc } from "@/lib/trpc";
 
 const menuItems = [
   { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -86,13 +87,20 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const [location, setLocation] = useLocation();
+  const { user, logout } = useAuth();
   const { settings } = usePortfolioSettings();
+  const viewerPages = trpc.access.viewerPages.useQuery(undefined, {
+    enabled: user?.role !== "admin",
+    staleTime: 5_000,
+  });
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeMenuItem = menuItems.find(item => item.path === location);
-  const visibleMenuItems = menuItems.filter(item => settings.visiblePages[item.key]);
+  const visibleMenuItems = menuItems.filter(item => user?.role === "admin"
+    ? settings.visiblePages[item.key]
+    : item.key !== "settings" && Boolean(viewerPages.data?.[item.key]));
   const isMobile = useIsMobile();
   const [pageZoom, setPageZoom] = useState(() => {
     const saved = Number(localStorage.getItem(PAGE_ZOOM_KEY));
@@ -210,8 +218,7 @@ function DashboardLayoutContent({
 
           <SidebarFooter className="p-3">
             <div className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2 group-data-[collapsible=icon]:hidden">
-              <p className="text-xs font-medium text-foreground">本地单用户模式</p>
-              <p className="text-[11px] text-muted-foreground mt-1">数据保存在本机，可导出备份</p>
+              <div className="flex items-center justify-between gap-2"><div className="min-w-0"><p className="truncate text-xs font-medium text-foreground">{user?.name}</p><p className="mt-1 text-[11px] text-muted-foreground">{user?.role === "admin" ? "管理员" : "受限用户"} · 刷新后需重新登录</p></div><Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" title="退出登录" aria-label="退出登录" onClick={() => void logout()}><LogOut className="h-4 w-4" /></Button></div>
             </div>
           </SidebarFooter>
         </Sidebar>

@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PORTFOLIO_SETTINGS } from "../client/src/lib/portfolio";
+import { DEFAULT_VIEWER_PAGE_PERMISSIONS } from "../shared/access";
 
 describe("operator display defaults", () => {
-  it("requires admin access everywhere except the risk heatmap by default", () => {
-    expect(DEFAULT_PORTFOLIO_SETTINGS.adminPasswordPages.matrix).toBe(false);
-    expect(Object.entries(DEFAULT_PORTFOLIO_SETTINGS.adminPasswordPages)
-      .filter(([page]) => page !== "matrix")
-      .every(([, enabled]) => enabled)).toBe(true);
+  it("limits xauwhales to positions and the risk heatmap by default", () => {
+    expect(DEFAULT_VIEWER_PAGE_PERMISSIONS).toEqual({
+      dashboard: false,
+      positions: true,
+      matrix: true,
+      formulas: false,
+      dataSources: false,
+    });
   });
 
   it("keeps only the global market refresh button visible by default", () => {

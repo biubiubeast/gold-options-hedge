@@ -43,13 +43,13 @@ pnpm install
 pnpm dev
 ```
 
-浏览器打开终端显示的地址，通常是 `http://localhost:3000`。首次启动会自动创建 `data/portfolio.json`，无需数据库迁移或登录。
+浏览器打开终端显示的地址，通常是 `http://localhost:3000`。首次启动会自动创建 `data/portfolio.json`，无需数据库迁移；登录凭据来自 `.env`。
 
 生产模式：
 
 ```bash
 cp .env.example .env
-# 用文本编辑器打开 .env，并设置 APP_PASSWORD
+# 用文本编辑器打开 .env，并设置 APP_PASSWORD 与 VIEWER_PASSWORD
 pnpm build
 pnpm start
 ```
@@ -60,11 +60,11 @@ pnpm start
 
 ```bash
 cp .env.example .env
-# 用文本编辑器打开 .env，并先修改 APP_PASSWORD
+# 用文本编辑器打开 .env，并先设置两个账户的密码
 docker compose up -d --build
 ```
 
-打开 `http://localhost:3000`，使用 `.env` 里的 `APP_USERNAME` / `APP_PASSWORD` 登录。`./data` 被挂载为持久化目录，升级容器不会清空仓位。生产启动故意要求设置密码，避免误把无登录保护的持仓页面暴露到公网。
+打开 `http://localhost:3000`，管理员使用 `APP_USERNAME` / `APP_PASSWORD`，受限用户使用 `VIEWER_USERNAME` / `VIEWER_PASSWORD`。登录令牌只保存在当前页面内存中，因此每次刷新都要重新登录。`./data` 被挂载为持久化目录，升级容器不会清空仓位和受限用户页面权限。
 
 停止网站：
 
@@ -80,7 +80,7 @@ docker compose down
 
 ```bash
 cp .env.example .env
-# 修改 .env 中的 APP_PASSWORD 后再执行
+# 设置 .env 中的 APP_PASSWORD 与 VIEWER_PASSWORD 后再执行
 docker compose -f docker-compose.public.yml up -d --build
 docker compose -f docker-compose.public.yml logs cloudflared
 ```
@@ -101,7 +101,7 @@ docker compose -f docker-compose.public.yml down
 
 1. 把代码放到你自己的 GitHub 私有仓库；确认 `.env` 和 `data/portfolio.json` 没有被提交。
 2. 在 Render 选择 **New → Blueprint**，连接仓库并确认识别到 `render.yaml`。
-3. 部署时填写 `APP_PASSWORD`；`APP_USERNAME` 已设为 `xauwhale`。服务创建后可在 **Environment** 中添加 `MARKETDATA_TOKEN`，以启用 GLD 低延迟现价和 OPRA 实时期权 Greeks；`TRADIER_API_TOKEN` 是兼容备用源。
+3. 部署时填写私密环境变量 `APP_PASSWORD` 与 `VIEWER_PASSWORD`；公开用户名由 `render.yaml` 设置为 `xauadmin` 与 `xauwhales`。服务创建后可在 **Environment** 中添加 `MARKETDATA_TOKEN`，以启用 GLD 低延迟现价和 OPRA 实时期权 Greeks；`TRADIER_API_TOKEN` 是兼容备用源。
 
 市场数据一键刷新、GLD 完整链热力图、Largest Data Error 与双表 Excel 导出的详细教程见 [docs/live-market-chain-guide.md](docs/live-market-chain-guide.md)。
 4. 部署完成后使用 Render 分配的 `https://...onrender.com` 地址访问，也可绑定自己的域名。
@@ -111,9 +111,10 @@ docker compose -f docker-compose.public.yml down
 
 ### 安全边界
 
-- 当前密码保护使用 HTTPS 上的 HTTP Basic Auth，适合个人/小范围使用；公网必须使用 HTTPS，不要通过普通 HTTP 发送密码。
+- 当前使用应用内双账户 Bearer 会话；令牌不写入 localStorage/sessionStorage，硬刷新后必须重新登录。公网必须使用 HTTPS，不要通过普通 HTTP 发送密码。
+- `xauadmin` 是管理员；`xauwhales` 的页面权限由管理员设置并保存到服务端数据文件，默认只开放仓位管理和风险热力图。
 - `/healthz` 只返回服务存活状态，不暴露仓位；其余页面和 API 都需要登录。
-- 更高安全级别可在 Cloudflare Tunnel 前再加 Cloudflare Access（邮箱一次性验证码、Google/Microsoft 登录等），或升级为应用内账户、会话和多因素认证。
+- 更高安全级别可在 Cloudflare Tunnel 前再加 Cloudflare Access（邮箱一次性验证码、Google/Microsoft 登录等），或升级为数据库用户、短期刷新令牌和多因素认证。
 - 不要公开 `.env`、Tradier token、仓位备份或 `data` 文件夹。
 
 ## 矩阵与缩放使用教程

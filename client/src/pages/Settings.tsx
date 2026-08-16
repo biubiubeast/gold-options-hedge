@@ -6,8 +6,9 @@ import { Switch } from "@/components/ui/switch";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import { MARKET_REFRESH_EVENT, readLastMarketRefreshAt } from "@/lib/marketRefreshStatus";
 import { trpc } from "@/lib/trpc";
-import { DEFAULT_PORTFOLIO_SETTINGS, type AdminPasswordPage, type PortfolioSettings } from "@/lib/portfolio";
+import { DEFAULT_PORTFOLIO_SETTINGS, type PortfolioSettings } from "@/lib/portfolio";
 import { METRIC_LABELS, type HeatmapMetric } from "@shared/riskHeatmap";
+import { DEFAULT_VIEWER_PAGE_PERMISSIONS, type ViewerPage, type ViewerPagePermissions } from "@shared/access";
 import { CheckCircle2, Clock3, Database, Eye, Filter, LockKeyhole, MessageSquareText, RefreshCw, RotateCcw, Scale, ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -47,22 +48,19 @@ const heldCellContentLabels: Array<[keyof PortfolioSettings["heatmapHeldCellCont
 
 const pageEntryLabels: Array<[keyof PortfolioSettings["visiblePages"], string, string]> = [
   ["dashboard", "Dashboard", "总持仓汇总与风险数据"],
-  ["positions", "仓位管理", "默认显示；管理员门禁单独设置"],
-  ["matrix", "风险热力图", "默认显示；默认免管理员密码"],
+  ["positions", "仓位管理", "xauadmin 导航默认显示"],
+  ["matrix", "风险热力图", "xauadmin 导航默认显示"],
   ["formulas", "公式管理", "公式说明、编辑与恢复"],
   ["dataSources", "数据来源", "行情 API 与延迟说明"],
-  ["settings", "设置", "本页入口；页面本身受管理员门禁保护"],
+  ["settings", "设置", "仅 xauadmin 可访问"],
 ];
 
-const adminPasswordPageLabels: Array<[AdminPasswordPage, string, string]> = [
-  ["dashboard", "Dashboard", "默认需要密码"],
-  ["positions", "仓位管理", "默认需要密码"],
-  ["matrix", "风险热力图", "默认不需要密码，可在此开启"],
-  ["formulas", "公式管理", "默认需要密码"],
-  ["dataSources", "数据来源", "默认需要密码"],
-  ["settings", "设置", "默认需要密码"],
-  ["optionDetail", "期权完整详情页", "默认需要密码"],
-  ["notFound", "未知 / 404 页面", "默认需要密码"],
+const viewerPageLabels: Array<[ViewerPage, string, string]> = [
+  ["dashboard", "Dashboard", "总持仓汇总与风险数据"],
+  ["positions", "仓位管理", "默认允许 xauwhales 使用"],
+  ["matrix", "风险热力图", "默认允许 xauwhales 使用"],
+  ["formulas", "公式管理", "默认不允许；公式编辑仍仅管理员可操作"],
+  ["dataSources", "数据来源", "默认不允许"],
 ];
 
 const heatmapSectionLabels: Array<[keyof PortfolioSettings["heatmapVisibleSections"], string, string]> = [
@@ -129,8 +127,18 @@ const detailContentLabels: Array<[keyof PortfolioSettings["heatmapDetailContent"
 export default function Settings() {
   const { settings, setSettings, resetSettings } = usePortfolioSettings();
   const [draft, setDraft] = useState<PortfolioSettings>(settings);
+  const [viewerPages, setViewerPages] = useState<ViewerPagePermissions>(DEFAULT_VIEWER_PAGE_PERMISSIONS);
   const [lastRefreshAt, setLastRefreshAt] = useState(readLastMarketRefreshAt);
   const { data: positions } = trpc.positions.list.useQuery();
+  const viewerPagesQuery = trpc.access.viewerPages.useQuery();
+  const accessUtils = trpc.useUtils();
+  const updateViewerPages = trpc.access.updateViewerPages.useMutation({
+    onSuccess: async value => {
+      setViewerPages(value);
+      await accessUtils.access.viewerPages.invalidate();
+      toast.success("xauwhales 页面权限已保存");
+    },
+  });
   const dynamicFilterOptions = {
     venue: [...new Set(["Bybit", "Cboe / OPRA", "OPRA", ...(positions ?? []).map(position => position.venue).filter((value): value is string => Boolean(value))])].sort(),
     broker: [...new Set(["MARKET CHAIN", "SignalPlus", "Manual fallback", ...(positions ?? []).map(position => position.venue || (position.underlying === "XAUT" ? "SignalPlus" : "Manual fallback"))])].sort(),
@@ -138,6 +146,9 @@ export default function Settings() {
   };
 
   useEffect(() => setDraft(settings), [settings]);
+  useEffect(() => {
+    if (viewerPagesQuery.data) setViewerPages(viewerPagesQuery.data);
+  }, [viewerPagesQuery.data]);
   useEffect(() => {
     const sync = () => setLastRefreshAt(readLastMarketRefreshAt());
     window.addEventListener("storage", sync);
@@ -183,11 +194,11 @@ export default function Settings() {
       </div>
 
       <Card className="glass-card">
-        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-4 w-4 text-primary" />管理员门禁与页面入口</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-4 w-4 text-primary" />用户权限与页面入口</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <div><p className="mb-2 flex items-center gap-2 text-xs font-semibold"><LockKeyhole className="h-3.5 w-3.5" />各页面管理员密码</p><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{adminPasswordPageLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-amber-300/25 bg-amber-300/[0.03] p-3"><div><Label htmlFor={`admin-password-page-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div><Switch id={`admin-password-page-${key}`} checked={draft.adminPasswordPages[key]} onCheckedChange={checked => setDraft(current => ({ ...current, adminPasswordPages: { ...current.adminPasswordPages, [key]: checked } }))} aria-label={`${label}开启管理员密码`} /></div>)}</div><p className="mt-2 text-[11px] text-muted-foreground">默认只有风险热力图免管理员密码；其他页面每次打开或刷新都需要输入 8888。这里的门禁不替代网站 Basic Auth 登录。</p></div>
+          <div><div className="mb-2 flex items-center justify-between gap-3"><div><p className="flex items-center gap-2 text-xs font-semibold"><LockKeyhole className="h-3.5 w-3.5" />xauwhales 可访问页面</p><p className="mt-1 text-[10px] text-muted-foreground">服务端统一保存，对其他浏览器和设备生效；设置页面始终只允许 xauadmin。</p></div><Button size="sm" className="gap-2" disabled={viewerPagesQuery.isLoading || updateViewerPages.isPending} onClick={() => updateViewerPages.mutate(viewerPages)}><CheckCircle2 className="h-3.5 w-3.5" />{updateViewerPages.isPending ? "保存中…" : "保存用户权限"}</Button></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{viewerPageLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-amber-300/25 bg-amber-300/[0.03] p-3"><div><Label htmlFor={`viewer-page-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div><Switch id={`viewer-page-${key}`} checked={viewerPages[key]} onCheckedChange={checked => setViewerPages(current => ({ ...current, [key]: checked }))} aria-label={`xauwhales 显示 ${label}`} /></div>)}</div>{updateViewerPages.isError && <p role="alert" className="mt-2 text-xs text-red-300">{updateViewerPages.error.message}</p>}</div>
           <div><p className="mb-2 flex items-center gap-2 text-xs font-semibold"><Eye className="h-3.5 w-3.5" />左侧导航入口显示</p><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{pageEntryLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`page-entry-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] text-muted-foreground">{description}</p></div><Switch id={`page-entry-${key}`} checked={draft.visiblePages[key]} onCheckedChange={checked => setDraft(current => ({ ...current, visiblePages: { ...current.visiblePages, [key]: checked } }))} aria-label={`显示 ${label} 页面入口`} /></div>)}</div></div>
-          <p className="text-[11px] text-muted-foreground">隐藏入口不会删除页面或数据；已知网址仍可访问，并继续遵守管理员门禁。默认只显示风险热力图、仓位管理和设置。</p>
+          <p className="text-[11px] text-muted-foreground">上方第一组控制 xauwhales 的真实访问权限；第二组只控制 xauadmin 自己浏览器的导航入口。隐藏管理员入口不会删除页面或数据。</p>
         </CardContent>
       </Card>
 

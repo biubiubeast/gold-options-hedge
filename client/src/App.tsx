@@ -16,6 +16,9 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import { AdminPageGate } from "./components/AdminPageGate";
+import { AuthProvider } from "./contexts/AuthContext";
+import { useAuth } from "./_core/hooks/useAuth";
+import Login from "./pages/Login";
 
 const ProtectedDashboard = () => <AdminPageGate page="dashboard"><Dashboard /></AdminPageGate>;
 const ProtectedPositions = () => <AdminPageGate page="positions"><Positions /></AdminPageGate>;
@@ -45,13 +48,20 @@ function Router() {
   );
 }
 
+function AuthenticatedApp() {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? <Router /> : <Login />;
+}
+
 function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
-          <Toaster />
-          <Router />
+          <AuthProvider>
+            <Toaster />
+            <AuthenticatedApp />
+          </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

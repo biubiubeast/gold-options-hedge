@@ -1,43 +1,36 @@
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
-import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import type { AdminPasswordPage } from "@/lib/portfolio";
-import { LockKeyhole, ShieldCheck } from "lucide-react";
-import { FormEvent, useState } from "react";
+import type { ViewerPagePermissions } from "@shared/access";
+import { LockKeyhole, ShieldAlert } from "lucide-react";
+import { useLocation } from "wouter";
 
+function viewerCanAccess(page: AdminPasswordPage, permissions: ViewerPagePermissions) {
+  if (page === "notFound") return true;
+  if (page === "optionDetail") return permissions.positions || permissions.matrix;
+  if (page === "settings") return false;
+  return permissions[page];
+}
 export function AdminPageGate({ page, children }: { page: AdminPasswordPage; children: React.ReactNode }) {
-  const { settings } = usePortfolioSettings();
-  const [password, setPassword] = useState("");
-  const [unlocked, setUnlocked] = useState(false);
-  const verify = trpc.adminAccess.verify.useMutation({
-    onSuccess: () => {
-      setPassword("");
-      setUnlocked(true);
-    },
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const permissions = trpc.access.viewerPages.useQuery(undefined, {
+    enabled: user?.role !== "admin",
+    staleTime: 5_000,
   });
 
-  if (!settings.adminPasswordPages[page] || unlocked) return <>{children}</>;
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    verify.mutate({ password });
-  };
+  if (user?.role === "admin") return <>{children}</>;
+  if (permissions.isLoading) return <div className="flex min-h-[55vh] items-center justify-center text-sm text-muted-foreground">正在核对页面权限…</div>;
+  if (permissions.data && viewerCanAccess(page, permissions.data)) return <>{children}</>;
 
   return <div className="mx-auto flex min-h-[65vh] max-w-md items-center justify-center">
-    <Card className="glass-card w-full border-amber-300/25">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2"><LockKeyhole className="h-5 w-5 text-amber-300" />管理员页面</CardTitle>
-      </CardHeader>
+    <Card className="glass-card w-full border-red-300/25">
+      <CardHeader><CardTitle className="flex items-center gap-2"><ShieldAlert className="h-5 w-5 text-red-300" />页面权限受限</CardTitle></CardHeader>
       <CardContent>
-        <p className="mb-5 text-sm text-muted-foreground">此页面已在设置中启用管理员门禁。每次打开或刷新都要重新输入密码；离开页面后本次解锁失效。</p>
-        <form className="space-y-4" onSubmit={submit}>
-          <div><Label htmlFor="admin-page-password">管理员密码</Label><Input id="admin-page-password" className="mt-1" type="password" autoFocus autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} aria-invalid={verify.isError} /></div>
-          {verify.isError && <p role="alert" className="text-sm text-red-300">{verify.error.message}</p>}
-          <Button type="submit" className="w-full gap-2" disabled={!password || verify.isPending}><ShieldCheck className="h-4 w-4" />{verify.isPending ? "验证中…" : "验证并打开"}</Button>
-        </form>
+        <p className="mb-5 text-sm leading-relaxed text-muted-foreground">当前登录用户无权打开此页面。设置页面仅允许 xauadmin；其他页面由 xauadmin 在设置中为 xauwhales 开启或关闭。</p>
+        <div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => setLocation("/positions")}><LockKeyhole className="mr-2 h-4 w-4" />仓位管理</Button><Button onClick={() => setLocation("/matrix")}>风险热力图</Button></div>
       </CardContent>
     </Card>
   </div>;

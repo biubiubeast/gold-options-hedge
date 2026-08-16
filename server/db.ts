@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
 import type { ImportedPosition, ImportMode } from "@shared/positionExcel";
+import { DEFAULT_VIEWER_PAGE_PERMISSIONS, type ViewerPagePermissions } from "@shared/access";
 
 export type LocalUser = {
   id: number;
@@ -107,6 +108,7 @@ type Store = {
   nextFormulaId: number;
   positions: StoredPosition[];
   formulas: StoredFormula[];
+  viewerPagePermissions?: ViewerPagePermissions;
 };
 
 const LOCAL_USER_ID = 1;
@@ -122,6 +124,7 @@ const emptyStore = (): Store => ({
   nextFormulaId: 1,
   positions: [],
   formulas: [],
+  viewerPagePermissions: { ...DEFAULT_VIEWER_PAGE_PERMISSIONS },
 });
 
 async function loadStore(): Promise<Store> {
@@ -220,14 +223,21 @@ async function ensureDefaultFormulas(store: Store, userId: number): Promise<bool
 
 export const localUser: LocalUser = {
   id: LOCAL_USER_ID,
-  openId: "local-user",
-  name: "本地投资组合",
+  openId: "xauadmin",
+  name: "xauadmin",
   email: null,
   loginMethod: "local",
   role: "admin",
   createdAt: new Date(0),
   updatedAt: new Date(),
   lastSignedIn: new Date(),
+};
+
+export const viewerUser: LocalUser = {
+  ...localUser,
+  openId: "xauwhales",
+  name: "xauwhales",
+  role: "user",
 };
 
 // Kept for compatibility with the old Manus helper modules. The application no
@@ -240,6 +250,23 @@ export async function upsertUser(_user?: unknown): Promise<void> {}
 
 export async function getUserByOpenId(_openId?: string) {
   return localUser;
+}
+
+export async function getViewerPagePermissions(): Promise<ViewerPagePermissions> {
+  const store = await loadStore();
+  return {
+    ...DEFAULT_VIEWER_PAGE_PERMISSIONS,
+    ...store.viewerPagePermissions,
+  };
+}
+
+export async function updateViewerPagePermissions(permissions: ViewerPagePermissions) {
+  return serialize(async () => {
+    const store = await loadStore();
+    store.viewerPagePermissions = { ...permissions };
+    await saveStore(store);
+    return store.viewerPagePermissions;
+  });
 }
 
 export async function getPositionsByUser(userId: number) {

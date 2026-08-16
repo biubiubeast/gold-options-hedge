@@ -1,5 +1,6 @@
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { adminProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import {
   getGldOptionQuotes,
@@ -20,9 +21,7 @@ import { DEFAULT_FORMULAS } from "@shared/marketTypes";
 import { validateFormula } from "@shared/formulaEngine";
 import { createPositionWorkbook, parsePositionWorkbook } from "./positionExcel";
 import { refreshPositionMarketData } from "./positionMarketRefresh";
-import { timingSafeEqual } from "node:crypto";
-
-const adminPagePassword = () => process.env.ADMIN_PAGE_PASSWORD ?? "8888";
+import { createAuthSession, revokeAuthToken } from "./auth";
 
 const numericString = z.string().trim().refine(value => {
   const parsed = Number(value);
@@ -122,19 +121,36 @@ const formulaInput = z.object({
   usedIn: z.string().trim().max(500).optional(),
 });
 
+const viewerPagePermissionsInput = z.object({
+  dashboard: z.boolean(),
+  positions: z.boolean(),
+  matrix: z.boolean(),
+  formulas: z.boolean(),
+  dataSources: z.boolean(),
+});
+
 export const appRouter = router({
-  adminAccess: router({
-    verify: publicProcedure.input(z.object({ password: z.string().min(1).max(64) })).mutation(({ input }) => {
-      const expected = Buffer.from(adminPagePassword());
-      const supplied = Buffer.from(input.password);
-      const valid = expected.length === supplied.length && timingSafeEqual(expected, supplied);
-      if (!valid) throw new Error("管理员密码错误");
+  auth: router({
+    login: publicProcedure.input(z.object({
+      username: z.string().trim().min(1).max(64),
+      password: z.string().min(1).max(128),
+    })).mutation(({ input }) => {
+      const session = createAuthSession(input.username, input.password);
+      if (!session) throw new TRPCError({ code: "UNAUTHORIZED", message: "用户名或密码错误" });
+      return session;
+    }),
+    me: publicProcedure.query(({ ctx }) => ctx.user),
+    logout: publicProcedure.mutation(({ ctx }) => {
+      revokeAuthToken(ctx.authToken);
       return { success: true } as const;
     }),
   }),
-  auth: router({
-    me: publicProcedure.query(({ ctx }) => ctx.user),
-    logout: publicProcedure.mutation(() => ({ success: true } as const)),
+
+  access: router({
+    viewerPages: protectedProcedure.query(() => db.getViewerPagePermissions()),
+    updateViewerPages: adminProcedure.input(viewerPagePermissionsInput).mutation(({ input }) =>
+      db.updateViewerPagePermissions(input),
+    ),
   }),
 
   positions: router({
@@ -198,15 +214,15 @@ export const appRouter = router({
   }),
 
   market: router({
-    xautTickers: publicProcedure.query(getXautOptionTickers),
-    xautInstruments: publicProcedure.query(getXautOptionInstruments),
-    xautSpot: publicProcedure.query(getXautSpotPrice),
-    btcTickers: publicProcedure.query(getBtcOptionTickers),
-    btcInstruments: publicProcedure.query(getBtcOptionInstruments),
-    btcSpot: publicProcedure.query(getBtcSpotPrice),
-    gldPrice: publicProcedure.query(getGldPrice),
-    goldPrice: publicProcedure.query(getGoldPrice),
-    gldOptionQuotes: publicProcedure
+    xautTickers: protectedProcedure.query(getXautOptionTickers),
+    xautInstruments: protectedProcedure.query(getXautOptionInstruments),
+    xautSpot: protectedProcedure.query(getXautSpotPrice),
+    btcTickers: protectedProcedure.query(getBtcOptionTickers),
+    btcInstruments: protectedProcedure.query(getBtcOptionInstruments),
+    btcSpot: protectedProcedure.query(getBtcSpotPrice),
+    gldPrice: protectedProcedure.query(getGldPrice),
+    goldPrice: protectedProcedure.query(getGoldPrice),
+    gldOptionQuotes: protectedProcedure
       .input(z.object({
         expiries: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(24),
         contracts: z.array(z.object({
@@ -219,16 +235,16 @@ export const appRouter = router({
     gldOptionChain: protectedProcedure.query(getGldOptionChain),
     xautOptionChain: protectedProcedure.query(getXautOptionChain),
     btcOptionChain: protectedProcedure.query(getBtcOptionChain),
-    spotPrices: publicProcedure.query(async () => {
+    spotPrices: protectedProcedure.query(async () => {
       const [xaut, gld, gold, btc] = await Promise.all([getXautSpotPrice(), getGldPrice(), getGoldPrice(), getBtcSpotPrice()]);
       return { xaut, gld, gold, btc };
     }),
-    sources: publicProcedure.query(getMarketSources),
+    sources: protectedProcedure.query(getMarketSources),
   }),
 
   formulas: router({
     list: protectedProcedure.query(({ ctx }) => db.getFormulasByUser(ctx.user.id)),
-    create: protectedProcedure.input(formulaInput).mutation(async ({ ctx, input }) => {
+    create: adminProcedure.input(formulaInput).mutation(async ({ ctx, input }) => {
       if (DEFAULT_FORMULAS.some(formula => formula.name === input.name)) {
         throw new Error("该名称属于内置公式，请直接编辑内置公式");
       }
@@ -251,7 +267,7 @@ export const appRouter = router({
       });
       return { id };
     }),
-    update: protectedProcedure.input(z.object({
+    update: adminProcedure.input(z.object({
       id: z.number().int().positive(),
       expression: z.string().trim().min(1).max(1000),
       description: z.string().trim().max(500).optional(),
@@ -269,7 +285,7 @@ export const appRouter = router({
       await db.updateFormula(input.id, ctx.user.id, input);
       return { success: true } as const;
     }),
-    delete: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    delete: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const formulas = await db.getFormulasByUser(ctx.user.id);
       const remaining = formulas.filter(formula => formula.id !== input.id);
       for (const formula of remaining) {
@@ -281,11 +297,11 @@ export const appRouter = router({
       await db.deleteFormula(input.id, ctx.user.id);
       return { success: true } as const;
     }),
-    reset: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    reset: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       await db.resetFormula(input.id, ctx.user.id);
       return { success: true } as const;
     }),
-    resetAll: protectedProcedure.mutation(async ({ ctx }) => {
+    resetAll: adminProcedure.mutation(async ({ ctx }) => {
       await db.resetAllFormulas(ctx.user.id);
       return { success: true } as const;
     }),

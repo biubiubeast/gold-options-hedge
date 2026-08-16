@@ -13,7 +13,7 @@ export default function Home() {
   // handler: onClick={() => startLogin()} (imported from "@/const"). Never call
   // startLogin() during render (no href={startLogin()}) — it mints a one-time
   // nonce cookie and must run only at the moment of navigation.
-  let { user, loading, error, isAuthenticated, logout } = useAuth();
+  let { user, loading, isAuthenticated, logout } = useAuth();
 
   // If theme is switchable in App.tsx, we can implement theme toggling like this:
   // const { theme, toggleTheme } = useTheme();
