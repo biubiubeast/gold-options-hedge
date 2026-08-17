@@ -22,7 +22,7 @@ export default function Login() {
     try {
       const user = await login(username, password);
       setPassword("");
-      if (user.role !== "admin" && location !== "/matrix" && location !== "/positions") {
+      if (location === "/" || (user.role !== "admin" && location !== "/matrix" && location !== "/positions")) {
         setLocation("/matrix");
       }
     } catch (cause) {
@@ -50,4 +50,3 @@ export default function Login() {
     </Card>
   </main>;
 }
-

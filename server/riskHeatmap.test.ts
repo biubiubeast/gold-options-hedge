@@ -102,6 +102,15 @@ describe("institutional risk heatmap acceptance", () => {
     expect(classifyOptionMoneyness(405, 401, "put", 400)).toBe("ITM");
   });
 
+  it("combines Call and Put OTM contracts without overlapping strikes", () => {
+    const strikes = [90, 95, 100, 105, 110];
+    const callOtm = strikes.filter(strike => classifyOptionMoneyness(strike, 100, "call", 100) === "OTM");
+    const putOtm = strikes.filter(strike => classifyOptionMoneyness(strike, 100, "put", 100) === "OTM");
+    expect(callOtm).toEqual([105, 110]);
+    expect(putOtm).toEqual([90, 95]);
+    expect(callOtm.filter(strike => putOtm.includes(strike))).toEqual([]);
+  });
+
   it("formats every heatmap spot value with exactly two decimals", () => {
     expect(formatSpotPrice(401)).toBe("401.00");
     expect(formatSpotPrice(4366.6)).toBe("4,366.60");
@@ -178,6 +187,12 @@ describe("institutional risk heatmap acceptance", () => {
     expect(aggregateHeatmapCellMetric([valid, missing], "unitDelta")).toBeNull();
     expect(aggregateHeatmapCellMetric([valid, invalid], "unitDelta")).toBeNull();
     expect(aggregateHeatmapCellMetric([valid], "unitDelta")).toBe(0.42);
+  });
+
+  it("leaves a zero Unit Delta cell visible but ungraded", () => {
+    const source = enrichRiskPositions(generateMockPositions(1, 53, asOf), spots, asOf)[0];
+    expect(aggregateHeatmapCellMetric([{ ...source, unitDelta: 0 }], "unitDelta")).toBeNull();
+    expect(metricValue({ ...source, unitDelta: 0 }, "unitDelta")).toBe(0);
   });
 
   it("reports Expiry metric quartiles and summary statistics without converting missing values to zero", () => {

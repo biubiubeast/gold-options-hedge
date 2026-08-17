@@ -316,6 +316,9 @@ export function aggregateHeatmapCellMetric(positions: EnrichedRiskPosition[], me
     const value = metricValue(position, metric);
     return value === null || !Number.isFinite(value);
   })) return null;
+  // Zero Unit Delta can be a vendor placeholder and is not useful for relative
+  // risk colouring. Keep the listed contract visible, but leave it ungraded.
+  if (metric === "unitDelta" && eligible.some(position => metricValue(position, metric) === 0)) return null;
   return aggregateMetric(eligible, metric);
 }
 

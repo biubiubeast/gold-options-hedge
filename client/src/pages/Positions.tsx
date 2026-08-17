@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Info, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { POSITION_SOURCE_DEFAULTS, type PositionExcelPreview } from "@shared/positionExcel";
+import { formatReferenceSnapshotTime, POSITION_SOURCE_DEFAULTS, type PositionExcelPreview } from "@shared/positionExcel";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { calculatePosition, getPositionMarketData, type PortfolioPosition } from "@/lib/portfolio";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
@@ -129,6 +129,11 @@ export default function Positions() {
   const summary = useMemo(() => {
     const all = positions ?? [];
     const forUnderlying = (value: "XAUT" | "GLD" | "BTC") => all.filter(position => position.underlying === value);
+    const latestReference = [...all]
+      .filter(position => position.referenceDate)
+      .sort((left, right) => left.referenceDate!.localeCompare(right.referenceDate!)
+        || new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())
+      .at(-1);
     return {
       count: all.length,
       xaut: forUnderlying("XAUT").length,
@@ -137,7 +142,7 @@ export default function Positions() {
       xautQty: forUnderlying("XAUT").reduce((sum, position) => sum + Number(position.quantity), 0),
       gldQty: forUnderlying("GLD").reduce((sum, position) => sum + Number(position.quantity), 0),
       btcQty: forUnderlying("BTC").reduce((sum, position) => sum + Number(position.quantity), 0),
-      referenceDate: all.map(position => position.referenceDate).filter(Boolean).sort().at(-1) ?? "—",
+      referenceDate: formatReferenceSnapshotTime(latestReference?.referenceDate, latestReference?.createdAt),
     };
   }, [positions]);
 
@@ -326,7 +331,7 @@ export default function Positions() {
       </div>
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-        {[["Positions", summary.count], ["XAUT", `${summary.xaut} / Qty ${summary.xautQty}`], ["GLD", `${summary.gld} / Qty ${summary.gldQty}`], ["BTC", `${summary.btc} / Qty ${summary.btcQty}`], ["Reference Date", summary.referenceDate], ["Import Status", positions?.some(position => position.importSource) ? "EXCEL SNAPSHOT" : "MANUAL"]].map(([label, value]) => <Card key={String(label)} className="glass-card"><CardContent className="p-3"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-sm font-semibold">{value}</p></CardContent></Card>)}
+        {[["Positions", summary.count], ["XAUT", `${summary.xaut} / Qty ${summary.xautQty}`], ["GLD", `${summary.gld} / Qty ${summary.gldQty}`], ["BTC", `${summary.btc} / Qty ${summary.btcQty}`], ["Reference Date / Time", summary.referenceDate], ["Import Status", positions?.some(position => position.importSource) ? "EXCEL SNAPSHOT" : "MANUAL"]].map(([label, value]) => <Card key={String(label)} className="glass-card"><CardContent className="p-3"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-xs font-semibold" title={String(value)}>{value}</p></CardContent></Card>)}
       </div>
 
       <Card className="glass-card">

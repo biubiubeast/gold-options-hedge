@@ -24,6 +24,7 @@ import {
   formatPrice,
   formatSpotPrice,
   generateMockPositions,
+  metricValue,
   metricDistribution,
   nearestStrikeLevels,
   percentile,
@@ -366,6 +367,11 @@ export default function Matrix() {
     if (!visibleSections.dataError) setDataErrorHelp(false);
   }, [visibleSections.dataError, visibleSections.decisionCards]);
   useEffect(() => {
+    if (visibleFilters.callPut && callPut === "combined" && moneyness !== "otm") {
+      setCallPut(enabledOptions.callPut.call ? "call" : "put");
+    }
+  }, [callPut, enabledOptions.callPut.call, moneyness, visibleFilters.callPut]);
+  useEffect(() => {
     localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify(customRanges));
   }, [customRanges]);
   useEffect(() => {
@@ -464,15 +470,27 @@ export default function Matrix() {
       list.push(position);
       grouped.set(key, list);
     }
-    const cellModels: HeatmapCellModel[] = [...grouped.entries()].map(([key, cellPositions]) => ({
-      key,
-      expiry: cellPositions[0].expiry,
-      strike: cellPositions[0].strike,
-      positions: cellPositions,
-      value: aggregateHeatmapCellMetric(cellPositions, metric),
-      listed: cellPositions.some(position => position.positionKind === "listed"),
-      held: cellPositions.some(position => position.positionKind !== "listed"),
-    }));
+    const cellModels: HeatmapCellModel[] = [...grouped.entries()].map(([key, cellPositions]) => {
+      const value = aggregateHeatmapCellMetric(cellPositions, metric);
+      const metricInputs = cellPositions.map(position => metricValue(position, metric));
+      const hasMissingMetric = metricInputs.some(input => input === null || !Number.isFinite(input));
+      return {
+        key,
+        expiry: cellPositions[0].expiry,
+        strike: cellPositions[0].strike,
+        positions: cellPositions,
+        value,
+        ungradedReason: value !== null
+          ? null
+          : hasMissingMetric
+            ? "missing"
+            : metric === "unitDelta" && metricInputs.some(input => input === 0)
+              ? "zero"
+              : "missing",
+        listed: cellPositions.some(position => position.positionKind === "listed"),
+        held: cellPositions.some(position => position.positionKind !== "listed"),
+      };
+    });
     return {
       cells: cellModels,
       expiries: [...new Set(filtered.map(position => position.expiry))].sort(),
@@ -573,7 +591,7 @@ export default function Matrix() {
         {visibleFilters.venue && <NativeSelect className="min-w-[100px] flex-1" label="VENUE" value={venue} onChange={setVenue} options={[{ value: "all", label: "ALL" }, ...filterOptions.venue.map(value => ({ value, label: value }))]} />}
         {visibleFilters.broker && <NativeSelect className="min-w-[100px] flex-1" label="BROKER" value={broker} onChange={setBroker} options={[{ value: "all", label: "ALL" }, ...filterOptions.broker.map(value => ({ value, label: value }))]} />}
         {visibleFilters.account && <NativeSelect className="min-w-[110px] flex-1" label="ACCOUNT" value={account} onChange={setAccount} options={[{ value: "all", label: "ALL" }, ...filterOptions.account.map(value => ({ value, label: value }))]} />}
-        {visibleFilters.callPut && <NativeSelect className="w-[90px] flex-none" label="C/P" value={callPut} onChange={value => setCallPut(value as typeof callPut)} options={[{ value: "call", label: "CALL" }, { value: "put", label: "PUT" }, { value: "combined", label: "COMBINED" }].filter(option => enabledOptions.callPut[option.value as keyof typeof enabledOptions.callPut])} />}
+        {visibleFilters.callPut && <NativeSelect className="w-[112px] flex-none" label="C/P" value={callPut} onChange={value => setCallPut(value as typeof callPut)} options={[{ value: "call", label: "CALL" }, { value: "put", label: "PUT" }, { value: "combined", label: "CALL + PUT" }].filter(option => enabledOptions.callPut[option.value as keyof typeof enabledOptions.callPut] && (option.value !== "combined" || moneyness === "otm"))} />}
         {visibleFilters.expiryBucket && <NativeSelect className="min-w-[90px] flex-1" label="DTE" value={expiryBucket} onChange={value => setExpiryBucket(value as ExpiryBucket)} options={[{ value: "all", label: "ALL" }, { value: "expired", label: "EXP" }, { value: "0-2", label: "0–2" }, { value: "3-7", label: "3–7" }, { value: "8-30", label: "8–30" }, { value: "31+", label: "31+" }].filter(option => enabledOptions.expiryBucket[option.value as ExpiryBucket])} />}
         {visibleFilters.status && <NativeSelect className="min-w-[100px] flex-1" label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))].filter(option => enabledOptions.status[option.value as keyof typeof enabledOptions.status])} />}
         {visibleFilters.metric && <NativeSelect label="METRIC" value={metric} onChange={value => setMetric(value as HeatmapMetric)} options={metricOptions.map(([value, label]) => ({ value, label }))} />}

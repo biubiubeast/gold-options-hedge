@@ -25,7 +25,7 @@ import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import { trpc } from "@/lib/trpc";
 
 const menuItems = [
-  { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { key: "positions", icon: ListPlus, label: "仓位管理", path: "/positions" },
   { key: "matrix", icon: Grid3X3, label: "市场热力图", path: "/matrix" },
   { key: "formulas", icon: Calculator, label: "公式管理", path: "/formulas" },
@@ -64,6 +64,7 @@ export default function DashboardLayout({
 
   return (
     <SidebarProvider
+      defaultOpen={false}
       style={
         {
           "--sidebar-width": `${sidebarWidth}px`,

@@ -26,7 +26,7 @@ const heatmapFilterLabels: Array<[keyof PortfolioSettings["heatmapVisibleFilters
   ["venue", "Venue", "交易场所或行情场所"],
   ["broker", "Broker", "经纪商维度"],
   ["account", "Account", "账户维度"],
-  ["callPut", "Call / Put", "Call、Put 或 Combined"],
+  ["callPut", "Call / Put", "Call、Put；选择 OTM 后可启用 Call + Put"],
   ["moneyness", "ITM / OTM", "按当前 Spot 与最近 ATM Strike 筛选价内或价外期权"],
   ["expiryBucket", "DTE / Expiry Bucket", "按剩余期限区间筛选"],
   ["status", "Data Status", "LIVE、STALE、WARN、MISSING、FAIL"],
@@ -83,7 +83,7 @@ const heatmapSectionLabels: Array<[keyof PortfolioSettings["heatmapVisibleSectio
 const fixedOptionGroups = [
   ["dataset", "Data / 数据集", [["chain", "完整期权链"], ["live", "持仓行情"], ["mock100", "Mock 100"], ["mock200", "Mock 200"]]],
   ["underlying", "Underlying", [["GLD", "GLD/USD-OPRA"], ["XAUT", "XAUT/USDT - Bybit"], ["BTC", "BTC/USDT - Bybit"], ["all", "ALL UNDERLYINGS"]]],
-  ["callPut", "C/P", [["call", "CALL"], ["put", "PUT"], ["combined", "COMBINED"]]],
+  ["callPut", "C/P", [["call", "CALL"], ["put", "PUT"], ["combined", "CALL + PUT（仅 OTM）"]]],
   ["moneyness", "ITM / OTM", [["all", "ALL"], ["itm", "ITM"], ["otm", "OTM"]]],
   ["expiryBucket", "DTE", [["all", "ALL"], ["expired", "EXPIRED"], ["0-2", "0–2"], ["3-7", "3–7"], ["8-30", "8–30"], ["31+", "31+"]]],
   ["status", "Data Status", [["all", "ALL"], ["LIVE", "LIVE"], ["STALE", "STALE"], ["WARN", "WARN"], ["MISSING", "MISSING"], ["FAIL", "FAIL"]]],

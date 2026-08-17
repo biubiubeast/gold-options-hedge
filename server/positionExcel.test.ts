@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { POSITION_EXCEL_HEADERS } from "../shared/positionExcel";
+import { formatReferenceSnapshotTime, POSITION_EXCEL_HEADERS } from "../shared/positionExcel";
 import { createPositionWorkbook, parsePositionWorkbook } from "./positionExcel";
 import type { PositionRecord } from "./db";
 import { DEFAULT_FORMULAS } from "../shared/marketTypes";
@@ -19,6 +19,12 @@ async function fixtureWorkbook() {
 }
 
 describe("position Excel import/export", () => {
+  it("shows the Excel reference date together with the actual HKT import time", () => {
+    expect(formatReferenceSnapshotTime("2026-08-16", "2026-08-17T11:15:12.000Z"))
+      .toBe("2026-08-16 · Imported 2026-08-17 19:15:12 HKT");
+    expect(formatReferenceSnapshotTime(null, "2026-08-17T11:15:12.000Z")).toBe("—");
+  });
+
   it("reads the exact 29-column layout and derives unit Greeks without importing Total rows", async () => {
     const preview = await parsePositionWorkbook(await fixtureWorkbook(), "0810DinoSignal持仓.xlsx");
     expect(preview.exactHeaderMatch).toBe(true);

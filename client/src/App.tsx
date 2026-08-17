@@ -33,7 +33,7 @@ function Router() {
   return (
     <DashboardLayout>
       <Switch>
-        <Route path="/" component={ProtectedDashboard} />
+        <Route path="/" component={ProtectedMatrix} />
         <Route path="/positions" component={ProtectedPositions} />
         <Route path="/matrix" component={ProtectedMatrix} />
         <Route path="/dashboard" component={ProtectedDashboard} />

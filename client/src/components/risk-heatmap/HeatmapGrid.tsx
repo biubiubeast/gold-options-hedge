@@ -25,7 +25,16 @@ import {
 import { cloneElement, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEventHandler, type ReactElement } from "react";
 import type { PortfolioSettings } from "@/lib/portfolio";
 
-export type HeatmapCellModel = { key: string; expiry: string; strike: number; positions: EnrichedRiskPosition[]; value: number | null; listed?: boolean; held?: boolean };
+export type HeatmapCellModel = {
+  key: string;
+  expiry: string;
+  strike: number;
+  positions: EnrichedRiskPosition[];
+  value: number | null;
+  ungradedReason?: "missing" | "zero" | null;
+  listed?: boolean;
+  held?: boolean;
+};
 export type CellLabelMode = "none" | "held" | "top" | "bottom" | "all";
 export type HoverDataPreset = "risk" | "market" | "pnl" | "all";
 
@@ -242,9 +251,13 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
                 || (heldCellContent.dataStatus && heldStatusMarker)
               ));
               const spotLine = range.nearestStrike === strike;
+              const cellMetricText = cell?.ungradedReason === "zero"
+                ? "0.000 uncolored"
+                : formatCompact(cell?.value ?? null, metric);
               return <Tooltip key={key} delayDuration={80} open={hoveredCellKey === key} onOpenChange={open => setHoveredCellKey(open ? key : null)}><TooltipTrigger asChild><button
                 type="button" data-cell-key={key} data-held={cell?.held ? "true" : "false"} data-xaut-held={xautHeld ? "true" : "false"}
-                data-metric-missing={cell?.value == null ? "true" : "false"}
+                data-metric-missing={cell?.ungradedReason === "missing" ? "true" : "false"}
+                data-metric-zero={cell?.ungradedReason === "zero" ? "true" : "false"}
                 className={`relative overflow-hidden border border-solid px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${cell?.value == null ? "" : zoneClass[zoneFor(strike, spot, callPut, atmStrikes)]} ${cell ? "border-cyan-300/45" : "border-border/[0.07] opacity-30"} ${cell?.held ? "z-[3] border-white" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""}`}
                 style={{
                   height: rowHeight,
@@ -256,9 +269,9 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
                 onMouseLeave={() => setHoveredCellKey(current => current === key ? null : current)}
                 onFocus={() => cell && setHoveredCellKey(key)}
                 onBlur={() => setHoveredCellKey(current => current === key ? null : current)}
-                aria-label={cell ? `${key} ${formatCompact(cell.value, metric)} ${cell.held ? "held" : "listed no position"} ${status}` : `${key} unavailable not listed`}
+                aria-label={cell ? `${key} ${cellMetricText} ${cell.held ? "held" : "listed no position"} ${status}` : `${key} unavailable not listed`}
               >{xautHeld && <span data-xaut-held-border="true" aria-hidden="true" className="pointer-events-none absolute inset-0 z-[1] border-solid border-amber-300" style={{ borderWidth: "clamp(1px, min(7cqi, 22cqh), 3px)" }} />}{showLabel && <span title={formatCompact(cell!.value, metric)} className="relative z-[2] block max-w-full truncate pl-px font-semibold leading-none text-white drop-shadow-sm" style={{ paddingRight: heldMarkerVisible ? "38%" : "1px", fontSize: "clamp(4px, min(28cqi, 65cqh), 11px)" }}>{cellMetricLabel(cell!.value, metric)}</span>}{heldMarkerVisible && <span data-held-marker="true" aria-hidden="true" title="持仓合约识别码" className="pointer-events-none absolute right-[3%] top-1/2 z-[2] flex -translate-y-1/2 gap-px font-mono font-black leading-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]" style={{ fontSize: "clamp(4px, min(15cqi, 50cqh), 8px)" }}>{heldCellContent.underlying && heldMarker && <span className="text-amber-100">{heldMarker}</span>}{heldCellContent.callPut && heldCallPutMarker && <span className="text-sky-100">{heldCallPutMarker}</span>}{heldCellContent.dataStatus && heldStatusMarker && <span className={heldStatusColor(status)}>{heldStatusMarker}</span>}</span>}{cell && cell.positions.length > 1 && labelMode !== "none" && <span className="absolute bottom-0 left-0 z-[2] text-[5px] leading-none text-white/60">{cell.positions.length}</span>}</button></TooltipTrigger>
-                {cell && <TooltipContent side="right" sideOffset={6} collisionPadding={12} className="z-[100] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 rounded-sm bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">Cell {METRIC_LABELS[metric]} </span><strong className="float-right font-mono text-primary">{cell.value === null ? "MISSING · NOT COLORED" : formatCompact(cell.value, metric)}</strong></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} content={hoverContent} /></div>)}</div>{cellDetailEnabled && <p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、数据质量与已选择的详情字段</p>}</TooltipContent>}
+                {cell && <TooltipContent side="right" sideOffset={6} collisionPadding={12} className="z-[100] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatPrice(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 rounded-sm bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">Cell {METRIC_LABELS[metric]} </span><strong className="float-right font-mono text-primary">{cell.ungradedReason === "zero" ? "ZERO · NOT COLORED" : cell.value === null ? "MISSING · NOT COLORED" : formatCompact(cell.value, metric)}</strong></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} content={hoverContent} /></div>)}</div>{cellDetailEnabled && <p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、数据质量与已选择的详情字段</p>}</TooltipContent>}
               </Tooltip>;
             });
             return [axis, ...buttons];

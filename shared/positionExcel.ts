@@ -49,6 +49,27 @@ export const POSITION_SOURCE_DEFAULTS: Record<PositionUnderlying, { sourceAccoun
 
 export type ImportMode = "replace" | "upsert";
 
+export function formatReferenceSnapshotTime(
+  referenceDate: string | null | undefined,
+  importedAt: Date | string | null | undefined,
+): string {
+  if (!referenceDate) return "—";
+  const timestamp = importedAt instanceof Date ? importedAt : importedAt ? new Date(importedAt) : null;
+  if (!timestamp || !Number.isFinite(timestamp.getTime())) return `${referenceDate} · Import time MISSING`;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Hong_Kong",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(timestamp);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value ?? "00";
+  return `${referenceDate} · Imported ${value("year")}-${value("month")}-${value("day")} ${value("hour")}:${value("minute")}:${value("second")} HKT`;
+}
+
 export type ImportedPosition = {
   underlying: "XAUT" | "GLD" | "BTC";
   expiry: string;

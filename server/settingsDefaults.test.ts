@@ -65,4 +65,12 @@ describe("operator display defaults", () => {
       otm: true,
     });
   });
+
+  it("enables the combined Call + Put choice for the OTM-only workflow", () => {
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.callPut).toEqual({
+      call: true,
+      put: true,
+      combined: true,
+    });
+  });
 });
