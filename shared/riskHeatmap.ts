@@ -28,6 +28,8 @@ export type HeatmapMetric =
   | "rollPriority";
 export type ColorScaleMode = "quantile" | "log" | "symmetric";
 export type ExpiryBucket = "all" | "expired" | "0-2" | "3-7" | "8-30" | "31+";
+export type MoneynessFilter = "all" | "itm" | "otm";
+export type OptionMoneyness = "ITM" | "ATM" | "OTM";
 
 export interface RiskPosition {
   id: string;
@@ -123,8 +125,10 @@ export interface HeatLegendBin {
 
 export interface MetricDistribution {
   min: number | null;
+  p25: number | null;
   median: number | null;
   average: number | null;
+  p75: number | null;
   max: number | null;
   validCount: number;
   missingCount: number;
@@ -196,7 +200,7 @@ export const METRIC_LABELS: Record<HeatmapMetric, string> = {
   bidIV: "Bid IV",
   askIV: "Ask IV",
   ivSpread: "Bid Ask IV Spread",
-  qty: "Qty / Position Size",
+  qty: "Raw Qty",
   notionalSize: "Notional Size USD",
   bidDollarNotional: "Bid Dollar Notional",
   askDollarNotional: "Ask Dollar Notional",
@@ -323,8 +327,10 @@ export function metricDistribution(positions: EnrichedRiskPosition[], metric: He
     .sort((left, right) => left - right);
   return {
     min: values.length ? values[0] : null,
+    p25: values.length ? percentile(values, 0.25) : null,
     median: values.length ? percentile(values, 0.5) : null,
     average: values.length ? values.reduce((total, value) => total + value, 0) / values.length : null,
+    p75: values.length ? percentile(values, 0.75) : null,
     max: values.length ? values[values.length - 1] : null,
     validCount: values.length,
     missingCount: eligible.length - values.length,
@@ -393,6 +399,18 @@ export function nearestStrikeLevels(strikes: number[], spot: number, count = 1):
   return [...new Set(strikes.filter(strike => Number.isFinite(strike)))]
     .sort((left, right) => Math.abs(left - spot) - Math.abs(right - spot) || left - right)
     .slice(0, count);
+}
+
+export function classifyOptionMoneyness(
+  strike: number,
+  spot: number,
+  callPut: CallPut,
+  atmStrike: number | null,
+): OptionMoneyness | null {
+  if (!Number.isFinite(strike) || !Number.isFinite(spot) || spot <= 0) return null;
+  if (atmStrike !== null && strike === atmStrike) return "ATM";
+  const itm = callPut === "call" ? strike < spot : strike > spot;
+  return itm ? "ITM" : "OTM";
 }
 
 function statusSeverity(status: DataStatus): number {

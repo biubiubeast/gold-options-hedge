@@ -56,4 +56,13 @@ describe("operator display defaults", () => {
       all: false,
     });
   });
+
+  it("shows the ITM/OTM filter with all three choices enabled by default", () => {
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleFilters.moneyness).toBe(true);
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.moneyness).toEqual({
+      all: true,
+      itm: true,
+      otm: true,
+    });
+  });
 });

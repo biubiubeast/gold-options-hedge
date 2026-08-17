@@ -17,6 +17,7 @@ import {
   METRIC_LABELS,
   aggregateHeatmapCellMetric,
   buildHeatScale,
+  classifyOptionMoneyness,
   enrichRiskPositions,
   expiryBucketMatchesDte,
   formatCompact,
@@ -24,6 +25,7 @@ import {
   formatSpotPrice,
   generateMockPositions,
   metricDistribution,
+  nearestStrikeLevels,
   percentile,
   positionLabel,
   spotRangeState,
@@ -34,6 +36,7 @@ import {
   type EnrichedRiskPosition,
   type ExpiryBucket,
   type HeatmapMetric,
+  type MoneynessFilter,
   type RiskUnderlying,
 } from "@shared/riskHeatmap";
 import { ArrowLeftRight, ArrowUpDown, Eye, EyeOff, Info, Loader2, LocateFixed, Maximize2, Minimize2, Minus, Plus, ScanLine } from "lucide-react";
@@ -45,6 +48,7 @@ type MetricRange = { min: number; max: number };
 type ExpirySelection = { expiry: string; positions: EnrichedRiskPosition[] };
 
 const RANGE_STORAGE_KEY = "heatmap-metric-custom-ranges-v1";
+const RISK_UNDERLYINGS: RiskUnderlying[] = ["GLD", "XAUT", "BTC"];
 const percentageMetrics = new Set<HeatmapMetric>(["markIV", "bidIV", "askIV", "ivSpread", "distanceToStrike"]);
 
 const statusSeverity: Record<DataStatus, number> = { LIVE: 0, WARN: 1, STALE: 2, MISSING: 3, FAIL: 4 };
@@ -215,6 +219,7 @@ export default function Matrix() {
   const [broker, setBroker] = useState("all");
   const [account, setAccount] = useState("all");
   const [callPut, setCallPut] = useState<"combined" | CallPut>("call");
+  const [moneyness, setMoneyness] = useState<MoneynessFilter>("all");
   const [expiryBucket, setExpiryBucket] = useState<ExpiryBucket>("all");
   const [status, setStatus] = useState<"all" | DataStatus>("all");
   const [metric, setMetric] = useState<HeatmapMetric>("notionalSize");
@@ -333,6 +338,7 @@ export default function Matrix() {
     if (visibleFilters.dataset) fallback(dataset, enabledOptions.dataset, setDataset);
     if (visibleFilters.underlying) fallback(underlying, enabledOptions.underlying, setUnderlying);
     if (visibleFilters.callPut) fallback(callPut, enabledOptions.callPut, setCallPut);
+    if (visibleFilters.moneyness) fallback(moneyness, enabledOptions.moneyness, setMoneyness);
     if (visibleFilters.expiryBucket) fallback(expiryBucket, enabledOptions.expiryBucket, setExpiryBucket);
     if (visibleFilters.status) fallback(status, enabledOptions.status, setStatus);
     if (visibleFilters.metric) fallback(metric, enabledOptions.metric, setMetric);
@@ -343,7 +349,7 @@ export default function Matrix() {
     if (venue !== "all" && !filterOptions.venue.includes(venue)) setVenue("all");
     if (broker !== "all" && !filterOptions.broker.includes(broker)) setBroker("all");
     if (account !== "all" && !filterOptions.account.includes(account)) setAccount("all");
-  }, [account, broker, callPut, dataset, enabledOptions, expiryBucket, filterOptions, hoverPreset, labelMode, metric, scaleMode, spotUnderlying, status, underlying, venue, visibleFilters]);
+  }, [account, broker, callPut, dataset, enabledOptions, expiryBucket, filterOptions, hoverPreset, labelMode, metric, moneyness, scaleMode, spotUnderlying, status, underlying, venue, visibleFilters]);
   useEffect(() => {
     if (!visibleFilters.dataset && dataset !== "chain" && !new URLSearchParams(window.location.search).has("mock")) setDataset("chain");
     if (!visibleFilters.underlying && underlying !== "all") setUnderlying("all");
@@ -351,9 +357,10 @@ export default function Matrix() {
     if (!visibleFilters.broker && broker !== "all") setBroker("all");
     if (!visibleFilters.account && account !== "all") setAccount("all");
     if (!visibleFilters.callPut && callPut !== "combined") setCallPut("combined");
+    if (!visibleFilters.moneyness && moneyness !== "all") setMoneyness("all");
     if (!visibleFilters.expiryBucket && expiryBucket !== "all") setExpiryBucket("all");
     if (!visibleFilters.status && status !== "all") setStatus("all");
-  }, [account, broker, callPut, dataset, expiryBucket, status, underlying, venue, visibleFilters]);
+  }, [account, broker, callPut, dataset, expiryBucket, moneyness, status, underlying, venue, visibleFilters]);
   useEffect(() => {
     if (!visibleSections.decisionCards) setCardsVisible(false);
     if (!visibleSections.dataError) setDataErrorHelp(false);
@@ -406,7 +413,7 @@ export default function Matrix() {
     }
   };
 
-  const filtered = useMemo(() => enriched.filter(position =>
+  const baseFiltered = useMemo(() => enriched.filter(position =>
     (underlying === "all" || position.underlying === underlying)
     && (venue === "all" || position.venue === venue)
     && (broker === "all" || position.broker === broker)
@@ -415,6 +422,20 @@ export default function Matrix() {
     && expiryBucketMatchesDte(position.dte, expiryBucket)
     && (status === "all" || position.dataStatus === status),
   ), [account, broker, callPut, enriched, expiryBucket, status, underlying, venue]);
+  const atmStrikeByUnderlying = useMemo(() => Object.fromEntries(RISK_UNDERLYINGS.map(riskUnderlying => {
+    const availableStrikes = baseFiltered
+      .filter(position => position.underlying === riskUnderlying)
+      .map(position => position.strike);
+    return [riskUnderlying, nearestStrikeLevels(availableStrikes, displaySpots[riskUnderlying])[0] ?? null];
+  })) as Record<RiskUnderlying, number | null>, [baseFiltered, displaySpots]);
+  const filtered = useMemo(() => moneyness === "all" ? baseFiltered : baseFiltered.filter(position =>
+    classifyOptionMoneyness(
+      position.strike,
+      displaySpots[position.underlying],
+      position.callPut,
+      atmStrikeByUnderlying[position.underlying],
+    ) === moneyness.toUpperCase(),
+  ), [atmStrikeByUnderlying, baseFiltered, displaySpots, moneyness]);
 
   const applyCustomRange = () => {
     const factor = percentageMetrics.has(metric) ? 100 : 1;
@@ -480,6 +501,10 @@ export default function Matrix() {
   const importanceCutoff = useMemo(() => percentile(cells.map(cell => Math.abs(cell.value ?? 0)).filter(value => value > 0), 0.85), [cells]);
   const lowImportanceCutoff = useMemo(() => percentile(cells.flatMap(cell => cell.value === null || !Number.isFinite(cell.value) ? [] : [Math.abs(cell.value)]), 0.15), [cells]);
   const heldFiltered = useMemo(() => filtered.filter(position => position.positionKind !== "listed"), [filtered]);
+  const maxDte = useMemo(() => {
+    const validDtes = filtered.map(position => position.dte).filter(Number.isFinite);
+    return validDtes.length ? Math.max(...validDtes) : null;
+  }, [filtered]);
   const cards = useMemo(() => buildDecisionCards(heldFiltered), [heldFiltered]);
   const spot = displaySpots[spotUnderlying];
 
@@ -523,7 +548,7 @@ export default function Matrix() {
       <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-1">
         <div className="flex min-w-0 items-baseline gap-2">
           <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">市场热力图</h1>
-          <span data-testid="heatmap-scope-stats" className="truncate font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held positions · {filtered.length} filtered contracts · {cells.length} cells · {expiries.length} expiries · {strikes.length} strikes{visibleSections.chainContractCount && selectedChainCount !== null ? ` · ${underlying === "all" ? "ALL" : underlying} ${chainCountLabel}: ${selectedChainCount.toLocaleString("en-US")}` : ""}</span>
+          <span data-testid="heatmap-scope-stats" className="truncate font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held positions · {filtered.length} filtered contracts · {cells.length} cells · {expiries.length} expiries · {strikes.length} strikes · max DTE {maxDte === null ? "MISSING" : `${maxDte}d`}{visibleSections.chainContractCount && selectedChainCount !== null ? ` · ${underlying === "all" ? "ALL" : underlying} ${chainCountLabel}: ${selectedChainCount.toLocaleString("en-US")}` : ""}</span>
         </div>
         <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
           <span data-testid="heatmap-as-of" className="whitespace-nowrap">As-of {formatHongKongAsOf(selectedChainTimestamp)}</span>
@@ -544,11 +569,12 @@ export default function Matrix() {
           { value: "mock100", label: "MOCK 100" },
           { value: "mock200", label: "MOCK 200" },
         ].filter(option => enabledOptions.dataset[option.value as DatasetMode])} />}
-        {visibleFilters.underlying && <NativeSelect className="w-[180px] flex-none" label="UNDERLYING" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD/USD - Cboe" }, { value: "XAUT", label: "XAUT/USDT - Bybit" }, { value: "BTC", label: "BTC/USDT - Bybit" }, { value: "all", label: "ALL UNDERLYINGS" }].filter(option => enabledOptions.underlying[option.value as keyof typeof enabledOptions.underlying])} />}
+        {visibleFilters.underlying && <NativeSelect className="w-[165px] flex-none" label="UNDERLYING" value={underlying} onChange={value => setUnderlying(value as typeof underlying)} options={[{ value: "GLD", label: "GLD/USD-OPRA" }, { value: "XAUT", label: "XAUT/USDT - Bybit" }, { value: "BTC", label: "BTC/USDT - Bybit" }, { value: "all", label: "ALL UNDERLYINGS" }].filter(option => enabledOptions.underlying[option.value as keyof typeof enabledOptions.underlying])} />}
         {visibleFilters.venue && <NativeSelect className="min-w-[100px] flex-1" label="VENUE" value={venue} onChange={setVenue} options={[{ value: "all", label: "ALL" }, ...filterOptions.venue.map(value => ({ value, label: value }))]} />}
         {visibleFilters.broker && <NativeSelect className="min-w-[100px] flex-1" label="BROKER" value={broker} onChange={setBroker} options={[{ value: "all", label: "ALL" }, ...filterOptions.broker.map(value => ({ value, label: value }))]} />}
         {visibleFilters.account && <NativeSelect className="min-w-[110px] flex-1" label="ACCOUNT" value={account} onChange={setAccount} options={[{ value: "all", label: "ALL" }, ...filterOptions.account.map(value => ({ value, label: value }))]} />}
         {visibleFilters.callPut && <NativeSelect className="w-[90px] flex-none" label="C/P" value={callPut} onChange={value => setCallPut(value as typeof callPut)} options={[{ value: "call", label: "CALL" }, { value: "put", label: "PUT" }, { value: "combined", label: "COMBINED" }].filter(option => enabledOptions.callPut[option.value as keyof typeof enabledOptions.callPut])} />}
+        {visibleFilters.moneyness && <NativeSelect className="w-[105px] flex-none" label="ITM/OTM" value={moneyness} onChange={value => setMoneyness(value as MoneynessFilter)} options={[{ value: "all", label: "ALL" }, { value: "itm", label: "ITM" }, { value: "otm", label: "OTM" }].filter(option => enabledOptions.moneyness[option.value as MoneynessFilter])} />}
         {visibleFilters.expiryBucket && <NativeSelect className="min-w-[90px] flex-1" label="DTE" value={expiryBucket} onChange={value => setExpiryBucket(value as ExpiryBucket)} options={[{ value: "all", label: "ALL" }, { value: "expired", label: "EXP" }, { value: "0-2", label: "0–2" }, { value: "3-7", label: "3–7" }, { value: "8-30", label: "8–30" }, { value: "31+", label: "31+" }].filter(option => enabledOptions.expiryBucket[option.value as ExpiryBucket])} />}
         {visibleFilters.status && <NativeSelect className="min-w-[100px] flex-1" label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))].filter(option => enabledOptions.status[option.value as keyof typeof enabledOptions.status])} />}
         {visibleFilters.metric && <NativeSelect label="METRIC" value={metric} onChange={value => setMetric(value as HeatmapMetric)} options={metricOptions.map(([value, label]) => ({ value, label }))} />}
@@ -556,7 +582,7 @@ export default function Matrix() {
         {visibleFilters.hover && <NativeSelect label="HOVER" value={hoverPreset} onChange={value => setHoverPreset(value as HoverDataPreset)} options={[{ value: "risk", label: "RISK" }, { value: "market", label: "MARKET" }, { value: "pnl", label: "PNL" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.hover[option.value as keyof typeof enabledOptions.hover])} />}
       </div>}
 
-      {Object.entries(visibleFilters).some(([key, visible]) => visible && !["dataset", "underlying", "venue", "broker", "account", "callPut", "expiryBucket", "status", "metric", "label", "hover"].includes(key)) && <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1">
+      {Object.entries(visibleFilters).some(([key, visible]) => visible && !["dataset", "underlying", "venue", "broker", "account", "callPut", "moneyness", "expiryBucket", "status", "metric", "label", "hover"].includes(key)) && <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1">
         {visibleFilters.scale && <NativeSelect label="SCALE" value={scaleMode} onChange={value => setScaleMode(value as ColorScaleMode)} options={[{ value: "quantile", label: "QUANTILE" }, { value: "log", label: "LOG" }, { value: "symmetric", label: "ZERO-CENTER" }].filter(option => enabledOptions.scale[option.value as keyof typeof enabledOptions.scale])} />}
         {visibleFilters.spot && <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "BTC", label: "BTC" }, { value: "XAU", label: "XAU" }].filter(option => enabledOptions.spot[option.value as keyof typeof enabledOptions.spot])} />}
         {visibleFilters.range && <>
@@ -598,6 +624,7 @@ export default function Matrix() {
           fitAll={fitAll}
           spot={spot}
           callPut={callPut}
+          atmStrike={underlying === "all" ? undefined : atmStrikeByUnderlying[underlying]}
           highlightCellKey={highlightCellKey}
           labelMode={labelMode}
           hoverPreset={hoverPreset}

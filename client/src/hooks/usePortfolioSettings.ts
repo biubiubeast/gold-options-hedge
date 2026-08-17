@@ -46,6 +46,7 @@ function loadSettings(): PortfolioSettings {
         dataset: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.dataset, ...saved.heatmapFilterOptions?.dataset },
         underlying: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.underlying, ...saved.heatmapFilterOptions?.underlying, ...(!current ? { all: false } : {}) },
         callPut: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.callPut, ...saved.heatmapFilterOptions?.callPut },
+        moneyness: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.moneyness, ...saved.heatmapFilterOptions?.moneyness },
         expiryBucket: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.expiryBucket, ...saved.heatmapFilterOptions?.expiryBucket },
         status: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.status, ...saved.heatmapFilterOptions?.status },
         metric: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.metric, ...saved.heatmapFilterOptions?.metric },

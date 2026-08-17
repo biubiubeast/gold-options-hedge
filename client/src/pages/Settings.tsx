@@ -27,6 +27,7 @@ const heatmapFilterLabels: Array<[keyof PortfolioSettings["heatmapVisibleFilters
   ["broker", "Broker", "经纪商维度"],
   ["account", "Account", "账户维度"],
   ["callPut", "Call / Put", "Call、Put 或 Combined"],
+  ["moneyness", "ITM / OTM", "按当前 Spot 与最近 ATM Strike 筛选价内或价外期权"],
   ["expiryBucket", "DTE / Expiry Bucket", "按剩余期限区间筛选"],
   ["status", "Data Status", "LIVE、STALE、WARN、MISSING、FAIL"],
   ["metric", "Metric", "热力图颜色所代表的指标"],
@@ -81,8 +82,9 @@ const heatmapSectionLabels: Array<[keyof PortfolioSettings["heatmapVisibleSectio
 
 const fixedOptionGroups = [
   ["dataset", "Data / 数据集", [["chain", "完整期权链"], ["live", "持仓行情"], ["mock100", "Mock 100"], ["mock200", "Mock 200"]]],
-  ["underlying", "Underlying", [["GLD", "GLD/USD - Cboe"], ["XAUT", "XAUT/USDT - Bybit"], ["BTC", "BTC/USDT - Bybit"], ["all", "ALL UNDERLYINGS"]]],
+  ["underlying", "Underlying", [["GLD", "GLD/USD-OPRA"], ["XAUT", "XAUT/USDT - Bybit"], ["BTC", "BTC/USDT - Bybit"], ["all", "ALL UNDERLYINGS"]]],
   ["callPut", "C/P", [["call", "CALL"], ["put", "PUT"], ["combined", "COMBINED"]]],
+  ["moneyness", "ITM / OTM", [["all", "ALL"], ["itm", "ITM"], ["otm", "OTM"]]],
   ["expiryBucket", "DTE", [["all", "ALL"], ["expired", "EXPIRED"], ["0-2", "0–2"], ["3-7", "3–7"], ["8-30", "8–30"], ["31+", "31+"]]],
   ["status", "Data Status", [["all", "ALL"], ["LIVE", "LIVE"], ["STALE", "STALE"], ["WARN", "WARN"], ["MISSING", "MISSING"], ["FAIL", "FAIL"]]],
   ["scale", "Color Scale", [["quantile", "QUANTILE"], ["log", "LOG"], ["symmetric", "ZERO-CENTER"]]],
@@ -275,7 +277,7 @@ export default function Settings() {
       <Card className="glass-card">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Filter className="h-4 w-4 text-primary" />热力图筛选器显示设置</CardTitle></CardHeader>
         <CardContent>
-          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">默认显示 Underlying、C/P、Metric、Label、Hover，以及色标上下限、方格尺寸、Fullscreen；Strike 排序与 Fit All 默认隐藏。隐藏业务筛选器后，该条件自动恢复为非限制状态；隐藏视图控制不会改变当前热力图计算。</p>
+          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">默认显示 Underlying、C/P、ITM/OTM、Metric、Label、Hover，以及色标上下限、方格尺寸、Fullscreen；Strike 排序与 Fit All 默认隐藏。隐藏业务筛选器后，该条件自动恢复为非限制状态；隐藏视图控制不会改变当前热力图计算。</p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {heatmapFilterLabels.map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3">
               <div className="min-w-0"><Label htmlFor={`heatmap-filter-${key}`} className="text-xs font-medium">{label}</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">{description}</p></div>

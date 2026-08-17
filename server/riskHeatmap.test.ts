@@ -4,6 +4,7 @@ import {
   aggregateMetric,
   buildHeatScale,
   calculateScenario,
+  classifyOptionMoneyness,
   enrichRiskPositions,
   expiryBucketMatchesDte,
   expiryHeldMetricTotal,
@@ -77,6 +78,14 @@ describe("institutional risk heatmap acceptance", () => {
     const xautStrikes = Array.from({ length: 17 }, (_, index) => 4250 + index * 10);
     expect(nearestStrikeLevels(xautStrikes, 4337)).toEqual([4340]);
     expect(nearestStrikeLevels([395, 397, 399, 401, 403], 399.52)).toEqual([399]);
+  });
+
+  it("filters ITM and OTM consistently while reserving the nearest strike for ATM", () => {
+    expect(classifyOptionMoneyness(400, 401, "call", 400)).toBe("ATM");
+    expect(classifyOptionMoneyness(395, 401, "call", 400)).toBe("ITM");
+    expect(classifyOptionMoneyness(405, 401, "call", 400)).toBe("OTM");
+    expect(classifyOptionMoneyness(395, 401, "put", 400)).toBe("OTM");
+    expect(classifyOptionMoneyness(405, 401, "put", 400)).toBe("ITM");
   });
 
   it("formats every heatmap spot value with exactly two decimals", () => {
@@ -155,7 +164,7 @@ describe("institutional risk heatmap acceptance", () => {
     expect(aggregateHeatmapCellMetric([valid], "unitDelta")).toBe(0.42);
   });
 
-  it("reports Expiry metric min, median and max without converting missing values to zero", () => {
+  it("reports Expiry metric quartiles and summary statistics without converting missing values to zero", () => {
     const source = enrichRiskPositions(generateMockPositions(3, 49, asOf), spots, asOf);
     const positions = [
       { ...source[0], unitDelta: 0.1 },
@@ -170,6 +179,8 @@ describe("institutional risk heatmap acceptance", () => {
       validCount: 2,
       missingCount: 1,
     });
+    expect(distribution.p25).toBeCloseTo(0.25);
+    expect(distribution.p75).toBeCloseTo(0.55);
     expect(distribution.average).toBeCloseTo(0.4);
   });
 

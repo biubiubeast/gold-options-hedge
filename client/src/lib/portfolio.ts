@@ -13,7 +13,7 @@ import type { DataStatus } from "@shared/riskHeatmap";
 import type { HeatmapMetric } from "@shared/riskHeatmap";
 
 export type HeatmapControlKey =
-  | "dataset" | "underlying" | "venue" | "broker" | "account" | "callPut" | "expiryBucket" | "status"
+  | "dataset" | "underlying" | "venue" | "broker" | "account" | "callPut" | "moneyness" | "expiryBucket" | "status"
   | "metric" | "scale" | "spot" | "label" | "hover" | "range" | "transpose" | "reverseStrikes"
   | "cellSize" | "fitAll" | "fullscreen";
 
@@ -117,6 +117,7 @@ export type PortfolioSettings = {
     broker: boolean;
     account: boolean;
     callPut: boolean;
+    moneyness: boolean;
     expiryBucket: boolean;
     status: boolean;
     metric: boolean;
@@ -135,6 +136,7 @@ export type PortfolioSettings = {
     dataset: Record<"chain" | "live" | "mock100" | "mock200", boolean>;
     underlying: Record<"GLD" | "XAUT" | "BTC" | "all", boolean>;
     callPut: Record<"call" | "put" | "combined", boolean>;
+    moneyness: Record<"all" | "itm" | "otm", boolean>;
     expiryBucket: Record<"all" | "expired" | "0-2" | "3-7" | "8-30" | "31+", boolean>;
     status: Record<DataStatus | "all", boolean>;
     metric: Record<HeatmapMetric, boolean>;
@@ -214,6 +216,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     broker: false,
     account: false,
     callPut: true,
+    moneyness: true,
     expiryBucket: false,
     status: false,
     metric: true,
@@ -232,6 +235,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     dataset: { chain: true, live: true, mock100: true, mock200: true },
     underlying: { GLD: true, XAUT: true, BTC: true, all: false },
     callPut: { call: true, put: true, combined: false },
+    moneyness: { all: true, itm: true, otm: true },
     expiryBucket: { all: true, expired: true, "0-2": true, "3-7": true, "8-30": true, "31+": true },
     status: { all: true, LIVE: true, STALE: true, WARN: true, MISSING: true, FAIL: true },
     metric: {

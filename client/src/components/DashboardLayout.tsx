@@ -13,7 +13,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, PanelLeft, Grid3X3, ListPlus, Calculator, Database, Settings, ZoomIn, ZoomOut, RotateCcw, LogOut } from "lucide-react";
+import { LayoutDashboard, PanelLeft, Grid3X3, ListPlus, Calculator, Database, Settings, ZoomIn, ZoomOut, LogOut } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -277,18 +277,6 @@ function DashboardLayoutContent({
               title="放大全部页面（Alt +）"
             >
               <ZoomIn className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 hidden sm:inline-flex"
-              onClick={() => setPageZoom(1)}
-              disabled={pageZoom === 1}
-              aria-label="恢复默认缩放"
-              title="恢复默认缩放"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>
