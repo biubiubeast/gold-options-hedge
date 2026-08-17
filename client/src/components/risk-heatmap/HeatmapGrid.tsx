@@ -70,6 +70,10 @@ function TooltipPosition({ position, metric, preset, content }: { position: Enri
   const rows: Array<[string, string]> = [];
   if (content.selectedMetric) rows.push(["Selected metric", formatCompact(metricValue(position, metric), metric)]);
   if (preset === "risk" || preset === "all") {
+    if (content.qtyNotional) {
+      rows.push(["Qty", formatCompact(position.netQty)]);
+      rows.push(["Notional Size USD", `$${formatCompact(position.notionalSizeUSD)}`]);
+    }
     if (content.unitDelta) rows.push(["Unit Delta", formatCompact(position.unitDelta)]);
     if (content.totalDelta) rows.push(["Total Delta XAU", formatCompact(position.totalDeltaXAU)]);
     if (content.unitGamma) rows.push(["Unit Gamma", formatCompact(position.unitGamma)]);
@@ -81,7 +85,7 @@ function TooltipPosition({ position, metric, preset, content }: { position: Enri
     if (content.dteRoll) rows.push(["DTE / Roll", `${position.dte}d / ${position.rollPriority.total.toFixed(0)}`]);
   }
   if (preset === "market" || preset === "all") {
-    if (content.qtyNotional) rows.push(["Qty", formatCompact(position.netQty)]);
+    if (content.qtyNotional && preset === "market") rows.push(["Qty", formatCompact(position.netQty)]);
     if (content.markIv) rows.push(["Mark / IV", `${formatPrice(position.markPrice)} / ${formatCompact(position.markIV, "markIV")}`]);
     if (content.bidAsk) {
       rows.push(["Bid / Ask", `${formatPrice(position.bid)} / ${formatPrice(position.ask)}`]);
