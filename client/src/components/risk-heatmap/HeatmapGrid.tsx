@@ -266,8 +266,8 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
         <SpotPriceTooltip spot={spot}><button type="button" onClick={handleCenterSpot} className="mt-1 text-center text-[7px] leading-tight text-amber-300 underline">CENTER<br />ATM</button></SpotPriceTooltip>
         <span className="mt-1 text-center text-[6px] leading-tight text-cyan-200">THIN CYAN<br />LISTED</span>
         <span className="mt-1 text-center text-[6px] font-semibold leading-tight text-white">WHITE<br />HELD</span>
-        <span className="mt-1 text-center font-mono text-[6px] font-bold leading-tight text-amber-100">X/G · C/P<br />CONTRACT</span>
-        <span className="mt-1 text-center font-mono text-[6px] leading-tight text-muted-foreground">L/S/W/M/F<br />HELD DATA</span>
+        {(heldCellContent.underlying || heldCellContent.callPut) && <span className="mt-1 text-center font-mono text-[6px] font-bold leading-tight text-amber-100">X/G · C/P<br />CONTRACT</span>}
+        {heldCellContent.dataStatus && <span className="mt-1 text-center font-mono text-[6px] leading-tight text-muted-foreground">L/S/W/M/F<br />HELD DATA</span>}
       </aside>
     </div>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PORTFOLIO_SETTINGS } from "../client/src/lib/portfolio";
+import { DEFAULT_PORTFOLIO_SETTINGS, DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT } from "../client/src/lib/portfolio";
 import { DEFAULT_VIEWER_PAGE_PERMISSIONS } from "../shared/access";
 
 describe("operator display defaults", () => {
@@ -10,6 +10,14 @@ describe("operator display defaults", () => {
       matrix: true,
       formulas: false,
       dataSources: false,
+    });
+  });
+
+  it("hides every held-cell identification code for xauwhales", () => {
+    expect(DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT).toEqual({
+      underlying: false,
+      callPut: false,
+      dataStatus: false,
     });
   });
 

@@ -4,13 +4,13 @@ import { HeatmapGrid, type CellLabelMode, type HeatmapCellModel, type HoverDataP
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { trpc } from "@/lib/trpc";
-import { getPositionMarketData, type MarketSnapshot, type PortfolioPosition } from "@/lib/portfolio";
+import { DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT, getPositionMarketData, type MarketSnapshot, type PortfolioPosition, type PortfolioSettings } from "@/lib/portfolio";
 import { buildChainRiskPositions, buildGldChainRiskPositions, buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { resolveHeatmapSpots } from "@/lib/spotSelection";
 import { resolveGldContractMultiplier, resolveGldXauMultiplier, resolveXautContractMultiplier, resolveXautXauMultiplier } from "@shared/formulaEngine";
-import type { PortfolioSettings } from "@/lib/portfolio";
 import {
   CENTERED_METRICS,
   HELD_ONLY_HEATMAP_METRICS,
@@ -199,6 +199,7 @@ function ExpiryDetailDialog({ selection, metric, content, onClose }: { selection
 }
 
 export default function Matrix() {
+  const { user } = useAuth();
   const { data: positions, isLoading } = trpc.positions.list.useQuery();
   const { data: formulas } = trpc.formulas.list.useQuery();
   const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
@@ -601,7 +602,7 @@ export default function Matrix() {
           labelMode={labelMode}
           hoverPreset={hoverPreset}
           sequentialMagnitude={sequentialMagnitude}
-          heldCellContent={settings.heatmapHeldCellContent}
+          heldCellContent={user?.role === "admin" ? settings.heatmapHeldCellContent : DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT}
           hoverContent={settings.heatmapHoverContent}
           cellDetailEnabled={settings.heatmapClickActions.cellDetail}
           expiryDetailEnabled={settings.heatmapClickActions.expiryDetail}

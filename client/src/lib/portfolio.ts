@@ -354,6 +354,12 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   riskFreeRate: 0.045,
 };
 
+export const DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT: PortfolioSettings["heatmapHeldCellContent"] = {
+  underlying: false,
+  callPut: false,
+  dataStatus: false,
+};
+
 export type MarketSnapshot = {
   markPrice: number;
   markIv: number;
