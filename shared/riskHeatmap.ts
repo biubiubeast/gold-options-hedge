@@ -673,7 +673,8 @@ export function buildHeatScale(
 
 export function formatCompact(value: number | null, metric?: HeatmapMetric): string {
   if (value === null || !Number.isFinite(value)) return "MISSING";
-  if (metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread" || metric === "distanceToStrike") return `${(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0)}%`;
+  if (metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread") return `${(value * 100).toFixed(2)}%`;
+  if (metric === "distanceToStrike") return `${(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0)}%`;
   if (metric === "DTE") return `${Math.round(value)}d`;
   if (metric === "rollPriority") return `${value.toFixed(0)}`;
   const absolute = Math.abs(value);
