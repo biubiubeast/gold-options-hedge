@@ -71,7 +71,7 @@ function TooltipPosition({ position, metric, preset, content }: { position: Enri
   if (content.selectedMetric) rows.push(["Selected metric", formatCompact(metricValue(position, metric), metric)]);
   if (preset === "risk" || preset === "all") {
     if (content.unitDelta) rows.push(["Unit Delta", formatCompact(position.unitDelta)]);
-    if (content.totalDelta) rows.push(["Total Delta XAU", `${formatCompact(position.totalDeltaXAU)} oz`]);
+    if (content.totalDelta) rows.push(["Total Delta XAU", formatCompact(position.totalDeltaXAU)]);
     if (content.unitGamma) rows.push(["Unit Gamma", formatCompact(position.unitGamma)]);
     if (content.totalGamma) rows.push(["Total Gamma XAU", formatCompact(position.totalGammaXAU)]);
     if (content.unitTheta) rows.push(["Unit Theta", formatCompact(position.unitTheta)]);
@@ -110,7 +110,7 @@ function ExpiryTooltip({ expiry, positions, metric, detailEnabled, onSelectExpir
   const heldTotalValue = heldTotal === null
     ? null
     : heldTotal.label === "Total Delta"
-      ? `${formatCompact(heldTotal.value, metric)} oz`
+      ? formatCompact(heldTotal.value, metric)
       : heldTotal.label === "Total Notional Size USD"
         ? `$${formatCompact(heldTotal.value, metric)}`
         : formatCompact(heldTotal.value, metric);

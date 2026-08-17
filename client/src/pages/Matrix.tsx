@@ -125,7 +125,7 @@ function buildDecisionCards(positions: EnrichedRiskPosition[]): DecisionCardMode
   });
   return [
     card("unit", "Max Unit Delta", maxUnit, formatCompact(maxUnit?.unitDelta ?? null), maxUnit ? positionLabel(maxUnit) : undefined),
-    card("total", "Max Total Delta", maxTotal, `${formatCompact(maxTotal?.totalDeltaXAU ?? null)} oz`, maxTotal ? positionLabel(maxTotal) : undefined),
+    card("total", "Max Total Delta", maxTotal, formatCompact(maxTotal?.totalDeltaXAU ?? null), maxTotal ? positionLabel(maxTotal) : undefined),
     card("theta", "Max Theta Burn", maxThetaBurn, `$${formatCompact(maxThetaBurn?.totalThetaUSD ?? null)}/d`, maxThetaBurn ? positionLabel(maxThetaBurn) : undefined),
     card("vega", "Max Vega", maxVega, `$${formatCompact(maxVega?.totalVegaUSD ?? null)}/v`, maxVega ? positionLabel(maxVega) : undefined),
     card("expiry", "Nearest Expiry", nearest, nearest ? `${nearest.dte} DTE` : "MISSING", nearest ? positionLabel(nearest) : undefined),
@@ -189,7 +189,7 @@ function ExpiryDetailDialog({ selection, metric, content, onClose }: { selection
   const greekRows: Array<[string, string]> = [];
   if (content.totalDelta) {
     greekRows.push(["Unit Delta · Min / Median / Max", `${formatCompact(unitDelta.min)} / ${formatCompact(unitDelta.median)} / ${formatCompact(unitDelta.max)}`]);
-    greekRows.push(["Total Delta XAU · Sum", `${formatCompact(sum(held.map(position => position.totalDeltaXAU)))} oz`]);
+    greekRows.push(["Total Delta XAU · Sum", formatCompact(sum(held.map(position => position.totalDeltaXAU)))]);
   }
   if (content.totalGamma) greekRows.push(["Total Gamma XAU · Sum", formatCompact(sum(held.map(position => position.totalGammaXAU)))]);
   if (content.totalTheta) greekRows.push(["Total Theta USD/day · Sum", `$${formatCompact(sum(held.map(position => position.totalThetaUSD)))}`]);

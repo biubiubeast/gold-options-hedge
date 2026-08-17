@@ -21,7 +21,7 @@
 │ GLD 247.32 LIVE  XAUT 3,358.4 LIVE  XAU 3,359.1 WARN                         As-of 10:31:08 │
 ├────────────┬────────────┬────────────┬───────────┬────────────┬────────────┬────────────────┤
 │MAX UNIT Δ  │MAX TOTAL Δ │THETA BURN  │MAX VEGA   │NEAREST EXP │ROLL PRIOR. │DATA ERROR      │
-│GLD 250C .81│XAUT… 82oz  │GLD… -$4.1k│… $12.8k   │GLD… 0DTE   │… 91 / 100  │STALE 38m      │
+│GLD 250C .81│XAUT… 82    │GLD… -$4.1k│… $12.8k   │GLD… 0DTE   │… 91 / 100  │STALE 38m      │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │ U:GLD  Venue:ALL  Broker:ALL  Account:ALL  C/P:Combined  DTE:ALL  Status:ALL  Data:Live     │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
