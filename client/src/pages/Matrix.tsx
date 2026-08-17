@@ -574,10 +574,10 @@ export default function Matrix() {
         {visibleFilters.broker && <NativeSelect className="min-w-[100px] flex-1" label="BROKER" value={broker} onChange={setBroker} options={[{ value: "all", label: "ALL" }, ...filterOptions.broker.map(value => ({ value, label: value }))]} />}
         {visibleFilters.account && <NativeSelect className="min-w-[110px] flex-1" label="ACCOUNT" value={account} onChange={setAccount} options={[{ value: "all", label: "ALL" }, ...filterOptions.account.map(value => ({ value, label: value }))]} />}
         {visibleFilters.callPut && <NativeSelect className="w-[90px] flex-none" label="C/P" value={callPut} onChange={value => setCallPut(value as typeof callPut)} options={[{ value: "call", label: "CALL" }, { value: "put", label: "PUT" }, { value: "combined", label: "COMBINED" }].filter(option => enabledOptions.callPut[option.value as keyof typeof enabledOptions.callPut])} />}
-        {visibleFilters.moneyness && <NativeSelect className="w-[105px] flex-none" label="ITM/OTM" value={moneyness} onChange={value => setMoneyness(value as MoneynessFilter)} options={[{ value: "all", label: "ALL" }, { value: "itm", label: "ITM" }, { value: "otm", label: "OTM" }].filter(option => enabledOptions.moneyness[option.value as MoneynessFilter])} />}
         {visibleFilters.expiryBucket && <NativeSelect className="min-w-[90px] flex-1" label="DTE" value={expiryBucket} onChange={value => setExpiryBucket(value as ExpiryBucket)} options={[{ value: "all", label: "ALL" }, { value: "expired", label: "EXP" }, { value: "0-2", label: "0–2" }, { value: "3-7", label: "3–7" }, { value: "8-30", label: "8–30" }, { value: "31+", label: "31+" }].filter(option => enabledOptions.expiryBucket[option.value as ExpiryBucket])} />}
         {visibleFilters.status && <NativeSelect className="min-w-[100px] flex-1" label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))].filter(option => enabledOptions.status[option.value as keyof typeof enabledOptions.status])} />}
         {visibleFilters.metric && <NativeSelect label="METRIC" value={metric} onChange={value => setMetric(value as HeatmapMetric)} options={metricOptions.map(([value, label]) => ({ value, label }))} />}
+        {visibleFilters.moneyness && <NativeSelect className="w-[105px] flex-none" label="ITM/OTM" value={moneyness} onChange={value => setMoneyness(value as MoneynessFilter)} options={[{ value: "all", label: "ALL" }, { value: "itm", label: "ITM" }, { value: "otm", label: "OTM" }].filter(option => enabledOptions.moneyness[option.value as MoneynessFilter])} />}
         {visibleFilters.label && <NativeSelect label="LABEL" value={labelMode} onChange={value => setLabelMode(value as CellLabelMode)} options={[{ value: "none", label: "NONE" }, { value: "held", label: "POSITION METRIC" }, { value: "top", label: "TOP 15%" }, { value: "bottom", label: "BOTTOM 15%" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.label[option.value as keyof typeof enabledOptions.label])} />}
         {visibleFilters.hover && <NativeSelect label="HOVER" value={hoverPreset} onChange={value => setHoverPreset(value as HoverDataPreset)} options={[{ value: "risk", label: "RISK" }, { value: "market", label: "MARKET" }, { value: "pnl", label: "PNL" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.hover[option.value as keyof typeof enabledOptions.hover])} />}
       </div>}
@@ -624,6 +624,7 @@ export default function Matrix() {
           fitAll={fitAll}
           spot={spot}
           callPut={callPut}
+          moneyness={moneyness}
           atmStrike={underlying === "all" ? undefined : atmStrikeByUnderlying[underlying]}
           highlightCellKey={highlightCellKey}
           labelMode={labelMode}
