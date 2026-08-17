@@ -312,7 +312,10 @@ export function aggregateHeatmapCellMetric(positions: EnrichedRiskPosition[], me
   if (eligible.length === 0) return null;
   // Never grade a partially known cell. If any contract needed by the selected
   // metric is missing, the entire cell remains visibly listed but uncoloured.
-  if (eligible.some(position => metricValue(position, metric) === null)) return null;
+  if (eligible.some(position => {
+    const value = metricValue(position, metric);
+    return value === null || !Number.isFinite(value);
+  })) return null;
   return aggregateMetric(eligible, metric);
 }
 
@@ -673,6 +676,10 @@ export function buildHeatScale(
 
 export function formatCompact(value: number | null, metric?: HeatmapMetric): string {
   if (value === null || !Number.isFinite(value)) return "MISSING";
+  if (metric === "unitDelta") {
+    const sign = value < 0 ? "−" : value > 0 ? "+" : "";
+    return `${sign}${Math.abs(value).toFixed(3)}`;
+  }
   if (metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread") return `${(value * 100).toFixed(2)}%`;
   if (metric === "distanceToStrike") return `${(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0)}%`;
   if (metric === "DTE") return `${Math.round(value)}d`;

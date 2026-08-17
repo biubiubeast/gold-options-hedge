@@ -128,7 +128,7 @@ function buildDecisionCards(positions: EnrichedRiskPosition[]): DecisionCardMode
     targetCellKey: position ? cellKey(position) : null,
   });
   return [
-    card("unit", "Max Unit Delta", maxUnit, formatCompact(maxUnit?.unitDelta ?? null), maxUnit ? positionLabel(maxUnit) : undefined),
+    card("unit", "Max Unit Delta", maxUnit, formatCompact(maxUnit?.unitDelta ?? null, "unitDelta"), maxUnit ? positionLabel(maxUnit) : undefined),
     card("total", "Max Total Delta", maxTotal, formatCompact(maxTotal?.totalDeltaXAU ?? null), maxTotal ? positionLabel(maxTotal) : undefined),
     card("theta", "Max Theta Burn", maxThetaBurn, `$${formatCompact(maxThetaBurn?.totalThetaUSD ?? null)}/d`, maxThetaBurn ? positionLabel(maxThetaBurn) : undefined),
     card("vega", "Max Vega", maxVega, `$${formatCompact(maxVega?.totalVegaUSD ?? null)}/v`, maxVega ? positionLabel(maxVega) : undefined),
@@ -148,7 +148,7 @@ function PositionDetailDialog({ position, content, onClose }: { position: Enrich
     ["markBidAsk", "Mark / Bid / Ask · Size · $ Notional", `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)} · ${formatCompact(position.bidSize)} / ${formatCompact(position.askSize)} · $${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`], ["markIv", "Mark IV", formatCompact(position.markIV, "markIV")],
     ["bidAskIv", "Bid IV / Ask IV / Spread", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")} / ${formatCompact(position.ivSpread, "ivSpread")}`],
     ["qtyNotional", "Qty / Notional USD", `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`],
-    ["unitDelta", "Unit Delta", position.unitDelta], ["totalDelta", "Total Delta XAU", position.totalDeltaXAU],
+    ["unitDelta", "Unit Delta", formatCompact(position.unitDelta, "unitDelta")], ["totalDelta", "Total Delta XAU", position.totalDeltaXAU],
     ["unitGamma", "Unit Gamma", position.unitGamma], ["totalGamma", "Total Gamma XAU", position.totalGammaXAU],
     ["unitTheta", "Unit Theta", position.unitTheta], ["totalTheta", "Total Theta USD/day", position.totalThetaUSD],
     ["unitVega", "Unit Vega", position.unitVega], ["totalVega", "Total Vega USD/vol", position.totalVegaUSD],
@@ -192,7 +192,7 @@ function ExpiryDetailDialog({ selection, metric, content, onClose }: { selection
   if (content.maxRoll) summaryRows.push(["Max Roll Priority", formatCompact(held.length ? Math.max(...held.map(position => position.rollPriority.total)) : null, "rollPriority")]);
   const greekRows: Array<[string, string]> = [];
   if (content.totalDelta) {
-    greekRows.push(["Unit Delta · Min / Median / Max", `${formatCompact(unitDelta.min)} / ${formatCompact(unitDelta.median)} / ${formatCompact(unitDelta.max)}`]);
+    greekRows.push(["Unit Delta · Min / Median / Max", `${formatCompact(unitDelta.min, "unitDelta")} / ${formatCompact(unitDelta.median, "unitDelta")} / ${formatCompact(unitDelta.max, "unitDelta")}`]);
     greekRows.push(["Total Delta XAU · Sum", formatCompact(sum(held.map(position => position.totalDeltaXAU)))]);
   }
   if (content.totalGamma) greekRows.push(["Total Gamma XAU · Sum", formatCompact(sum(held.map(position => position.totalGammaXAU)))]);

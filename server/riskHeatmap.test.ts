@@ -34,6 +34,12 @@ describe("institutional risk heatmap acceptance", () => {
     expect(formatCompact(0.0123, "ivSpread")).toBe("1.23%");
   });
 
+  it("formats Unit Delta with three decimal places", () => {
+    expect(formatCompact(0.42, "unitDelta")).toBe("+0.420");
+    expect(formatCompact(-0.0574, "unitDelta")).toBe("−0.057");
+    expect(formatCompact(null, "unitDelta")).toBe("MISSING");
+  });
+
   it("generates deterministic 100/200-position datasets with required edge cases", () => {
     const hundred = generateMockPositions(100, 7, asOf);
     const twoHundred = generateMockPositions(200, 7, asOf);
@@ -168,7 +174,9 @@ describe("institutional risk heatmap acceptance", () => {
     const source = enrichRiskPositions(generateMockPositions(2, 47, asOf), spots, asOf);
     const valid = { ...source[0], unitDelta: 0.42 };
     const missing = { ...source[1], unitDelta: null };
+    const invalid = { ...source[1], unitDelta: Number.NaN };
     expect(aggregateHeatmapCellMetric([valid, missing], "unitDelta")).toBeNull();
+    expect(aggregateHeatmapCellMetric([valid, invalid], "unitDelta")).toBeNull();
     expect(aggregateHeatmapCellMetric([valid], "unitDelta")).toBe(0.42);
   });
 

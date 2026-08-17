@@ -77,7 +77,7 @@ function TooltipPosition({ position, metric, preset, content }: { position: Enri
       rows.push(["Qty", formatCompact(position.netQty)]);
       rows.push(["Notional Size USD", `$${formatCompact(position.notionalSizeUSD)}`]);
     }
-    if (content.unitDelta) rows.push(["Unit Delta", formatCompact(position.unitDelta)]);
+    if (content.unitDelta) rows.push(["Unit Delta", formatCompact(position.unitDelta, "unitDelta")]);
     if (content.totalDelta) rows.push(["Total Delta XAU", formatCompact(position.totalDeltaXAU)]);
     if (content.unitGamma) rows.push(["Unit Gamma", formatCompact(position.unitGamma)]);
     if (content.totalGamma) rows.push(["Total Gamma XAU", formatCompact(position.totalGammaXAU)]);
@@ -244,7 +244,8 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
               const spotLine = range.nearestStrike === strike;
               return <Tooltip key={key} delayDuration={80} open={hoveredCellKey === key} onOpenChange={open => setHoveredCellKey(open ? key : null)}><TooltipTrigger asChild><button
                 type="button" data-cell-key={key} data-held={cell?.held ? "true" : "false"} data-xaut-held={xautHeld ? "true" : "false"}
-                className={`relative overflow-hidden border border-solid px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${zoneClass[zoneFor(strike, spot, callPut, atmStrikes)]} ${cell ? "border-cyan-300/45" : "border-border/[0.07] opacity-30"} ${cell?.held ? "z-[3] border-white" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""}`}
+                data-metric-missing={cell?.value == null ? "true" : "false"}
+                className={`relative overflow-hidden border border-solid px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${cell?.value == null ? "" : zoneClass[zoneFor(strike, spot, callPut, atmStrikes)]} ${cell ? "border-cyan-300/45" : "border-border/[0.07] opacity-30"} ${cell?.held ? "z-[3] border-white" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""}`}
                 style={{
                   height: rowHeight,
                   containerType: "size",
