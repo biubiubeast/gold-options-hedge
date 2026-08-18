@@ -187,7 +187,7 @@ function DashboardLayoutContent({
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-semibold tracking-tight truncate text-gold-gradient">
-                    黄金期权对冲
+                    Non-Linearity Lab
                   </span>
                 </div>
               ) : null}
