@@ -3,6 +3,7 @@ import {
   aggregateHeatmapCellMetric,
   aggregateMetric,
   buildHeatScale,
+  canonicalStrike,
   calculateScenario,
   classifyOptionMoneyness,
   enrichRiskPositions,
@@ -12,6 +13,7 @@ import {
   finiteOrNull,
   formatCompact,
   formatSpotPrice,
+  formatStrike,
   formatStrikeDistanceFromSpot,
   generateMockPositions,
   magnitudeHeatColor,
@@ -115,6 +117,15 @@ describe("institutional risk heatmap acceptance", () => {
     expect(formatSpotPrice(401)).toBe("401.00");
     expect(formatSpotPrice(4366.6)).toBe("4,366.60");
     expect(formatSpotPrice(null)).toBe("MISSING");
+  });
+
+  it("preserves listed strike precision so different contracts never share an axis label", () => {
+    expect(canonicalStrike(387.50000000000006)).toBe(387.5);
+    expect(canonicalStrike(387.5)).not.toBe(canonicalStrike(388));
+    expect(formatStrike(387.5)).toBe("387.5");
+    expect(formatStrike(388)).toBe("388");
+    expect(formatStrike(387.5)).not.toBe(formatStrike(388));
+    expect(formatStrike(1234.125)).toBe("1,234.125");
   });
 
   it("replaces ITM/OTM labels with signed strike distance versus spot", () => {

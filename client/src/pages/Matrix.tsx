@@ -17,12 +17,14 @@ import {
   METRIC_LABELS,
   aggregateHeatmapCellMetric,
   buildHeatScale,
+  canonicalStrike,
   classifyOptionMoneyness,
   enrichRiskPositions,
   expiryBucketMatchesDte,
   formatCompact,
   formatPrice,
   formatSpotPrice,
+  formatStrike,
   generateMockPositions,
   metricValue,
   metricDistribution,
@@ -88,7 +90,11 @@ function NativeSelect({ label, value, options, onChange, className = "" }: {
 }
 
 function cellKey(position: Pick<EnrichedRiskPosition, "expiry" | "strike">) {
-  return `${position.expiry}|${position.strike}`;
+  return `${position.expiry}|${canonicalStrike(position.strike)}`;
+}
+
+function contractKey(position: Pick<EnrichedRiskPosition, "underlying" | "expiry" | "strike" | "callPut">) {
+  return `${position.underlying}|${position.expiry}|${canonicalStrike(position.strike)}|${position.callPut}`;
 }
 
 function bestBy(positions: EnrichedRiskPosition[], value: (position: EnrichedRiskPosition) => number | null, absolute = true) {
@@ -143,7 +149,7 @@ function PositionDetailDialog({ position, content, onClose }: { position: Enrich
   if (!position) return null;
   const candidates: Array<[keyof typeof content, string, unknown]> = [
     ["instrument", "Instrument", position.instrument], ["underlyingCallPut", "Underlying / CallPut", `${position.underlying} / ${position.callPut.toUpperCase()}`],
-    ["expiryDte", "Expiry / DTE", `${position.expiry} / ${position.dte}d`], ["strike", "Strike", formatPrice(position.strike)],
+    ["expiryDte", "Expiry / DTE", `${position.expiry} / ${position.dte}d`], ["strike", "Strike", formatStrike(position.strike)],
     ["venueBrokerAccount", "Venue / Broker / Account", `${position.venue} / ${position.broker} / ${position.account}`], ["netQty", "Net Qty", position.netQty],
     ["contractMultiplier", "Contract Multiplier", position.contractMultiplier], ["xauPerUnit", "XAU per unit", position.underlying === "GLD" ? position.gldOzPerShare : position.underlyingOzPerUnit],
     ["markBidAsk", "Mark / Bid / Ask · Size · $ Notional", `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)} · ${formatCompact(position.bidSize)} / ${formatCompact(position.askSize)} · $${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`], ["markIv", "Mark IV", formatCompact(position.markIV, "markIV")],
@@ -305,7 +311,7 @@ export default function Matrix() {
     if (dataset === "mock200") return generateMockPositions(200, 20260811, asOf);
     const held = buildLiveRiskPositions({ views: liveViews, spots: liveSpots, settings, formulas });
     if (dataset !== "chain") return held;
-    const heldKeys = new Set(held.map(position => `${position.underlying}|${position.expiry}|${position.strike}|${position.callPut}`));
+    const heldKeys = new Set(held.map(contractKey));
     const gldOzPerShare = resolveGldXauMultiplier(formulas?.length ? formulas : [], settings.gldSpotScaleOverride ?? 0.092);
     const xautPerUnit = resolveXautXauMultiplier(formulas?.length ? formulas : [], settings.xautSpotScaleOverride ?? 1);
     const btcPerUnit = liveSpots.xau > 0 && liveSpots.btc > 0 ? liveSpots.btc / liveSpots.xau : null;
@@ -315,7 +321,7 @@ export default function Matrix() {
       ...buildGldChainRiskPositions(gldChain?.quotes ?? [], gldOzPerShare, gldContractMultiplier),
       ...buildChainRiskPositions(xautChain?.quotes ?? [], "XAUT", xautPerUnit, xautContractMultiplier),
       ...buildChainRiskPositions(btcChain?.quotes ?? [], "BTC", btcPerUnit),
-    ].filter(position => !heldKeys.has(`${position.underlying}|${position.expiry}|${position.strike}|${position.callPut}`));
+    ].filter(position => !heldKeys.has(contractKey(position)));
     return [...held, ...listed];
   }, [asOf, btcChain?.quotes, dataset, formulas, gldChain?.quotes, liveSpots, liveViews, settings, xautChain?.quotes]);
   const enriched = useMemo(() => enrichRiskPositions(riskPositions, displaySpots, asOf, formulas), [asOf, displaySpots, formulas, riskPositions]);
@@ -477,7 +483,7 @@ export default function Matrix() {
       return {
         key,
         expiry: cellPositions[0].expiry,
-        strike: cellPositions[0].strike,
+        strike: canonicalStrike(cellPositions[0].strike),
         positions: cellPositions,
         value,
         ungradedReason: value !== null
@@ -494,7 +500,7 @@ export default function Matrix() {
     return {
       cells: cellModels,
       expiries: [...new Set(filtered.map(position => position.expiry))].sort(),
-      strikes: [...new Set(filtered.map(position => position.strike))].sort((a, b) => a - b),
+      strikes: [...new Set(filtered.map(position => canonicalStrike(position.strike)))].sort((a, b) => a - b),
     };
   }, [filtered, metric]);
   const sequentialMagnitude = metric === "unitDelta" || metric === "totalDelta"
@@ -615,7 +621,7 @@ export default function Matrix() {
         {visibleFilters.cellSize && <div className="flex h-6 items-center border border-border text-[9px] text-muted-foreground"><button aria-label="Smaller cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.max(3, value - 1)); }}><Minus className="h-3 w-3" /></button><span className="w-8 text-center font-mono">{cellSize}px</span><button aria-label="Larger cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.min(28, value + 1)); }}><Plus className="h-3 w-3" /></button></div>}
         {visibleFilters.fitAll && <button type="button" onClick={() => setFitAll(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${fitAll ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ScanLine className="h-3 w-3" />Fit All</button>}
         {visibleFilters.fullscreen && <button type="button" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit heatmap fullscreen" : "Enter heatmap fullscreen"} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${isFullscreen ? "border-amber-300 bg-amber-300/15 text-amber-200" : "border-border text-muted-foreground"}`}>{isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</button>}
-        <Tooltip delayDuration={80}><TooltipTrigger asChild><span data-testid="spot-atm-marker" className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />ATM</span></TooltipTrigger><TooltipContent side="bottom" sideOffset={4} className="border border-amber-300/40 bg-popover px-2 py-1 text-[10px] text-popover-foreground shadow-xl"><span className="text-muted-foreground">{spotUnderlying} Spot price </span><strong className="font-mono text-amber-300">{formatSpotPrice(spot)}</strong><span className="ml-2 text-muted-foreground">Nearest Strike </span><strong className="font-mono">{formatPrice(spotRangeState(strikes, spot).nearestStrike)}</strong></TooltipContent></Tooltip>
+        <Tooltip delayDuration={80}><TooltipTrigger asChild><span data-testid="spot-atm-marker" className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />ATM</span></TooltipTrigger><TooltipContent side="bottom" sideOffset={4} className="border border-amber-300/40 bg-popover px-2 py-1 text-[10px] text-popover-foreground shadow-xl"><span className="text-muted-foreground">{spotUnderlying} Spot price </span><strong className="font-mono text-amber-300">{formatSpotPrice(spot)}</strong><span className="ml-2 text-muted-foreground">Nearest Strike </span><strong className="font-mono">{formatStrike(spotRangeState(strikes, spot).nearestStrike)}</strong></TooltipContent></Tooltip>
       </div>}
 
       {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "GLD" || underlying === "all") && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">GLD FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · updated {new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed (actual lag varies) · cyan listed / white held</div>}

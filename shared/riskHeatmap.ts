@@ -265,7 +265,7 @@ export function expiryBucketMatchesDte(dte: number, bucket: ExpiryBucket): boole
 }
 
 export function positionLabel(position: Pick<RiskPosition, "underlying" | "expiry" | "strike" | "callPut">): string {
-  return `${position.underlying} ${position.expiry.slice(5)} ${formatPrice(position.strike)}${position.callPut === "call" ? "C" : "P"}`;
+  return `${position.underlying} ${position.expiry.slice(5)} ${formatStrike(position.strike)}${position.callPut === "call" ? "C" : "P"}`;
 }
 
 export function metricValue(position: EnrichedRiskPosition, metric: HeatmapMetric): number | null {
@@ -698,7 +698,26 @@ export function formatCompact(value: number | null, metric?: HeatmapMetric): str
 
 export function formatPrice(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return "MISSING";
-  return value.toLocaleString("en-US", { maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0 });
+  return value.toLocaleString("en-US", { maximumFractionDigits: Math.abs(value) < 100 ? 2 : 3 });
+}
+
+/**
+ * Remove binary floating-point noise without collapsing distinct listed
+ * contracts. Eight decimals is substantially finer than supported exchange
+ * strike increments while keeping keys stable across held and chain sources.
+ */
+export function canonicalStrike(value: number): number {
+  return Number.isFinite(value) ? Number(value.toFixed(8)) : value;
+}
+
+/**
+ * A strike is an instrument identifier, not just a display price. Preserve
+ * source precision so distinct contracts such as 387.5 and 388 never render
+ * as the same heatmap axis label.
+ */
+export function formatStrike(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "MISSING";
+  return canonicalStrike(value).toLocaleString("en-US", { maximumFractionDigits: 8 });
 }
 
 export function formatSpotPrice(value: number | null): string {
