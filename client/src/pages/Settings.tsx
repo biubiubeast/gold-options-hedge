@@ -22,7 +22,7 @@ function numeric(value: string, fallback: number, minimum = 0) {
 
 const heatmapFilterLabels: Array<[keyof PortfolioSettings["heatmapVisibleFilters"], string, string]> = [
   ["dataset", "Data / 数据集", "真实仓位、完整期权链或压力测试数据"],
-  ["underlying", "Underlying", "GLD、XAUT、BTC 或全部标的"],
+  ["underlying", "Underlying / Venue", "GLD、XAUT、BTC、ETH 及对应行情场所"],
   ["venue", "Venue", "交易场所或行情场所"],
   ["broker", "Broker", "经纪商维度"],
   ["account", "Account", "账户维度"],
@@ -32,7 +32,7 @@ const heatmapFilterLabels: Array<[keyof PortfolioSettings["heatmapVisibleFilters
   ["status", "Data Status", "LIVE、STALE、WARN、MISSING、FAIL"],
   ["metric", "Metric", "热力图颜色所代表的指标"],
   ["scale", "Color Scale", "Quantile、Log、Zero-centered"],
-  ["spot", "Spot 标记", "GLD、XAUT、BTC 或 XAU Spot"],
+  ["spot", "Spot 标记", "GLD、XAUT、BTC、ETH 或 XAU Spot"],
   ["label", "Label", "方格内数值标签模式"],
   ["hover", "Hover", "Hover 弹窗的数据预设"],
   ["range", "色标上下限", "MIN、MAX 和自定义范围按钮"],
@@ -44,7 +44,7 @@ const heatmapFilterLabels: Array<[keyof PortfolioSettings["heatmapVisibleFilters
 ];
 
 const heldCellContentLabels: Array<[keyof PortfolioSettings["heatmapHeldCellContent"], string, string]> = [
-  ["underlying", "Underlying · X/G/B", "X=XAUT、G=GLD、B=BTC、M=同格包含多个标的"],
+  ["underlying", "Underlying · X/G/B/E", "X=XAUT、G=GLD、B=BTC、E=ETH、M=同格包含多个标的"],
   ["callPut", "Option Type · C/P", "C=Call、P=Put、C/P=同格同时包含 Call 与 Put"],
   ["dataStatus", "Data Status · L/S/W/M/F", "L=LIVE、S=STALE、W=WARN、M=MISSING、F=FAIL"],
 ];
@@ -75,20 +75,20 @@ const heatmapSectionLabels: Array<[keyof PortfolioSettings["heatmapVisibleSectio
   ["decisionCards", "Show Cards / 决策卡", "显示顶部 Show/Hide Cards 按钮；默认隐藏"],
   ["dataError", "Largest Data Error", "显示顶部数据质量说明按钮；默认隐藏"],
   ["scenario", "情景分析", "显示热力图底部 XAU / IV / Day Shock 分析；默认隐藏"],
-  ["chainStatusBanner", "期权链状态提示", "显示筛选区下方 GLD / XAUT / BTC FULL CHAIN 行情来源与更新时间；默认隐藏"],
+  ["chainStatusBanner", "期权链状态提示", "显示筛选区下方 GLD / XAUT / BTC / ETH 多 Venue 完整期权链来源与更新时间；默认隐藏"],
   ["positionOnlyMetricBanner", "Position-only Metric 提示", "显示 Qty、Notional、MV 等仅按持仓着色的口径说明；默认隐藏"],
   ["chainContractCount", "完整期权链合约数", "在顶部显示 Call + Put、筛选前的原始期权链合约数；默认隐藏"],
 ];
 
 const fixedOptionGroups = [
   ["dataset", "Data / 数据集", [["chain", "完整期权链"], ["live", "持仓行情"], ["mock100", "Mock 100"], ["mock200", "Mock 200"]]],
-  ["underlying", "Underlying", [["GLD", "GLD/USD-OPRA"], ["XAUT", "XAUT/USDT - Bybit"], ["BTC", "BTC/USDT - Bybit"], ["all", "ALL UNDERLYINGS"]]],
+  ["underlying", "Underlying / Venue", [["GLD", "GLD/USD-OPRA"], ["XAUT", "XAUT/USDT - Bybit"], ["BTC", "BTC/USDT - Bybit"], ["BTC_DERIBIT", "BTC/USD - Deribit"], ["ETH_BYBIT", "ETH/USDT - Bybit"], ["ETH_DERIBIT", "ETH/USD - Deribit"], ["all", "ALL MARKETS"]]],
   ["callPut", "C/P", [["call", "CALL"], ["put", "PUT"], ["combined", "CALL + PUT（仅 OTM）"]]],
   ["moneyness", "ITM / OTM", [["all", "ALL"], ["itm", "ITM"], ["otm", "OTM"]]],
   ["expiryBucket", "DTE", [["all", "ALL"], ["expired", "EXPIRED"], ["0-2", "0–2"], ["3-7", "3–7"], ["8-30", "8–30"], ["31+", "31+"]]],
   ["status", "Data Status", [["all", "ALL"], ["LIVE", "LIVE"], ["STALE", "STALE"], ["WARN", "WARN"], ["MISSING", "MISSING"], ["FAIL", "FAIL"]]],
   ["scale", "Color Scale", [["quantile", "QUANTILE"], ["log", "LOG"], ["symmetric", "ZERO-CENTER"]]],
-  ["spot", "Spot", [["GLD", "GLD"], ["XAUT", "XAUT"], ["BTC", "BTC"], ["XAU", "XAU"]]],
+  ["spot", "Spot", [["GLD", "GLD"], ["XAUT", "XAUT"], ["BTC", "BTC"], ["ETH", "ETH"], ["XAU", "XAU"]]],
   ["label", "Label", [["none", "NONE"], ["held", "POSITION METRIC"], ["top", "TOP 15%"], ["bottom", "BOTTOM 15%"], ["all", "ALL"]]],
   ["hover", "Hover Preset", [["risk", "RISK"], ["market", "MARKET"], ["pnl", "PNL"], ["all", "ALL"]]],
 ] as const;

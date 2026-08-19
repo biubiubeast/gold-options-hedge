@@ -77,6 +77,7 @@ export function buildLiveRiskPositions(args: {
       gldOzPerShare: position.underlying === "GLD" ? finiteOrNull(ounces) : null,
       underlyingOzPerUnit: position.underlying !== "GLD" ? finiteOrNull(ounces) : null,
       markPrice: market.available ? finiteOrNull(market.markPrice) : null,
+      premiumCurrency: position.currency ?? (position.underlying === "XAUT" || position.underlying === "BTC" ? "USDT" : "USD"),
       bid: market.bid1 > 0 ? market.bid1 : null,
       ask: market.ask1 > 0 ? market.ask1 : null,
       bidSize: market.bidSize,
@@ -124,19 +125,22 @@ type ChainQuote = {
   bid1Price: number; ask1Price: number; bid1Size?: number | null; ask1Size?: number | null; delta: number; gamma: number; theta: number; vega: number;
   timestamp: number; source: string; openInterest?: number; volume?: number;
   marketAvailable?: boolean;
+  contractMultiplier?: number;
+  premiumCurrency?: string;
 };
 
 export function buildChainRiskPositions(
   quotes: ChainQuote[],
-  underlying: "GLD" | "XAUT" | "BTC",
+  underlying: "GLD" | "XAUT" | "BTC" | "ETH",
   xauPerUnit: number | null,
   standardContractMultiplier?: number,
+  market?: { venue?: string; deliverableSource?: string },
 ): RiskPosition[] {
   return quotes.map(quote => {
     const marketAvailable = quote.marketAvailable !== false;
     return ({
-    id: `chain:${quote.symbol}`,
-    venue: underlying === "GLD" ? "Cboe / OPRA" : "Bybit",
+    id: `chain:${market?.venue ?? (underlying === "GLD" ? "Cboe / OPRA" : "Bybit")}:${quote.symbol}`,
+    venue: market?.venue ?? (underlying === "GLD" ? "Cboe / OPRA" : "Bybit"),
     broker: "MARKET CHAIN",
     account: "LISTED-NO-POSITION",
     underlying,
@@ -145,14 +149,15 @@ export function buildChainRiskPositions(
     expiry: quote.expiry,
     strike: quote.strike,
     netQty: 0,
-    contractMultiplier: standardContractMultiplier ?? (underlying === "GLD" ? 100 : 1),
-    deliverableSource: underlying === "GLD"
+    contractMultiplier: quote.contractMultiplier ?? standardContractMultiplier ?? (underlying === "GLD" ? 100 : 1),
+    deliverableSource: market?.deliverableSource ?? (underlying === "GLD"
       ? "OCC standard GLD contract display · verify adjusted deliverables with broker contract master"
-      : "Bybit V5 instrument specification",
+      : "Bybit V5 instrument specification"),
     contractAdjusted: false,
     gldOzPerShare: underlying === "GLD" ? xauPerUnit : null,
     underlyingOzPerUnit: underlying !== "GLD" ? xauPerUnit : null,
     markPrice: marketAvailable && quote.markPrice > 0 ? quote.markPrice : null,
+    premiumCurrency: quote.premiumCurrency ?? (underlying === "GLD" ? "USD" : "USDT"),
     bid: quote.bid1Price > 0 ? quote.bid1Price : 0,
     ask: quote.ask1Price > 0 ? quote.ask1Price : 0,
     bidSize: quote.bid1Size ?? null,

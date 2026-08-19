@@ -44,6 +44,7 @@ export function LiveSpotBar() {
       <SpotChip label="XAUT/USDT" value={data?.xaut} />
       <SpotChip label="GLD/USD" value={data?.gld} />
       <SpotChip label="BTC/USDT" value={data?.btc} />
+      <SpotChip label="ETH/USDT" value={data?.eth} />
       <Button
         type="button"
         variant="ghost"

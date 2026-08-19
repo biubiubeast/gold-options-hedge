@@ -16,6 +16,12 @@ import {
   getBtcOptionChain,
   getBtcOptionTickers,
   getBtcSpotPrice,
+  getEthOptionInstruments,
+  getEthOptionChain,
+  getEthOptionTickers,
+  getEthSpotPrice,
+  getDeribitBtcOptionChain,
+  getDeribitEthOptionChain,
 } from "./marketData";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
 import { evaluateNamedFormula, validateFormula } from "@shared/formulaEngine";
@@ -229,6 +235,9 @@ export const appRouter = router({
     btcTickers: protectedProcedure.query(getBtcOptionTickers),
     btcInstruments: protectedProcedure.query(getBtcOptionInstruments),
     btcSpot: protectedProcedure.query(getBtcSpotPrice),
+    ethTickers: protectedProcedure.query(getEthOptionTickers),
+    ethInstruments: protectedProcedure.query(getEthOptionInstruments),
+    ethSpot: protectedProcedure.query(getEthSpotPrice),
     gldPrice: protectedProcedure.query(getGldPrice),
     goldPrice: protectedProcedure.query(getGoldPrice),
     gldOptionQuotes: protectedProcedure
@@ -244,9 +253,12 @@ export const appRouter = router({
     gldOptionChain: protectedProcedure.query(getGldOptionChain),
     xautOptionChain: protectedProcedure.query(getXautOptionChain),
     btcOptionChain: protectedProcedure.query(getBtcOptionChain),
+    ethOptionChain: protectedProcedure.query(getEthOptionChain),
+    deribitBtcOptionChain: protectedProcedure.query(getDeribitBtcOptionChain),
+    deribitEthOptionChain: protectedProcedure.query(getDeribitEthOptionChain),
     spotPrices: protectedProcedure.query(async () => {
-      const [xaut, gld, gold, btc] = await Promise.all([getXautSpotPrice(), getGldPrice(), getGoldPrice(), getBtcSpotPrice()]);
-      return { xaut, gld, gold, btc };
+      const [xaut, gld, gold, btc, eth] = await Promise.all([getXautSpotPrice(), getGldPrice(), getGoldPrice(), getBtcSpotPrice(), getEthSpotPrice()]);
+      return { xaut, gld, gold, btc, eth };
     }),
     sources: protectedProcedure.query(getMarketSources),
   }),

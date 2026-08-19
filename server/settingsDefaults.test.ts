@@ -64,6 +64,9 @@ describe("operator display defaults", () => {
       GLD: true,
       XAUT: true,
       BTC: true,
+      BTC_DERIBIT: true,
+      ETH_BYBIT: true,
+      ETH_DERIBIT: true,
       all: false,
     });
   });

@@ -26,7 +26,7 @@ import {
 import { DEFAULT_FORMULAS } from "../shared/marketTypes";
 
 const asOf = new Date("2026-08-11T10:00:00.000Z");
-const spots = { GLD: 247.3, XAUT: 3358, BTC: 95_000, XAU: 3358 } as const;
+const spots = { GLD: 247.3, XAUT: 3358, BTC: 95_000, ETH: 3_300, XAU: 3358 } as const;
 
 describe("institutional risk heatmap acceptance", () => {
   it("formats every IV metric with two decimal places", () => {

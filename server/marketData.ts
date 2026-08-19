@@ -1,6 +1,7 @@
 import type { SpotPrice } from "@shared/marketTypes";
 
 const BYBIT_BASE_URL = "https://api.bybit.com";
+const DERIBIT_BASE_URL = "https://www.deribit.com/api/v2";
 const YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart";
 const TRADIER_BASE_URL = process.env.TRADIER_BASE_URL || "https://api.tradier.com/v1";
 const MARKETDATA_BASE_URL = "https://api.marketdata.app/v1";
@@ -84,7 +85,9 @@ export interface GldOptionChain {
 }
 
 export interface XautOptionQuote extends Omit<GldOptionQuote, "source"> {
-  source: "Bybit V5 realtime options";
+  source: string;
+  contractMultiplier?: number;
+  premiumCurrency?: string;
 }
 
 export interface XautOptionChain extends Omit<GldOptionChain, "quotes" | "status"> {
@@ -94,7 +97,45 @@ export interface XautOptionChain extends Omit<GldOptionChain, "quotes" | "status
 
 export type BtcOptionQuote = XautOptionQuote;
 export type BtcOptionChain = XautOptionChain;
-type BybitOptionBaseCoin = "XAUT" | "BTC";
+export type EthOptionQuote = XautOptionQuote;
+export type EthOptionChain = XautOptionChain;
+type BybitOptionBaseCoin = "XAUT" | "BTC" | "ETH";
+type DeribitOptionCurrency = "BTC" | "ETH";
+
+export interface DeribitInstrument {
+  state: string;
+  kind: string;
+  instrument_name: string;
+  expiration_timestamp: number;
+  is_active: boolean;
+  contract_size: number;
+  strike: number;
+  base_currency: string;
+  quote_currency: string;
+  option_type: "call" | "put";
+}
+
+export interface DeribitBookSummary {
+  instrument_name: string;
+  bid_price: number | null;
+  ask_price: number | null;
+  mark_price: number | null;
+  mark_iv: number | null;
+  underlying_price: number | null;
+  interest_rate: number | null;
+  open_interest: number | null;
+  volume: number | null;
+  creation_timestamp: number;
+  base_currency: string;
+  quote_currency: string;
+}
+
+interface DeribitResponse<T> {
+  jsonrpc: "2.0";
+  result?: T;
+  error?: { code?: number; message?: string; data?: unknown };
+  usOut?: number;
+}
 
 export interface GldContractRequest {
   expiry: string;
@@ -176,12 +217,13 @@ function bsPrice(spot: number, strike: number, years: number, rate: number, vola
 }
 
 /** Invert option price to annualized IV. Null means the quote violates no-arbitrage bounds or is unavailable. */
-export function impliedVolatilityFromPrice(args: { price: number; spot: number; strike: number; expiry: string; optionType: "call" | "put"; asOf: number }): number | null {
+export function impliedVolatilityFromPrice(args: { price: number; spot: number; strike: number; expiry: string; optionType: "call" | "put"; asOf: number; expiryTimestamp?: number; rate?: number }): number | null {
   const { price, spot, strike, optionType, asOf } = args;
   if (![price, spot, strike].every(value => Number.isFinite(value) && value > 0)) return null;
-  const expiryTime = Date.parse(`${args.expiry}T20:00:00Z`);
+  const expiryTime = args.expiryTimestamp ?? Date.parse(`${args.expiry}T20:00:00Z`);
   const years = Math.max((expiryTime - asOf) / (365.25 * 86_400_000), 1 / (365.25 * 24));
-  const discountedStrike = strike * Math.exp(-0.045 * years);
+  const rate = Number.isFinite(args.rate) ? Number(args.rate) : 0.045;
+  const discountedStrike = strike * Math.exp(-rate * years);
   const lowerBound = optionType === "call" ? Math.max(spot - discountedStrike, 0) : Math.max(discountedStrike - spot, 0);
   const upperBound = optionType === "call" ? spot : discountedStrike;
   if (price < lowerBound - 0.02 || price > upperBound + 0.02) return null;
@@ -189,7 +231,7 @@ export function impliedVolatilityFromPrice(args: { price: number; spot: number; 
   let high = 5;
   for (let iteration = 0; iteration < 28; iteration += 1) {
     const mid = (low + high) / 2;
-    if (bsPrice(spot, strike, years, 0.045, mid, optionType) < price) low = mid;
+    if (bsPrice(spot, strike, years, rate, mid, optionType) < price) low = mid;
     else high = mid;
   }
   const result = (low + high) / 2;
@@ -268,8 +310,10 @@ async function getBybitOptionInstruments(baseCoin: BybitOptionBaseCoin): Promise
 
 export const getXautOptionTickers = () => getBybitOptionTickers("XAUT");
 export const getBtcOptionTickers = () => getBybitOptionTickers("BTC");
+export const getEthOptionTickers = () => getBybitOptionTickers("ETH");
 export const getXautOptionInstruments = () => getBybitOptionInstruments("XAUT");
 export const getBtcOptionInstruments = () => getBybitOptionInstruments("BTC");
+export const getEthOptionInstruments = () => getBybitOptionInstruments("ETH");
 
 function parseBybitOptionSymbol(symbol: string, baseCoin: BybitOptionBaseCoin): { expiry: string; strike: number; optionType: "call" | "put" } | null {
   const match = symbol.toUpperCase().match(new RegExp(`^${baseCoin}-(\\d{1,2})([A-Z]{3})(\\d{2})-([0-9.]+)-([CP])(?:-|$)`));
@@ -339,6 +383,7 @@ async function getBybitOptionChain(baseCoin: BybitOptionBaseCoin): Promise<XautO
 
 export const getXautOptionChain = () => getBybitOptionChain("XAUT");
 export const getBtcOptionChain = () => getBybitOptionChain("BTC");
+export const getEthOptionChain = () => getBybitOptionChain("ETH");
 
 async function getBybitSpotPrice(baseCoin: BybitOptionBaseCoin): Promise<SpotPrice | null> {
   return cached(`${baseCoin.toLowerCase()}-spot`, LIVE_CACHE_MS, async () => {
@@ -354,6 +399,188 @@ async function getBybitSpotPrice(baseCoin: BybitOptionBaseCoin): Promise<SpotPri
 
 export const getXautSpotPrice = () => getBybitSpotPrice("XAUT");
 export const getBtcSpotPrice = () => getBybitSpotPrice("BTC");
+export const getEthSpotPrice = () => getBybitSpotPrice("ETH");
+
+function normalPdf(value: number): number {
+  return Math.exp(-0.5 * value * value) / Math.sqrt(2 * Math.PI);
+}
+
+function deribitModelGreeks(args: {
+  spot: number;
+  strike: number;
+  expiryTimestamp: number;
+  asOf: number;
+  rate: number;
+  volatility: number;
+  optionType: "call" | "put";
+}) {
+  const years = Math.max((args.expiryTimestamp - args.asOf) / (365.25 * 86_400_000), 1 / (365.25 * 24));
+  const sqrtTime = Math.sqrt(years);
+  const d1 = (Math.log(args.spot / args.strike) + (args.rate + args.volatility * args.volatility / 2) * years) / (args.volatility * sqrtTime);
+  const d2 = d1 - args.volatility * sqrtTime;
+  const density = normalPdf(d1);
+  const delta = args.optionType === "call" ? normalCdf(d1) : normalCdf(d1) - 1;
+  const gamma = density / (args.spot * args.volatility * sqrtTime);
+  const thetaAnnual = args.optionType === "call"
+    ? -(args.spot * density * args.volatility) / (2 * sqrtTime) - args.rate * args.strike * Math.exp(-args.rate * years) * normalCdf(d2)
+    : -(args.spot * density * args.volatility) / (2 * sqrtTime) + args.rate * args.strike * Math.exp(-args.rate * years) * normalCdf(-d2);
+  return {
+    delta,
+    gamma,
+    theta: thetaAnnual / 365.25,
+    vega: args.spot * density * sqrtTime / 100,
+  };
+}
+
+/** Normalize a Deribit inverse option into the heatmap's decimal-IV schema. */
+export function normalizeDeribitOption(
+  instrument: DeribitInstrument,
+  summary: DeribitBookSummary | undefined,
+  asOf: number,
+): XautOptionQuote {
+  const expiry = new Date(instrument.expiration_timestamp).toISOString().slice(0, 10);
+  const underlyingPrice = toNumber(summary?.underlying_price);
+  const markIv = toNumber(summary?.mark_iv) / 100;
+  const rate = toNumber(summary?.interest_rate);
+  const bidPrice = toNumber(summary?.bid_price);
+  const askPrice = toNumber(summary?.ask_price);
+  // Deribit BTC/ETH inverse option premiums are quoted in the base coin.
+  // Convert premium to USD before inverting Black-Scholes IV.
+  const bidIv = bidPrice > 0 && underlyingPrice > 0
+    ? impliedVolatilityFromPrice({
+        price: bidPrice * underlyingPrice,
+        spot: underlyingPrice,
+        strike: instrument.strike,
+        expiry,
+        expiryTimestamp: instrument.expiration_timestamp,
+        optionType: instrument.option_type,
+        asOf,
+        rate,
+      })
+    : null;
+  const askIv = askPrice > 0 && underlyingPrice > 0
+    ? impliedVolatilityFromPrice({
+        price: askPrice * underlyingPrice,
+        spot: underlyingPrice,
+        strike: instrument.strike,
+        expiry,
+        expiryTimestamp: instrument.expiration_timestamp,
+        optionType: instrument.option_type,
+        asOf,
+        rate,
+      })
+    : null;
+  const model = underlyingPrice > 0 && markIv > 0
+    ? deribitModelGreeks({
+        spot: underlyingPrice,
+        strike: instrument.strike,
+        expiryTimestamp: instrument.expiration_timestamp,
+        asOf,
+        rate,
+        volatility: markIv,
+        optionType: instrument.option_type,
+      })
+    : null;
+  const marketAvailable = Boolean(summary) && underlyingPrice > 0 && toNumber(summary?.mark_price) > 0 && markIv > 0;
+  return {
+    symbol: instrument.instrument_name,
+    expiry,
+    strike: instrument.strike,
+    optionType: instrument.option_type,
+    markPrice: toNumber(summary?.mark_price),
+    markIv,
+    bidIv,
+    askIv,
+    ivSpread: bidIv !== null && askIv !== null ? askIv - bidIv : null,
+    bid1Price: bidPrice,
+    ask1Price: askPrice,
+    bid1Size: null,
+    ask1Size: null,
+    delta: model?.delta ?? 0,
+    gamma: model?.gamma ?? 0,
+    theta: model?.theta ?? 0,
+    vega: model?.vega ?? 0,
+    timestamp: optionalTimestamp(summary?.creation_timestamp) || asOf,
+    source: `Deribit REST full-chain snapshot · model Greeks/Bid-Ask IV · premium ${instrument.quote_currency}`,
+    openInterest: summary ? toNumber(summary.open_interest) : 0,
+    volume: summary ? toNumber(summary.volume) : 0,
+    tradeable: instrument.is_active && instrument.state === "open",
+    marketAvailable,
+    contractMultiplier: toNumber(instrument.contract_size) || 1,
+    premiumCurrency: instrument.quote_currency,
+  };
+}
+
+async function getDeribitOptionInstruments(currency: DeribitOptionCurrency): Promise<DeribitInstrument[]> {
+  return cached(`deribit-${currency.toLowerCase()}-option-instruments`, 30 * 60_000, async () => {
+    const response = await fetchJson<DeribitResponse<DeribitInstrument[]>>(
+      `${DERIBIT_BASE_URL}/public/get_instruments?currency=${currency}&kind=option&expired=false`,
+    );
+    if (response.error || !Array.isArray(response.result)) {
+      throw new Error(response.error?.message || `Deribit returned no ${currency} option instruments`);
+    }
+    return response.result;
+  });
+}
+
+async function getDeribitBookSummaries(currency: DeribitOptionCurrency): Promise<{ summaries: DeribitBookSummary[]; timestamp: number }> {
+  return cached(`deribit-${currency.toLowerCase()}-option-summary`, OPTION_CACHE_MS, async () => {
+    const response = await fetchJson<DeribitResponse<DeribitBookSummary[]>>(
+      `${DERIBIT_BASE_URL}/public/get_book_summary_by_currency?currency=${currency}&kind=option`,
+    );
+    if (response.error || !Array.isArray(response.result)) {
+      throw new Error(response.error?.message || `Deribit returned no ${currency} option summaries`);
+    }
+    const serverTimestamp = toNumber(response.usOut) > 0 ? Math.round(toNumber(response.usOut) / 1000) : Date.now();
+    const quoteTimestamp = Math.max(...response.result.map(summary => optionalTimestamp(summary.creation_timestamp)), serverTimestamp);
+    return { summaries: response.result, timestamp: quoteTimestamp };
+  });
+}
+
+async function getDeribitSpotPrice(currency: DeribitOptionCurrency): Promise<SpotPrice | null> {
+  return cached(`deribit-${currency.toLowerCase()}-spot`, LIVE_CACHE_MS, async () => {
+    const response = await fetchJson<DeribitResponse<{ index_price?: number }>>(
+      `${DERIBIT_BASE_URL}/public/get_index_price?index_name=${currency.toLowerCase()}_usd`,
+    );
+    const price = toNumber(response.result?.index_price);
+    if (response.error || price <= 0) throw new Error(response.error?.message || `Deribit returned no ${currency} index price`);
+    const timestamp = toNumber(response.usOut) > 0 ? Math.round(toNumber(response.usOut) / 1000) : Date.now();
+    return spotPrice(price, timestamp, `Deribit realtime index · ${currency}/USD`);
+  }).catch(error => {
+    console.error(`[MarketData] Failed to fetch Deribit ${currency} index:`, error);
+    return null;
+  });
+}
+
+async function getDeribitOptionChain(currency: DeribitOptionCurrency): Promise<XautOptionChain> {
+  return cached(`deribit-${currency.toLowerCase()}-full-chain`, OPTION_CACHE_MS, async () => {
+    const [instruments, summarySnapshot, spotQuote] = await Promise.all([
+      getDeribitOptionInstruments(currency),
+      getDeribitBookSummaries(currency),
+      getDeribitSpotPrice(currency),
+    ]);
+    const summaryMap = new Map(summarySnapshot.summaries.map(summary => [summary.instrument_name, summary]));
+    const activeInstruments = instruments.filter(instrument => instrument.kind === "option" && instrument.is_active && instrument.state === "open");
+    const quotes = activeInstruments.map(instrument => normalizeDeribitOption(instrument, summaryMap.get(instrument.instrument_name), summarySnapshot.timestamp));
+    const delaySeconds = Math.max(0, Math.round((Date.now() - summarySnapshot.timestamp) / 1000));
+    return {
+      quotes,
+      spot: spotQuote?.price ?? toNumber(summarySnapshot.summaries.find(summary => toNumber(summary.underlying_price) > 0)?.underlying_price),
+      timestamp: summarySnapshot.timestamp,
+      source: `Deribit REST full-chain snapshot · ${currency}/USD inverse options`,
+      status: delaySeconds > 15 * 60 ? "stale" : "realtime",
+      delaySeconds,
+      contractCount: quotes.length,
+      expiryCount: new Set(quotes.map(quote => quote.expiry)).size,
+      strikeCount: new Set(quotes.map(quote => quote.strike)).size,
+    };
+  });
+}
+
+export const getDeribitBtcOptionChain = () => getDeribitOptionChain("BTC");
+export const getDeribitEthOptionChain = () => getDeribitOptionChain("ETH");
+export const getDeribitBtcSpotPrice = () => getDeribitSpotPrice("BTC");
+export const getDeribitEthSpotPrice = () => getDeribitSpotPrice("ETH");
 
 async function getYahooPrice(symbol: string, cacheKey: string): Promise<SpotPrice | null> {
   return cached(cacheKey, 30_000, async () => {
@@ -704,6 +931,38 @@ export function getMarketSources() {
         authentication: "无需密钥",
         mode: "交易所实时快照",
         documentationUrl: "https://bybit-exchange.github.io/docs/v5/market/tickers",
+      },
+      {
+        product: "ETH 期权 / Greeks / Bid-Ask / Top-of-book Size",
+        provider: "Bybit V5 REST",
+        endpoint: "/v5/market/tickers?category=option&baseCoin=ETH",
+        authentication: "无需密钥",
+        mode: "交易所实时完整期权链快照；包含 Bid/Ask 一档价格、数量、IV 与 Greeks",
+        documentationUrl: "https://bybit-exchange.github.io/docs/v5/market/tickers",
+      },
+      {
+        product: "ETH/USDT Spot",
+        provider: "Bybit V5 REST",
+        endpoint: "/v5/market/tickers?category=spot&symbol=ETHUSDT",
+        authentication: "无需密钥",
+        mode: "交易所实时快照",
+        documentationUrl: "https://bybit-exchange.github.io/docs/v5/market/tickers",
+      },
+      {
+        product: "BTC + ETH 完整期权链 / Mark IV / Bid-Ask / OI / Volume",
+        provider: "Deribit Public REST",
+        endpoint: "/api/v2/public/get_instruments + /public/get_book_summary_by_currency",
+        authentication: "无需密钥",
+        mode: "交易所实时全链快照；币本位权利金保留原生单位，Greeks 与 Bid/Ask IV 由统一 Black-Scholes 模型补全",
+        documentationUrl: "https://docs.deribit.com/articles/options-data-collection-best-practices",
+      },
+      {
+        product: "BTC/USD + ETH/USD Index",
+        provider: "Deribit Public REST",
+        endpoint: "/api/v2/public/get_index_price",
+        authentication: "无需密钥",
+        mode: "交易所实时指数快照，用于 ATM 与 Spot 定位",
+        documentationUrl: "https://docs.deribit.com/api-reference/market-data/public-get_index_price",
       },
       {
         product: "GLD 完整期权链 / Greeks / Bid-Ask（免密钥底座）",

@@ -17,6 +17,15 @@ export type HeatmapControlKey =
   | "metric" | "scale" | "spot" | "label" | "hover" | "range" | "transpose" | "reverseStrikes"
   | "cellSize" | "fitAll" | "fullscreen";
 
+export type HeatmapUnderlyingSelection =
+  | "GLD"
+  | "XAUT"
+  | "BTC"
+  | "BTC_DERIBIT"
+  | "ETH_BYBIT"
+  | "ETH_DERIBIT"
+  | "all";
+
 export type HeatmapHoverField =
   | "selectedMetric" | "unitDelta" | "totalDelta" | "unitGamma" | "totalGamma" | "unitTheta" | "totalTheta"
   | "unitVega" | "totalVega" | "dteRoll" | "qtyNotional" | "markIv" | "bidAsk" | "bidAskIv"
@@ -143,14 +152,14 @@ export type PortfolioSettings = {
   };
   heatmapFilterOptions: {
     dataset: Record<"chain" | "live" | "mock100" | "mock200", boolean>;
-    underlying: Record<"GLD" | "XAUT" | "BTC" | "all", boolean>;
+    underlying: Record<HeatmapUnderlyingSelection, boolean>;
     callPut: Record<"call" | "put" | "combined", boolean>;
     moneyness: Record<"all" | "itm" | "otm", boolean>;
     expiryBucket: Record<"all" | "expired" | "0-2" | "3-7" | "8-30" | "31+", boolean>;
     status: Record<DataStatus | "all", boolean>;
     metric: Record<HeatmapMetric, boolean>;
     scale: Record<"quantile" | "log" | "symmetric", boolean>;
-    spot: Record<"GLD" | "XAUT" | "BTC" | "XAU", boolean>;
+    spot: Record<"GLD" | "XAUT" | "BTC" | "ETH" | "XAU", boolean>;
     label: Record<"none" | "held" | "top" | "bottom" | "all", boolean>;
     hover: Record<"risk" | "market" | "pnl" | "all", boolean>;
   };
@@ -242,7 +251,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   },
   heatmapFilterOptions: {
     dataset: { chain: true, live: true, mock100: true, mock200: true },
-    underlying: { GLD: true, XAUT: true, BTC: true, all: false },
+    underlying: { GLD: true, XAUT: true, BTC: true, BTC_DERIBIT: true, ETH_BYBIT: true, ETH_DERIBIT: true, all: false },
     callPut: { call: true, put: true, combined: true },
     moneyness: { all: true, itm: true, otm: true },
     expiryBucket: { all: true, expired: true, "0-2": true, "3-7": true, "8-30": true, "31+": true },
@@ -269,7 +278,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
       rollPriority: false,
     },
     scale: { quantile: true, log: true, symmetric: true },
-    spot: { GLD: true, XAUT: true, BTC: true, XAU: true },
+    spot: { GLD: true, XAUT: true, BTC: true, ETH: true, XAU: true },
     label: { none: true, held: true, top: false, bottom: false, all: true },
     hover: { risk: true, market: true, pnl: false, all: true },
   },

@@ -2,7 +2,7 @@ import { blackScholes } from "./blackScholes";
 import { evaluateNamedFormula } from "./formulaEngine";
 import { DEFAULT_FORMULAS, type FormulaLike } from "./marketTypes";
 
-export type RiskUnderlying = "GLD" | "XAUT" | "BTC";
+export type RiskUnderlying = "GLD" | "XAUT" | "BTC" | "ETH";
 export type CallPut = "call" | "put";
 export type DataStatus = "LIVE" | "STALE" | "WARN" | "MISSING" | "FAIL";
 export type PlannedAction = "HOLD" | "CLOSE" | "ROLL" | "EXERCISE ALLOWED" | "DNE";
@@ -48,6 +48,8 @@ export interface RiskPosition {
   gldOzPerShare: number | null;
   underlyingOzPerUnit: number | null;
   markPrice: number | null;
+  /** Native option premium currency (USD/USDT for linear venues, BTC/ETH for inverse Deribit options). */
+  premiumCurrency?: string | null;
   bid: number | null;
   ask: number | null;
   bidSize: number | null;
@@ -159,6 +161,7 @@ export interface ScenarioResult {
   gldPnlUSD: number;
   xautPnlUSD: number;
   btcPnlUSD: number;
+  ethPnlUSD: number;
   vanNakedPnlUSD: number;
   residualPnlUSD: number;
   stressedDeltaXAU: number;
@@ -783,6 +786,7 @@ export function calculateScenario(positions: EnrichedRiskPosition[], input: Scen
   let gldPnlUSD = 0;
   let xautPnlUSD = 0;
   let btcPnlUSD = 0;
+  let ethPnlUSD = 0;
   let stressedDeltaXAU = 0;
   let missingCount = 0;
   for (const position of positions) {
@@ -812,16 +816,17 @@ export function calculateScenario(positions: EnrichedRiskPosition[], input: Scen
     const pnl = (theoretical.price - position.markPrice) * position.netQty * multiplier;
     if (position.underlying === "GLD") gldPnlUSD += pnl;
     else if (position.underlying === "XAUT") xautPnlUSD += pnl;
-    else btcPnlUSD += pnl;
+    else if (position.underlying === "BTC") btcPnlUSD += pnl;
+    else ethPnlUSD += pnl;
     stressedDeltaXAU += theoretical.delta * position.netQty * multiplier * ounces;
   }
-  const optionPnlUSD = gldPnlUSD + xautPnlUSD + btcPnlUSD;
+  const optionPnlUSD = gldPnlUSD + xautPnlUSD + btcPnlUSD + ethPnlUSD;
   const vanNakedPnlUSD = input.vanNakedDeltaXau * input.spots.XAU * input.xauShockPct / 100;
   const residualPnlUSD = optionPnlUSD + vanNakedPnlUSD;
   const stressCoveragePct = vanNakedPnlUSD < 0 && optionPnlUSD > 0
     ? optionPnlUSD / Math.abs(vanNakedPnlUSD) * 100
     : null;
-  return { optionPnlUSD, gldPnlUSD, xautPnlUSD, btcPnlUSD, vanNakedPnlUSD, residualPnlUSD, stressedDeltaXAU, stressCoveragePct, missingCount };
+  return { optionPnlUSD, gldPnlUSD, xautPnlUSD, btcPnlUSD, ethPnlUSD, vanNakedPnlUSD, residualPnlUSD, stressedDeltaXAU, stressCoveragePct, missingCount };
 }
 
 function mulberry32(seed: number) {

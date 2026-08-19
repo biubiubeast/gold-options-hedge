@@ -23,6 +23,8 @@ export default function DataSources() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: "XAUT/USDT", value: spots?.xaut },
+          { label: "BTC/USDT", value: spots?.btc },
+          { label: "ETH/USDT", value: spots?.eth },
           { label: "GLD/USD", value: spots?.gld },
           { label: "XAU/USD 代理", value: spots?.gold },
         ].map(({ label, value }) => {

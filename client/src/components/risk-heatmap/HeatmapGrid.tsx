@@ -99,9 +99,9 @@ function TooltipPosition({ position, metric, preset, content }: { position: Enri
   }
   if (preset === "market" || preset === "all") {
     if (content.qtyNotional && preset === "market") rows.push(["Qty", formatCompact(position.netQty)]);
-    if (content.markIv) rows.push(["Mark / IV", `${formatPrice(position.markPrice)} / ${formatCompact(position.markIV, "markIV")}`]);
+    if (content.markIv) rows.push(["Mark / IV", `${formatPrice(position.markPrice)} ${position.premiumCurrency ?? ""} / ${formatCompact(position.markIV, "markIV")}`.trim()]);
     if (content.bidAsk) {
-      rows.push(["Bid / Ask", `${formatPrice(position.bid)} / ${formatPrice(position.ask)}`]);
+      rows.push(["Bid / Ask", `${formatPrice(position.bid)} / ${formatPrice(position.ask)} ${position.premiumCurrency ?? ""}`.trim()]);
       rows.push(["Bid / Ask Size", `${formatCompact(position.bidSize)} / ${formatCompact(position.askSize)}`]);
       rows.push(["Bid / Ask $ Notional", `$${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`]);
     }
@@ -140,9 +140,12 @@ function ExpiryTooltip({ expiry, positions, metric, detailEnabled, onSelectExpir
 function HeatmapScopeTooltip({ positions, metric, moneyness, label }: { positions: EnrichedRiskPosition[]; metric: HeatmapMetric; moneyness: MoneynessFilter; label: string }) {
   const [open, setOpen] = useState(false);
   const distribution = useMemo(() => metricDistribution(positions, metric), [metric, positions]);
-  const underlyings = useMemo(() => [...new Set(positions.map(position => position.underlying))], [positions]);
-  const underlyingLabels = { GLD: "GLD/USD-OPRA", XAUT: "XAUT/USDT - Bybit", BTC: "BTC/USDT - Bybit" } as const;
-  const scopeLabel = underlyings.length === 1 ? underlyingLabels[underlyings[0]] : underlyings.length > 1 ? "ALL UNDERLYINGS" : "CURRENT UNDERLYING";
+  const markets = useMemo(() => [...new Set(positions.map(position => {
+    if (position.underlying === "GLD") return "GLD/USD-OPRA";
+    const deribit = position.venue.toLowerCase().includes("deribit");
+    return `${position.underlying}/${deribit ? "USD" : "USDT"} - ${deribit ? "Deribit" : "Bybit"}`;
+  }))], [positions]);
+  const scopeLabel = markets.length === 1 ? markets[0] : markets.length > 1 ? "ALL MARKETS" : "CURRENT MARKET";
   const optionScopeLabel = moneyness === "itm" ? "ALL ITM Options" : moneyness === "otm" ? "ALL OTM Options" : "ALL EXPIRIES / STRIKES";
   const eligibilityLabel = HELD_ONLY_HEATMAP_METRICS.has(metric) ? "Held positions only" : "All filtered option contracts";
   return <Tooltip delayDuration={100} open={open} onOpenChange={setOpen}><TooltipTrigger asChild><button type="button" data-testid="heatmap-scope-summary-trigger" aria-label={`Current ${METRIC_LABELS[metric]} summary for all expiries and strikes`} className="sticky left-0 top-0 z-30 flex h-8 items-center border-b border-r border-border/60 bg-background px-1 text-[8px] text-muted-foreground hover:text-foreground focus-visible:ring-1 focus-visible:ring-primary" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onClick={() => setOpen(true)}>{label}</button></TooltipTrigger><TooltipContent data-testid="heatmap-scope-metric-summary" side="right" sideOffset={6} collisionPadding={10} className="z-[120] w-[430px] max-w-[calc(100vw-1rem)] border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{scopeLabel} · {optionScopeLabel}</strong><span className="text-[9px] text-primary">{METRIC_LABELS[metric]}</span></div><div className="mt-2 grid grid-cols-6 gap-px bg-border/60 text-center"><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MIN</p><strong className="font-mono text-[11px]">{formatCompact(distribution.min, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">P25</p><strong className="font-mono text-[11px]">{formatCompact(distribution.p25, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MEDIAN</p><strong className="font-mono text-[11px]">{formatCompact(distribution.median, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">AVERAGE</p><strong className="font-mono text-[11px]">{formatCompact(distribution.average, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">P75</p><strong className="font-mono text-[11px]">{formatCompact(distribution.p75, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MAX</p><strong className="font-mono text-[11px]">{formatCompact(distribution.max, metric)}</strong></div></div><div className="mt-1 flex items-center justify-between text-[9px] text-muted-foreground"><span>{eligibilityLabel}</span><span>Valid {distribution.validCount} · Missing {distribution.missingCount}</span></div></TooltipContent></Tooltip>;
@@ -239,7 +242,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
               const heldUnderlyings = new Set(cell?.positions
                 .filter(position => position.positionKind !== "listed")
                 .map(position => position.underlying) ?? []);
-              const heldMarker = heldUnderlyings.size > 1 ? "M" : heldUnderlyings.has("XAUT") ? "X" : heldUnderlyings.has("GLD") ? "G" : heldUnderlyings.has("BTC") ? "B" : null;
+              const heldMarker = heldUnderlyings.size > 1 ? "M" : heldUnderlyings.has("XAUT") ? "X" : heldUnderlyings.has("GLD") ? "G" : heldUnderlyings.has("BTC") ? "B" : heldUnderlyings.has("ETH") ? "E" : null;
               const xautHeld = heldUnderlyings.has("XAUT");
               const heldCallPuts = new Set(cell?.positions
                 .filter(position => position.positionKind !== "listed")
