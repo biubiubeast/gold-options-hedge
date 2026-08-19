@@ -4,7 +4,7 @@ import { HeatmapGrid, type CellLabelMode, type HeatmapCellModel, type HoverDataP
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { trpc } from "@/lib/trpc";
-import { DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT, getPositionMarketData, type MarketSnapshot, type PortfolioPosition, type PortfolioSettings } from "@/lib/portfolio";
+import { DEFAULT_HEATMAP_VIEW, DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT, getPositionMarketData, type MarketSnapshot, type PortfolioPosition, type PortfolioSettings } from "@/lib/portfolio";
 import { buildChainRiskPositions, buildGldChainRiskPositions, buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
@@ -221,22 +221,22 @@ export default function Matrix() {
   const visibleSections = settings.heatmapVisibleSections;
 
   const [dataset, setDataset] = useState<DatasetMode>(initialDataset);
-  const [underlying, setUnderlying] = useState<"all" | RiskUnderlying>("GLD");
+  const [underlying, setUnderlying] = useState<"all" | RiskUnderlying>(DEFAULT_HEATMAP_VIEW.underlying);
   const [venue, setVenue] = useState("all");
   const [broker, setBroker] = useState("all");
   const [account, setAccount] = useState("all");
-  const [callPut, setCallPut] = useState<"combined" | CallPut>("call");
-  const [moneyness, setMoneyness] = useState<MoneynessFilter>("all");
+  const [callPut, setCallPut] = useState<"combined" | CallPut>(DEFAULT_HEATMAP_VIEW.callPut);
+  const [moneyness, setMoneyness] = useState<MoneynessFilter>(DEFAULT_HEATMAP_VIEW.moneyness);
   const [expiryBucket, setExpiryBucket] = useState<ExpiryBucket>("all");
   const [status, setStatus] = useState<"all" | DataStatus>("all");
-  const [metric, setMetric] = useState<HeatmapMetric>("notionalSize");
+  const [metric, setMetric] = useState<HeatmapMetric>(DEFAULT_HEATMAP_VIEW.metric);
   const [scaleMode, setScaleMode] = useState<ColorScaleMode>("quantile");
   const [transpose, setTranspose] = useState(false);
   const [reverseStrikes, setReverseStrikes] = useState(false);
   const [cellSize, setCellSize] = useState(13);
   const [fitAll, setFitAll] = useState(false);
-  const [labelMode, setLabelMode] = useState<CellLabelMode>("none");
-  const [hoverPreset, setHoverPreset] = useState<HoverDataPreset>("risk");
+  const [labelMode, setLabelMode] = useState<CellLabelMode>(DEFAULT_HEATMAP_VIEW.labelMode);
+  const [hoverPreset, setHoverPreset] = useState<HoverDataPreset>(DEFAULT_HEATMAP_VIEW.hoverPreset);
   const [spotUnderlying, setSpotUnderlying] = useState<RiskUnderlying | "XAU">("GLD");
   const [highlightCellKey, setHighlightCellKey] = useState<string | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<EnrichedRiskPosition | null>(null);

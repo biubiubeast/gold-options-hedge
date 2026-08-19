@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PORTFOLIO_SETTINGS, DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT } from "../client/src/lib/portfolio";
+import { DEFAULT_HEATMAP_VIEW, DEFAULT_PORTFOLIO_SETTINGS, DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT } from "../client/src/lib/portfolio";
 import { DEFAULT_VIEWER_PAGE_PERMISSIONS } from "../shared/access";
 
 describe("operator display defaults", () => {
+  it("opens the heatmap with the operator's common GLD volatility view", () => {
+    expect(DEFAULT_HEATMAP_VIEW).toEqual({
+      underlying: "GLD",
+      moneyness: "otm",
+      callPut: "combined",
+      metric: "ivSpread",
+      labelMode: "held",
+      hoverPreset: "all",
+    });
+  });
+
   it("limits xauwhales to positions and the risk heatmap by default", () => {
     expect(DEFAULT_VIEWER_PAGE_PERMISSIONS).toEqual({
       dashboard: false,

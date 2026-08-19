@@ -36,6 +36,15 @@ export type HeatmapExpiryHoverField =
 
 export type AdminPasswordPage = "dashboard" | "positions" | "matrix" | "formulas" | "dataSources" | "settings" | "optionDetail" | "notFound";
 
+export const DEFAULT_HEATMAP_VIEW = {
+  underlying: "GLD",
+  moneyness: "otm",
+  callPut: "combined",
+  metric: "ivSpread",
+  labelMode: "held",
+  hoverPreset: "all",
+} as const;
+
 export type PortfolioPosition = {
   id: number;
   underlying: "XAUT" | "GLD" | "BTC";
