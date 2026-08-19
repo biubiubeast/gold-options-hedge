@@ -324,7 +324,7 @@ function exportPositionValues(position: PositionRecord, formulas: readonly Formu
 export async function createPositionWorkbook(positions: PositionRecord[], customFormulas: readonly FormulaLike[] = DEFAULT_FORMULAS): Promise<Buffer> {
   const formulas = customFormulas.length ? customFormulas : DEFAULT_FORMULAS;
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Non-Linearity Lab";
+  workbook.creator = "Cronus";
   workbook.created = new Date();
   const sheet = workbook.addWorksheet("期权持仓_XAUT_GLD", { views: [{ state: "frozen", xSplit: 3, ySplit: 2 }] });
   sheet.properties.defaultRowHeight = 18;

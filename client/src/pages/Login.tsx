@@ -36,7 +36,7 @@ export default function Login() {
     <Card className="glass-card w-full max-w-md border-amber-300/25 shadow-2xl">
       <CardHeader className="space-y-3 text-center">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-amber-300/30 bg-amber-300/10"><LockKeyhole className="h-6 w-6 text-amber-300" /></div>
-        <CardTitle className="text-xl text-gold-gradient">Non-Linearity Lab</CardTitle>
+        <CardTitle className="text-xl text-gold-gradient">Cronus</CardTitle>
         <p className="text-xs leading-relaxed text-muted-foreground">请输入网页用户名和密码。为保护交易数据，每次刷新页面后都需要重新登录。</p>
       </CardHeader>
       <CardContent>
