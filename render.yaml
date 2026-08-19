@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: gold-options-hedge
+    name: cronus
     runtime: docker
     plan: free
     region: singapore
