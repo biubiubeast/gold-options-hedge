@@ -13,7 +13,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, PanelLeft, Grid3X3, ListPlus, Calculator, Database, Settings, ZoomIn, ZoomOut, LogOut } from "lucide-react";
+import { LayoutDashboard, PanelLeft, Grid3X3, ListPlus, Calculator, Database, Settings, ZoomIn, ZoomOut, LogOut, CandlestickChart } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -28,6 +28,7 @@ const menuItems = [
   { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { key: "positions", icon: ListPlus, label: "仓位管理", path: "/positions" },
   { key: "matrix", icon: Grid3X3, label: "市场热力图", path: "/matrix" },
+  { key: "tradingView", icon: CandlestickChart, label: "K线图", path: "/charts" },
   { key: "formulas", icon: Calculator, label: "公式管理", path: "/formulas" },
   { key: "dataSources", icon: Database, label: "数据来源", path: "/data-sources" },
   { key: "settings", icon: Settings, label: "设置", path: "/settings" },

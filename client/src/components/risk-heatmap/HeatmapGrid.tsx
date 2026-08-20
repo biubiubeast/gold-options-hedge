@@ -184,12 +184,29 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
     ? `max(0.65px, min(${cellSize}px, calc((100vh - 350px) / ${Math.max(1, rowValues.length)})))`
     : `${cellSize}px`;
   const scrollToSpot = (behavior: ScrollBehavior = "smooth") => requestAnimationFrame(() => requestAnimationFrame(() => {
-    const target = viewportRef.current?.querySelector<HTMLElement>("[data-spot-row='true']");
-    target?.scrollIntoView({ behavior, block: "center", inline: "nearest" });
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const selector = transpose ? "[data-spot-column='true']" : "[data-spot-row='true']";
+    const target = viewport.querySelector<HTMLElement>(selector);
+    if (!target) return;
+
+    // Only move the heatmap's own viewport. scrollIntoView() can also scroll page
+    // ancestors, which hides the filters just when the initial ATM row is found.
+    if (transpose) {
+      viewport.scrollTo({
+        left: Math.max(0, target.offsetLeft - (viewport.clientWidth - target.offsetWidth) / 2),
+        behavior,
+      });
+      return;
+    }
+    viewport.scrollTo({
+      top: Math.max(0, target.offsetTop - (viewport.clientHeight - target.offsetHeight) / 2),
+      behavior,
+    });
   }));
   useEffect(() => {
-    if (transpose || range.nearestStrike === null || !cells.length) return;
-    const marker = `${range.nearestStrike}|${cells.length}`;
+    if (range.nearestStrike === null || !cells.length) return;
+    const marker = `${transpose ? "column" : "row"}|${range.nearestStrike}|${cells.length}`;
     if (centeredOnceRef.current === marker) return;
     centeredOnceRef.current = marker;
     scrollToSpot("auto");

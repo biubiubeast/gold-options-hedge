@@ -628,7 +628,7 @@ export default function Matrix() {
       .filter(Number.isFinite)
       .reduce((latest, value) => Math.max(latest, value), 0) || asOf.getTime();
   const chainCountLabel = settings.heatmapChainContractCountLabel.trim() || "完整期权链合约数（Call + Put，筛选前）";
-  if ((isLoading && (dataset === "live" || dataset === "chain")) || waitingForChain) return <div className="flex h-64 flex-col items-center justify-center gap-2"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="text-xs text-muted-foreground">读取 {MARKET_LABELS[underlying]} 完整期权链…</p></div>;
+  const heatmapLoading = (isLoading && (dataset === "live" || dataset === "chain")) || waitingForChain;
 
   return (
     <div className={`matrix-fullscreen-shell flex h-[calc(100vh-5.5rem)] min-h-[560px] flex-col gap-1 overflow-hidden ${isFullscreen ? "matrix-pseudo-fullscreen" : ""}`} data-testid="institutional-risk-heatmap" data-fullscreen={isFullscreen ? "true" : "false"}>
@@ -694,7 +694,13 @@ export default function Matrix() {
       {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "BTC_DERIBIT" || underlying === "all") && deribitBtcChain && <div className="shrink-0 border border-blue-400/30 bg-blue-500/5 px-2 py-0.5 font-mono text-[8px] text-blue-100">BTC DERIBIT FULL CHAIN · {deribitBtcChain.contractCount} tradable contracts · {deribitBtcChain.expiryCount} expiries · {deribitBtcChain.strikeCount} strikes · {deribitBtcChain.source} · updated {new Date(deribitBtcChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(deribitBtcChain.delaySeconds)}s</div>}
       {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "ETH_DERIBIT" || underlying === "all") && deribitEthChain && <div className="shrink-0 border border-fuchsia-400/30 bg-fuchsia-500/5 px-2 py-0.5 font-mono text-[8px] text-fuchsia-100">ETH DERIBIT FULL CHAIN · {deribitEthChain.contractCount} tradable contracts · {deribitEthChain.expiryCount} expiries · {deribitEthChain.strikeCount} strikes · {deribitEthChain.source} · updated {new Date(deribitEthChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(deribitEthChain.delaySeconds)}s</div>}
       {visibleSections.positionOnlyMetricBanner && HELD_ONLY_HEATMAP_METRICS.has(metric) && <div className="shrink-0 border border-amber-300/25 bg-amber-300/5 px-2 py-0.5 font-mono text-[8px] text-amber-100">POSITION-ONLY METRIC · only held cells are colored and included in the default min/max · listed contracts remain hoverable but uncolored</div>}
-      {filtered.length === 0 ? (
+      {heatmapLoading ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 border border-border/60 bg-background/70">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-xs text-muted-foreground">读取 {MARKET_LABELS[underlying]} 完整期权链…</p>
+          <p className="text-[9px] text-muted-foreground/75">筛选器已可使用；行情到达后将自动定位至 Spot / ATM 附近。</p>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center border border-dashed border-border text-sm text-muted-foreground">
           <p>当前筛选没有有效 position。</p>
           {dataset === "live" && <button type="button" className="mt-2 border border-primary/50 px-3 py-1 text-xs text-primary" onClick={() => setDataset("mock200")}>打开 MOCK 200 压力数据</button>}

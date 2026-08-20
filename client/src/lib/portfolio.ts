@@ -43,7 +43,7 @@ export type HeatmapExpiryHoverField =
   | "averageIv" | "openInterestVolume" | "staleMissing" | "latestQuote"
   | "netGrossQty" | "grossNotional" | "mvEntry" | "upl";
 
-export type AdminPasswordPage = "dashboard" | "positions" | "matrix" | "formulas" | "dataSources" | "settings" | "optionDetail" | "notFound";
+export type AdminPasswordPage = "dashboard" | "positions" | "matrix" | "tradingView" | "formulas" | "dataSources" | "settings" | "optionDetail" | "notFound";
 
 export const DEFAULT_HEATMAP_VIEW = {
   underlying: "GLD",
@@ -111,6 +111,7 @@ export type PortfolioSettings = {
     dashboard: boolean;
     positions: boolean;
     matrix: boolean;
+    tradingView: boolean;
     formulas: boolean;
     dataSources: boolean;
     settings: boolean;
@@ -200,6 +201,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     dashboard: true,
     positions: true,
     matrix: false,
+    tradingView: true,
     formulas: true,
     dataSources: true,
     settings: true,
@@ -210,6 +212,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     dashboard: false,
     positions: true,
     matrix: true,
+    tradingView: true,
     formulas: false,
     dataSources: false,
     settings: true,

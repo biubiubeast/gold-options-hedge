@@ -19,6 +19,7 @@ describe("operator display defaults", () => {
       dashboard: false,
       positions: true,
       matrix: true,
+      tradingView: false,
       formulas: false,
       dataSources: false,
     });
@@ -77,6 +78,31 @@ describe("operator display defaults", () => {
       all: true,
       itm: true,
       otm: true,
+    });
+  });
+
+  it("keeps the trading filters visible on the initial heatmap screen", () => {
+    const visible = DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleFilters;
+    expect({
+      underlying: visible.underlying,
+      callPut: visible.callPut,
+      metric: visible.metric,
+      moneyness: visible.moneyness,
+      label: visible.label,
+      hover: visible.hover,
+      range: visible.range,
+      cellSize: visible.cellSize,
+      fullscreen: visible.fullscreen,
+    }).toEqual({
+      underlying: true,
+      callPut: true,
+      metric: true,
+      moneyness: true,
+      label: true,
+      hover: true,
+      range: true,
+      cellSize: true,
+      fullscreen: true,
     });
   });
 

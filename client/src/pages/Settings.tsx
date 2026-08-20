@@ -58,6 +58,7 @@ const pageEntryLabels: Array<[keyof PortfolioSettings["visiblePages"], string, s
   ["dashboard", "Dashboard", "总持仓汇总与风险数据"],
   ["positions", "仓位管理", "xauadmin 导航默认显示"],
   ["matrix", "市场热力图", "xauadmin 导航默认显示"],
+  ["tradingView", "TradingView K线图", "xauadmin 导航默认显示；图表进入页面后才加载"],
   ["formulas", "公式管理", "公式说明、编辑与恢复"],
   ["dataSources", "数据来源", "行情 API 与延迟说明"],
   ["settings", "设置", "仅 xauadmin 可访问"],
@@ -67,6 +68,7 @@ const viewerPageLabels: Array<[ViewerPage, string, string]> = [
   ["dashboard", "Dashboard", "总持仓汇总与风险数据"],
   ["positions", "仓位管理", "默认允许 xauwhales 使用"],
   ["matrix", "市场热力图", "默认允许 xauwhales 使用"],
+  ["tradingView", "TradingView K线图", "默认不允许；可单独授权 xauwhales 使用"],
   ["formulas", "公式管理", "默认不允许；公式编辑仍仅管理员可操作"],
   ["dataSources", "数据来源", "默认不允许"],
 ];

@@ -138,6 +138,7 @@ const viewerPagePermissionsInput = z.object({
   dashboard: z.boolean(),
   positions: z.boolean(),
   matrix: z.boolean(),
+  tradingView: z.boolean(),
   formulas: z.boolean(),
   dataSources: z.boolean(),
 });
