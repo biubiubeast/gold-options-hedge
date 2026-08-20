@@ -7,7 +7,7 @@ export const DEFAULT_VIEWER_PAGE_PERMISSIONS: ViewerPagePermissions = {
   dashboard: false,
   positions: true,
   matrix: true,
-  tradingView: false,
+  tradingView: true,
   formulas: false,
   dataSources: false,
 };

@@ -109,9 +109,11 @@ type Store = {
   positions: StoredPosition[];
   formulas: StoredFormula[];
   viewerPagePermissions?: ViewerPagePermissions;
+  viewerPagePermissionsVersion?: number;
 };
 
 const LOCAL_USER_ID = 1;
+const VIEWER_PAGE_PERMISSIONS_VERSION = 2;
 const dataFile = path.resolve(
   process.env.DATA_FILE || path.join(process.cwd(), "data", "portfolio.json"),
 );
@@ -125,6 +127,7 @@ const emptyStore = (): Store => ({
   positions: [],
   formulas: [],
   viewerPagePermissions: { ...DEFAULT_VIEWER_PAGE_PERMISSIONS },
+  viewerPagePermissionsVersion: VIEWER_PAGE_PERMISSIONS_VERSION,
 });
 
 async function loadStore(): Promise<Store> {
@@ -254,16 +257,21 @@ export async function getUserByOpenId(_openId?: string) {
 
 export async function getViewerPagePermissions(): Promise<ViewerPagePermissions> {
   const store = await loadStore();
-  return {
+  const permissions = {
     ...DEFAULT_VIEWER_PAGE_PERMISSIONS,
     ...store.viewerPagePermissions,
   };
+  if ((store.viewerPagePermissionsVersion ?? 1) < VIEWER_PAGE_PERMISSIONS_VERSION) {
+    permissions.tradingView = true;
+  }
+  return permissions;
 }
 
 export async function updateViewerPagePermissions(permissions: ViewerPagePermissions) {
   return serialize(async () => {
     const store = await loadStore();
     store.viewerPagePermissions = { ...permissions };
+    store.viewerPagePermissionsVersion = VIEWER_PAGE_PERMISSIONS_VERSION;
     await saveStore(store);
     return store.viewerPagePermissions;
   });

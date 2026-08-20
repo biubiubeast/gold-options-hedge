@@ -68,7 +68,7 @@ const viewerPageLabels: Array<[ViewerPage, string, string]> = [
   ["dashboard", "Dashboard", "总持仓汇总与风险数据"],
   ["positions", "仓位管理", "默认允许 xauwhales 使用"],
   ["matrix", "市场热力图", "默认允许 xauwhales 使用"],
-  ["tradingView", "TradingView K线图", "默认不允许；可单独授权 xauwhales 使用"],
+  ["tradingView", "TradingView K线图", "默认允许 xauwhales 使用；可在此单独关闭"],
   ["formulas", "公式管理", "默认不允许；公式编辑仍仅管理员可操作"],
   ["dataSources", "数据来源", "默认不允许"],
 ];

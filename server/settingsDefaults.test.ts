@@ -14,12 +14,12 @@ describe("operator display defaults", () => {
     });
   });
 
-  it("limits xauwhales to positions and the risk heatmap by default", () => {
+  it("lets xauwhales use positions, the market heatmap, and TradingView by default", () => {
     expect(DEFAULT_VIEWER_PAGE_PERMISSIONS).toEqual({
       dashboard: false,
       positions: true,
       matrix: true,
-      tradingView: false,
+      tradingView: true,
       formulas: false,
       dataSources: false,
     });
