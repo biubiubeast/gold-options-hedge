@@ -85,7 +85,7 @@ describe("position Excel import/export", () => {
   it("exports a workbook that round-trips through the same template", async () => {
     const preview = await parsePositionWorkbook(await fixtureWorkbook(), "source.xlsx");
     const now = new Date("2026-08-11T00:00:00.000Z");
-    const records: PositionRecord[] = preview.positions.map((position, index) => ({ ...position, id: index + 1, userId: 1, createdAt: now, updatedAt: now }));
+    const records: PositionRecord[] = preview.positions.map((position, index) => ({ ...position, product: "Legacy Wrong Product", id: index + 1, userId: 1, createdAt: now, updatedAt: now }));
     const exported = await createPositionWorkbook(records);
     const exportedWorkbook = new ExcelJS.Workbook();
     await exportedWorkbook.xlsx.load(exported as any);
@@ -96,6 +96,8 @@ describe("position Excel import/export", () => {
     expect(detailSheet.getCell("AD5").value).toBe(1);
     expect(detailSheet.getCell("AD6").value).toBe(100);
     expect(detailSheet.getCell("AE6").value).toBeCloseTo(0.5, 10);
+    expect(detailSheet.getCell("E5").value).toBe("XAUT Option");
+    expect(detailSheet.getCell("E6").value).toBe("GLD Option");
     const roundTrip = await parsePositionWorkbook(exported, "exported.xlsx");
     expect(roundTrip.exactHeaderMatch).toBe(true);
     expect(roundTrip.extendedHeaderMatch).toBe(true);

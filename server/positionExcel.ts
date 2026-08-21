@@ -290,6 +290,7 @@ export async function parsePositionWorkbook(buffer: Buffer, fileName: string): P
 
 const numberValue = (value: unknown): number | null => numberOrNull(value);
 const isoToDate = (value: string | null | undefined): Date | null => value ? new Date(`${value}T00:00:00Z`) : null;
+const exportProduct = (underlying: PositionRecord["underlying"]) => `${underlying} Option`;
 
 function formulaValue(name: string, variables: Record<string, number>, formulas: readonly FormulaLike[], fallback: number) {
   try {
@@ -383,7 +384,7 @@ export async function createPositionWorkbook(positions: PositionRecord[], custom
       position.venue ?? POSITION_SOURCE_DEFAULTS[position.underlying].venue,
       position.instrument ?? `${position.underlying}-${position.expiry}-${position.strike}-${position.optionType === "call" ? "C" : "P"}`,
       position.underlying,
-      position.product ?? `${position.underlying} Option`,
+      exportProduct(position.underlying),
       isoToDate(position.expiry),
       Number(position.strike),
       position.optionType === "call" ? "Call" : "Put",
@@ -441,7 +442,7 @@ export async function createPositionWorkbook(positions: PositionRecord[], custom
       detail[0]?.venue ?? POSITION_SOURCE_DEFAULTS[underlying].venue,
       "Total",
       underlying,
-      `${underlying} Option`,
+      exportProduct(underlying),
       null,
       null,
       null,
