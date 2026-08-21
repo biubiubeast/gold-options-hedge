@@ -1,4 +1,4 @@
-export const POSITION_EXCEL_HEADERS = [
+export const POSITION_EXCEL_REQUIRED_HEADERS = [
   "Source Account",
   "Venue",
   "Instrument",
@@ -28,6 +28,20 @@ export const POSITION_EXCEL_HEADERS = [
   "Vega USD/vol",
   "Raw Margin Mode",
   "Raw Margin Type",
+] as const;
+
+export const POSITION_EXCEL_OPTIONAL_MARKET_HEADERS = [
+  "Shares/Contract",
+  "Unit Delta",
+  "Unit Gamma",
+  "Unit Theta",
+  "Unit Vega",
+] as const;
+
+/** Export layout. Import remains backward-compatible with the original 29 required columns. */
+export const POSITION_EXCEL_HEADERS = [
+  ...POSITION_EXCEL_REQUIRED_HEADERS,
+  ...POSITION_EXCEL_OPTIONAL_MARKET_HEADERS,
 ] as const;
 
 export type PositionUnderlying = "XAUT" | "GLD" | "BTC";
@@ -129,6 +143,7 @@ export type PositionExcelPreview = {
   headerRow: number;
   headers: string[];
   exactHeaderMatch: boolean;
+  extendedHeaderMatch: boolean;
   positions: ImportedPosition[];
   totals: PositionExcelTotal[];
   warnings: string[];

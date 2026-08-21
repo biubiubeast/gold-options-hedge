@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import {
   POSITION_EXCEL_HEADERS,
+  POSITION_EXCEL_REQUIRED_HEADERS,
   POSITION_SOURCE_DEFAULTS,
   type ImportedPosition,
   type PositionExcelPreview,
@@ -76,23 +77,26 @@ function normalizeCallPut(value: unknown, instrument: string): "call" | "put" | 
   return null;
 }
 
-function inferContractMultiplier(args: {
+function resolveImportedSharesPerContract(args: {
   underlying: "XAUT" | "GLD" | "BTC";
+  explicit: number | null;
   netQty: number;
   markPrice: number | null;
   marketValue: number | null;
   entryPrice: number | null;
   entryValue: number | null;
 }): number {
+  if (args.explicit !== null && Number.isFinite(args.explicit) && args.explicit > 0) return args.explicit;
+  if (args.underlying === "GLD") return DEFAULT_GLD_CONTRACT_MULTIPLIER;
+  if (args.underlying === "XAUT") return DEFAULT_XAUT_CONTRACT_MULTIPLIER;
   const candidates = [
     args.markPrice && args.marketValue !== null ? Math.abs(args.marketValue / (args.markPrice * args.netQty)) : null,
     args.entryPrice && args.entryValue !== null ? Math.abs(args.entryValue / (args.entryPrice * args.netQty)) : null,
   ].filter((value): value is number => value !== null && Number.isFinite(value) && value > 0);
   const inferred = candidates[0];
-  if (inferred && Math.abs(inferred - 100) < 0.5) return 100;
   if (inferred && Math.abs(inferred - 1) < 0.05) return 1;
   if (inferred) return Number(inferred.toFixed(10));
-  return args.underlying === "GLD" ? 100 : 1;
+  return 1;
 }
 
 function asTotal(row: ExcelJS.Row, column: (header: string) => number, underlying: "XAUT" | "GLD" | "BTC"): PositionExcelTotal {
@@ -124,9 +128,13 @@ export async function parsePositionWorkbook(buffer: Buffer, fileName: string): P
   const errors: string[] = [];
   const headers = Array.from({ length: worksheet.columnCount }, (_, index) => cleanText(rawCellValue(worksheet.getRow(2).getCell(index + 1))));
   const headerMap = new Map(headers.map((header, index) => [keyOf(header), index + 1]));
-  const missingHeaders = POSITION_EXCEL_HEADERS.filter(header => !headerMap.has(keyOf(header)));
+  const missingHeaders = POSITION_EXCEL_REQUIRED_HEADERS.filter(header => !headerMap.has(keyOf(header)));
   if (missingHeaders.length) errors.push(`缺少列：${missingHeaders.join("、")}`);
   const column = (header: string) => headerMap.get(keyOf(header)) ?? -1;
+  const optionalNumber = (row: ExcelJS.Row, header: string) => {
+    const columnNumber = column(header);
+    return columnNumber > 0 ? numberOrNull(rawCellValue(row.getCell(columnNumber))) : null;
+  };
   const positions: ImportedPosition[] = [];
   const totals: PositionExcelTotal[] = [];
 
@@ -171,15 +179,27 @@ export async function parsePositionWorkbook(buffer: Buffer, fileName: string): P
       const totalGamma = numberOrNull(rawCellValue(row.getCell(column("Gamma"))));
       const totalTheta = numberOrNull(rawCellValue(row.getCell(column("Theta USD/day"))));
       const totalVega = numberOrNull(rawCellValue(row.getCell(column("Vega USD/vol"))));
-      const contractMultiplier = inferContractMultiplier({ underlying, netQty, markPrice, marketValue, entryPrice, entryValue });
+      const contractMultiplier = resolveImportedSharesPerContract({
+        underlying,
+        explicit: optionalNumber(row, "Shares/Contract"),
+        netQty,
+        markPrice,
+        marketValue,
+        entryPrice,
+        entryValue,
+      });
       const deltaScale = netQty * contractMultiplier * (multiplierXau ?? (underlying === "XAUT" ? 1 : 0));
       const gammaScale = netQty * contractMultiplier * (multiplierXau ?? (underlying === "XAUT" ? 1 : 0)) ** 2;
       const unitScale = netQty * contractMultiplier;
-      const unitDelta = totalDelta !== null && deltaScale !== 0 ? totalDelta / deltaScale : null;
-      const unitGamma = totalGamma !== null && gammaScale !== 0 ? totalGamma / gammaScale : null;
-      const unitTheta = totalTheta !== null && unitScale !== 0 ? totalTheta / unitScale : null;
-      const unitVega = totalVega !== null && unitScale !== 0 ? totalVega / unitScale : null;
-      const rowWarnings = [markPrice, entryPrice, multiplierXau, totalDelta, totalGamma, totalTheta, totalVega].filter(value => value === null).length;
+      const unitDelta = optionalNumber(row, "Unit Delta")
+        ?? (totalDelta !== null && deltaScale !== 0 ? totalDelta / deltaScale : null);
+      const unitGamma = optionalNumber(row, "Unit Gamma")
+        ?? (totalGamma !== null && gammaScale !== 0 ? totalGamma / gammaScale : null);
+      const unitTheta = optionalNumber(row, "Unit Theta")
+        ?? (totalTheta !== null && unitScale !== 0 ? totalTheta / unitScale : null);
+      const unitVega = optionalNumber(row, "Unit Vega")
+        ?? (totalVega !== null && unitScale !== 0 ? totalVega / unitScale : null);
+      const rowWarnings = [markPrice, entryPrice, multiplierXau, unitDelta, unitGamma, unitTheta, unitVega].filter(value => value === null).length;
       if (rowWarnings) warnings.push(`第 ${rowNumber} 行 ${instrument}：有 ${rowWarnings} 个行情/Greeks 字段缺失，将显示 WARN/MISSING`);
       const currencyText = cleanText(rawCellValue(row.getCell(column("Currency")))).toUpperCase();
       const sourceDefaults = POSITION_SOURCE_DEFAULTS[underlying];
@@ -248,7 +268,8 @@ export async function parsePositionWorkbook(buffer: Buffer, fileName: string): P
     title: cleanText(rawCellValue(worksheet.getRow(1).getCell(1))),
     headerRow: 2,
     headers,
-    exactHeaderMatch: POSITION_EXCEL_HEADERS.every((header, index) => keyOf(headers[index]) === keyOf(header)),
+    exactHeaderMatch: POSITION_EXCEL_REQUIRED_HEADERS.every((header, index) => keyOf(headers[index]) === keyOf(header)),
+    extendedHeaderMatch: POSITION_EXCEL_HEADERS.every((header, index) => keyOf(headers[index]) === keyOf(header)),
     positions,
     totals,
     warnings,
@@ -387,13 +408,22 @@ export async function createPositionWorkbook(positions: PositionRecord[], custom
       totalVega,
       position.rawMarginMode ?? null,
       position.rawMarginType ?? null,
+      contractMultiplier,
+      value(position, "entryDelta"),
+      value(position, "unitGamma"),
+      value(position, "unitTheta"),
+      value(position, "unitVega"),
     ];
     sheet.getRow(rowNumber).values = raw;
-    sheet.getCell(`R${rowNumber}`).value = { formula: `P${rowNumber}*L${rowNumber}*${contractMultiplier}`, result: marketValue ?? undefined };
-    sheet.getCell(`S${rowNumber}`).value = { formula: `Q${rowNumber}*L${rowNumber}*${contractMultiplier}`, result: entryValue };
+    sheet.getCell(`R${rowNumber}`).value = { formula: `P${rowNumber}*L${rowNumber}*AD${rowNumber}`, result: marketValue ?? undefined };
+    sheet.getCell(`S${rowNumber}`).value = { formula: `Q${rowNumber}*L${rowNumber}*AD${rowNumber}`, result: entryValue };
     sheet.getCell(`U${rowNumber}`).value = { formula: `S${rowNumber}+T${rowNumber}`, result: entryCost };
     sheet.getCell(`V${rowNumber}`).value = { formula: `R${rowNumber}-U${rowNumber}`, result: upl ?? undefined };
     sheet.getCell(`W${rowNumber}`).value = { formula: `IFERROR(V${rowNumber}/U${rowNumber},0)`, result: upl !== null && entryCost !== 0 ? upl / entryCost : 0 };
+    sheet.getCell(`X${rowNumber}`).value = { formula: `AE${rowNumber}*L${rowNumber}*AD${rowNumber}*M${rowNumber}`, result: totalDelta ?? undefined };
+    sheet.getCell(`Y${rowNumber}`).value = { formula: `AF${rowNumber}*L${rowNumber}*AD${rowNumber}*M${rowNumber}^2`, result: totalGamma ?? undefined };
+    sheet.getCell(`Z${rowNumber}`).value = { formula: `AG${rowNumber}*L${rowNumber}*AD${rowNumber}`, result: totalTheta ?? undefined };
+    sheet.getCell(`AA${rowNumber}`).value = { formula: `AH${rowNumber}*L${rowNumber}*AD${rowNumber}`, result: totalVega ?? undefined };
   }
 
   for (const [offset, underlying] of totalUnderlyings.entries()) {
@@ -436,6 +466,11 @@ export async function createPositionWorkbook(positions: PositionRecord[], custom
       calculatedSum("totalVega"),
       detail[0]?.rawMarginMode ?? null,
       detail[0]?.rawMarginType ?? null,
+      detail.map(position => calculated.get(position.id)?.contractMultiplier ?? null).find(item => item !== null) ?? null,
+      null,
+      null,
+      null,
+      null,
     ];
     const end = detailStart + ordered.length - 1;
     const criteria = `D${detailStart}:D${Math.max(detailStart, end)}`;
@@ -452,23 +487,28 @@ export async function createPositionWorkbook(positions: PositionRecord[], custom
     };
   }
 
-  sheet.autoFilter = { from: "A2", to: `AC${Math.max(4, detailStart + ordered.length - 1)}` };
+  sheet.autoFilter = { from: "A2", to: `AH${Math.max(4, detailStart + ordered.length - 1)}` };
   const titleStyle: Partial<ExcelJS.Style> = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F33" } }, font: { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 11 }, alignment: { horizontal: "center", vertical: "middle" } };
   sheet.getCell("A1").style = titleStyle;
   sheet.getRow(2).eachCell(cell => { cell.style = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F4E78" } }, font: { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 10 }, alignment: { vertical: "middle", wrapText: true }, border: { bottom: { style: "thin", color: { argb: "FFD9E2F3" } } } }; });
   for (let rowNumber = 3; rowNumber < detailStart; rowNumber += 1) sheet.getRow(rowNumber).eachCell(cell => { cell.style = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF17365D" } }, font: { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 9 }, alignment: { vertical: "middle" } }; });
   for (let rowNumber = detailStart; rowNumber < detailStart + ordered.length; rowNumber += 1) {
     sheet.getRow(rowNumber).eachCell((cell, columnNumber) => {
-      const fill = columnNumber >= 6 && columnNumber <= 17 ? "FFDDEBF7" : columnNumber >= 24 && columnNumber <= 27 ? "FFE2F0D9" : rowNumber % 2 ? "FFF4F7FB" : "FFFFFFFF";
+      const fill = columnNumber >= 6 && columnNumber <= 17 || columnNumber === 30 ? "FFDDEBF7" : columnNumber >= 24 && columnNumber <= 27 || columnNumber >= 31 && columnNumber <= 34 ? "FFE2F0D9" : rowNumber % 2 ? "FFF4F7FB" : "FFFFFFFF";
       cell.style = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: fill } }, font: { name: "Arial", size: 9, color: { argb: "FF1F2937" } }, alignment: { vertical: "middle", wrapText: columnNumber === 3 }, border: { bottom: { style: "hair", color: { argb: "FFD9E2F3" } } } };
     });
   }
   sheet.getColumn(6).numFmt = "yyyy/mm/dd";
   sheet.getColumn(15).numFmt = "yyyy/mm/dd";
-  for (const columnNumber of [7, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27]) sheet.getColumn(columnNumber).numFmt = "#,##0.0000;[Red](#,##0.0000);-";
+  for (const columnNumber of [7, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 30, 31, 32, 33, 34]) sheet.getColumn(columnNumber).numFmt = "#,##0.0000;[Red](#,##0.0000);-";
   sheet.getColumn(23).numFmt = "0.00%;[Red](0.00%);-";
-  const widths = [20, 34, 39, 12, 16, 13, 11, 11, 10, 10, 10, 10, 14, 15, 15, 12, 15, 15, 14, 10, 13, 16, 16, 15, 12, 16, 16, 20, 16];
+  const widths = [20, 34, 39, 12, 16, 13, 11, 11, 10, 10, 10, 10, 14, 15, 15, 12, 15, 15, 14, 10, 13, 16, 16, 15, 12, 16, 16, 20, 16, 16, 13, 13, 13, 13];
   widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  sheet.getCell("L2").note = "Net Qty 为期权合约张数（contracts），不是 GLD 股数或 XAUT 数量。";
+  sheet.getCell("P2").note = "Mark Price 为每股 GLD / 每单位 XAUT 的期权价格；合约市值还需乘 Shares/Contract。";
+  sheet.getCell("Q2").note = "Avg/Entry Price 为每股 GLD / 每单位 XAUT 的期权成交均价；Entry Value 还需乘 Shares/Contract。";
+  sheet.getCell("AD2").note = "每张期权合约对应的标的数量。标准 GLD=100 shares，标准 XAUT=1 XAUT；调整合约以实际 deliverable 为准。";
+  for (const columnName of ["AE", "AF", "AG", "AH"]) sheet.getCell(`${columnName}2`).note = "Unit Greek 为每股 GLD / 每单位 XAUT 的单份期权Greek；Total Greek = Unit Greek × Net Qty × Shares/Contract（Delta/Gamma 另按 Multiplier XAU 换算）。";
   sheet.getRow(1).height = 22;
   sheet.getRow(2).height = 34;
 
