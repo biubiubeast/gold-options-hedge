@@ -38,10 +38,16 @@ export const POSITION_EXCEL_OPTIONAL_MARKET_HEADERS = [
   "Unit Vega",
 ] as const;
 
+export const POSITION_EXCEL_OPTIONAL_LEDGER_HEADERS = [
+  "Cumulative Entry Cost",
+  "Cumulative Realized PnL",
+] as const;
+
 /** Export layout. Import remains backward-compatible with the original 29 required columns. */
 export const POSITION_EXCEL_HEADERS = [
   ...POSITION_EXCEL_REQUIRED_HEADERS,
   ...POSITION_EXCEL_OPTIONAL_MARKET_HEADERS,
+  ...POSITION_EXCEL_OPTIONAL_LEDGER_HEADERS,
 ] as const;
 
 export type PositionUnderlying = "XAUT" | "GLD" | "BTC";
@@ -117,6 +123,8 @@ export type ImportedPosition = {
   unitTheta: string | null;
   unitVega: string | null;
   contractMultiplier: string | null;
+  cumulativeEntryCost: string | null;
+  cumulativeRealizedPnl: string | null;
   rawMarginMode: string | null;
   rawMarginType: string | null;
   importSource: string | null;
@@ -134,6 +142,8 @@ export type PositionExcelTotal = {
   totalGammaXau: number | null;
   totalThetaUsdDay: number | null;
   totalVegaUsdVol: number | null;
+  cumulativeEntryCost: number | null;
+  cumulativeRealizedPnl: number | null;
 };
 
 export type PositionExcelPreview = {

@@ -18,6 +18,7 @@ import {
   resolveXautXauMultiplier,
 } from "@shared/formulaEngine";
 import { DEFAULT_FORMULAS, type FormulaLike } from "@shared/marketTypes";
+import type { TransactionUnderlyingSummary } from "@shared/transactionExcel";
 
 const ERROR_TOKENS = new Set(["#REF!", "#NAME?", "#N/A", "#VALUE!", "#DIV/0!", "#NUM!"]);
 const cleanText = (value: unknown): string => String(value ?? "").replace(/[\u3000\u00a0]/g, " ").trim();
@@ -100,7 +101,10 @@ function resolveImportedSharesPerContract(args: {
 }
 
 function asTotal(row: ExcelJS.Row, column: (header: string) => number, underlying: "XAUT" | "GLD" | "BTC"): PositionExcelTotal {
-  const value = (header: string) => numberOrNull(rawCellValue(row.getCell(column(header))));
+  const value = (header: string) => {
+    const columnNumber = column(header);
+    return columnNumber > 0 ? numberOrNull(rawCellValue(row.getCell(columnNumber))) : null;
+  };
   return {
     underlying,
     netQty: value("Net Qty"),
@@ -111,6 +115,8 @@ function asTotal(row: ExcelJS.Row, column: (header: string) => number, underlyin
     totalGammaXau: value("Gamma"),
     totalThetaUsdDay: value("Theta USD/day"),
     totalVegaUsdVol: value("Vega USD/vol"),
+    cumulativeEntryCost: value("Cumulative Entry Cost"),
+    cumulativeRealizedPnl: value("Cumulative Realized PnL"),
   };
 }
 
@@ -211,7 +217,7 @@ export async function parsePositionWorkbook(buffer: Buffer, fileName: string): P
         entryPrice: numericString(entryPrice ?? 0, 10)!,
         quantity: numericString(netQty, 10)!,
         fee: numericString(fee, 10)!,
-        entryDelta: numericString(unitDelta ?? 0, 10)!,
+        entryDelta: numericString(unitDelta, 10) ?? "",
         sourceAccount: cleanText(rawCellValue(row.getCell(column("Source Account")))) || sourceDefaults.sourceAccount,
         venue: cleanText(rawCellValue(row.getCell(column("Venue")))) || sourceDefaults.venue,
         instrument,
@@ -236,6 +242,8 @@ export async function parsePositionWorkbook(buffer: Buffer, fileName: string): P
         unitTheta: numericString(unitTheta),
         unitVega: numericString(unitVega),
         contractMultiplier: numericString(contractMultiplier),
+        cumulativeEntryCost: numericString(optionalNumber(row, "Cumulative Entry Cost")),
+        cumulativeRealizedPnl: numericString(optionalNumber(row, "Cumulative Realized PnL")),
         rawMarginMode: cleanText(rawCellValue(row.getCell(column("Raw Margin Mode")))) || null,
         rawMarginType: cleanText(rawCellValue(row.getCell(column("Raw Margin Type")))) || null,
         importSource: fileName,
@@ -343,7 +351,11 @@ function exportPositionValues(position: PositionRecord, formulas: readonly Formu
   return { contractMultiplier, multiplierXau, xauEq, entryValue, entryCost, marketValue, upl, totalDelta, totalGamma, totalTheta, totalVega };
 }
 
-export async function createPositionWorkbook(positions: PositionRecord[], customFormulas: readonly FormulaLike[] = DEFAULT_FORMULAS): Promise<Buffer> {
+export async function createPositionWorkbook(
+  positions: PositionRecord[],
+  customFormulas: readonly FormulaLike[] = DEFAULT_FORMULAS,
+  transactionSummaries: readonly TransactionUnderlyingSummary[] = [],
+): Promise<Buffer> {
   const formulas = customFormulas.length ? customFormulas : DEFAULT_FORMULAS;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Cronus";
@@ -414,6 +426,8 @@ export async function createPositionWorkbook(positions: PositionRecord[], custom
       value(position, "unitGamma"),
       value(position, "unitTheta"),
       value(position, "unitVega"),
+      value(position, "cumulativeEntryCost"),
+      value(position, "cumulativeRealizedPnl"),
     ];
     sheet.getRow(rowNumber).values = raw;
     sheet.getCell(`R${rowNumber}`).value = { formula: `P${rowNumber}*L${rowNumber}*AD${rowNumber}`, result: marketValue ?? undefined };
@@ -437,6 +451,7 @@ export async function createPositionWorkbook(positions: PositionRecord[], custom
     const qtyShort = detail.reduce((total, position) => total + (numberValue(position.qtyShort) ?? Math.max(-Number(position.quantity), 0)), 0);
     const multiplierXau = detail.map(position => calculated.get(position.id)?.multiplierXau ?? null).find(item => item !== null) ?? null;
     const row = sheet.getRow(rowNumber);
+    const transactionSummary = transactionSummaries.find(summary => summary.underlying === underlying);
     row.values = [
       detail[0]?.sourceAccount ?? POSITION_SOURCE_DEFAULTS[underlying].sourceAccount,
       detail[0]?.venue ?? POSITION_SOURCE_DEFAULTS[underlying].venue,
@@ -472,6 +487,8 @@ export async function createPositionWorkbook(positions: PositionRecord[], custom
       null,
       null,
       null,
+      transactionSummary?.cumulativeEntryCost ?? sum("cumulativeEntryCost"),
+      transactionSummary?.cumulativeRealizedPnl ?? sum("cumulativeRealizedPnl"),
     ];
     const end = detailStart + ordered.length - 1;
     const criteria = `D${detailStart}:D${Math.max(detailStart, end)}`;
@@ -488,28 +505,30 @@ export async function createPositionWorkbook(positions: PositionRecord[], custom
     };
   }
 
-  sheet.autoFilter = { from: "A2", to: `AH${Math.max(4, detailStart + ordered.length - 1)}` };
+  sheet.autoFilter = { from: "A2", to: `AJ${Math.max(4, detailStart + ordered.length - 1)}` };
   const titleStyle: Partial<ExcelJS.Style> = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F33" } }, font: { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 11 }, alignment: { horizontal: "center", vertical: "middle" } };
   sheet.getCell("A1").style = titleStyle;
   sheet.getRow(2).eachCell(cell => { cell.style = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F4E78" } }, font: { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 10 }, alignment: { vertical: "middle", wrapText: true }, border: { bottom: { style: "thin", color: { argb: "FFD9E2F3" } } } }; });
   for (let rowNumber = 3; rowNumber < detailStart; rowNumber += 1) sheet.getRow(rowNumber).eachCell(cell => { cell.style = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF17365D" } }, font: { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 9 }, alignment: { vertical: "middle" } }; });
   for (let rowNumber = detailStart; rowNumber < detailStart + ordered.length; rowNumber += 1) {
     sheet.getRow(rowNumber).eachCell((cell, columnNumber) => {
-      const fill = columnNumber >= 6 && columnNumber <= 17 || columnNumber === 30 ? "FFDDEBF7" : columnNumber >= 24 && columnNumber <= 27 || columnNumber >= 31 && columnNumber <= 34 ? "FFE2F0D9" : rowNumber % 2 ? "FFF4F7FB" : "FFFFFFFF";
+      const fill = columnNumber >= 6 && columnNumber <= 17 || columnNumber === 30 ? "FFDDEBF7" : columnNumber >= 24 && columnNumber <= 27 || columnNumber >= 31 && columnNumber <= 34 ? "FFE2F0D9" : columnNumber >= 35 ? "FFFFF2CC" : rowNumber % 2 ? "FFF4F7FB" : "FFFFFFFF";
       cell.style = { fill: { type: "pattern", pattern: "solid", fgColor: { argb: fill } }, font: { name: "Arial", size: 9, color: { argb: "FF1F2937" } }, alignment: { vertical: "middle", wrapText: columnNumber === 3 }, border: { bottom: { style: "hair", color: { argb: "FFD9E2F3" } } } };
     });
   }
   sheet.getColumn(6).numFmt = "yyyy/mm/dd";
   sheet.getColumn(15).numFmt = "yyyy/mm/dd";
-  for (const columnNumber of [7, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 30, 31, 32, 33, 34]) sheet.getColumn(columnNumber).numFmt = "#,##0.0000;[Red](#,##0.0000);-";
+  for (const columnNumber of [7, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 30, 31, 32, 33, 34, 35, 36]) sheet.getColumn(columnNumber).numFmt = "#,##0.0000;[Red](#,##0.0000);-";
   sheet.getColumn(23).numFmt = "0.00%;[Red](0.00%);-";
-  const widths = [20, 34, 39, 12, 16, 13, 11, 11, 10, 10, 10, 10, 14, 15, 15, 12, 15, 15, 14, 10, 13, 16, 16, 15, 12, 16, 16, 20, 16, 16, 13, 13, 13, 13];
+  const widths = [20, 34, 39, 12, 16, 13, 11, 11, 10, 10, 10, 10, 14, 15, 15, 12, 15, 15, 14, 10, 13, 16, 16, 15, 12, 16, 16, 20, 16, 16, 13, 13, 13, 13, 20, 22];
   widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
   sheet.getCell("L2").note = "Net Qty 为期权合约张数（contracts），不是 GLD 股数或 XAUT 数量。";
   sheet.getCell("P2").note = "Mark Price 为每股 GLD / 每单位 XAUT 的期权价格；合约市值还需乘 Shares/Contract。";
   sheet.getCell("Q2").note = "Avg/Entry Price 为每股 GLD / 每单位 XAUT 的期权成交均价；Entry Value 还需乘 Shares/Contract。";
   sheet.getCell("AD2").note = "每张期权合约对应的标的数量。标准 GLD=100 shares，标准 XAUT=1 XAUT；调整合约以实际 deliverable 为准。";
   for (const columnName of ["AE", "AF", "AG", "AH"]) sheet.getCell(`${columnName}2`).note = "Unit Greek 为每股 GLD / 每单位 XAUT 的单份期权Greek；Total Greek = Unit Greek × Net Qty × Shares/Contract（Delta/Gamma 另按 Multiplier XAU 换算）。";
+  sheet.getCell("AI2").note = "从全量交易记录起点至 Reference Date，按移动加权平均成本法累计的开仓 Entry Cost；Total 行包含已平仓合约。";
+  sheet.getCell("AJ2").note = "累计已实现损益：每次平仓/交割净收入减去该数量对应的移动加权平均账面成本；同一成本只结转一次。";
   sheet.getRow(1).height = 22;
   sheet.getRow(2).height = 34;
 
@@ -527,7 +546,7 @@ export async function createPositionWorkbook(positions: PositionRecord[], custom
     Instrument: position.instrument ?? `${position.underlying}-${position.expiry}-${position.strike}-${position.optionType}`,
     Underlying: position.underlying, Expiry: isoToDate(position.expiry), Strike: Number(position.strike), "Call/Put": position.optionType === "call" ? "Call" : "Put",
     "Mark Price": value(position, "importedMarkPrice"), "Mark IV": value(position, "markIv"), Bid1: value(position, "bid1Price"), Ask1: value(position, "ask1Price"),
-    "Unit Delta": Number(position.entryDelta), "Unit Gamma": value(position, "unitGamma"), "Unit Theta": value(position, "unitTheta"), "Unit Vega": value(position, "unitVega"),
+    "Unit Delta": value(position, "entryDelta"), "Unit Gamma": value(position, "unitGamma"), "Unit Theta": value(position, "unitTheta"), "Unit Vega": value(position, "unitVega"),
     "Open Interest": value(position, "openInterest"), Volume: value(position, "optionVolume"), "Total Delta XAU": formulaValues.totalDelta,
     "Total Gamma XAU": formulaValues.totalGamma, "Theta USD/day": formulaValues.totalTheta, "Vega USD/vol": formulaValues.totalVega,
     "Market Value": formulaValues.marketValue, UPL: formulaValues.upl, Source: position.marketSource ?? position.importSource ?? "MISSING",

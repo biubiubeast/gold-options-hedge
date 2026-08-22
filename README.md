@@ -6,7 +6,7 @@
 
 ## 主要功能
 
-1. 仓位录入、编辑和删除；支持预览并导入 DinoSignal 的 29 列 XAUT/GLD 持仓 Excel，导入前自动备份，也可按相同排版导出 Excel。
+1. 仓位录入、编辑和删除；支持导入 DinoSignal 持仓快照，也支持上传 KGI / Bybit（SignalPlus）全量交易记录，自动配对开平仓、推导当前仓位与累计成本/已实现损益；导入前自动备份，并可导出 36 列审计表。
 2. Expiry × Strike 矩阵：支持 Unit/Total Delta、Gamma、Theta、Vega、Mark IV、MV、UPL 等指标；紧凑无文字模式可容纳 100–200 条仓位，右侧 P99 色标与实时 Spot marker 用于快速识别集中风险。
 3. 期权详情：单位 Greeks、持仓 Total Greeks、Entry Cost、Current Value、P&L、数据来源和“实时/估算”标识。
 4. 组合 Dashboard：按 Underlying / Expiry / Strike 筛选；显示 XAUT、GLD 和 XAU 代理现价；统一汇总估值与 XAU 风险量纲。
@@ -31,7 +31,7 @@
 
 完整的架构、schema、计算定义、颜色算法和验收记录见 [`docs/risk-heatmap-spec.md`](docs/risk-heatmap-spec.md)。
 
-Excel 29 列格式、单位 Greeks 反推公式、导入/恢复、导出和紧凑热力图操作见 [`docs/excel-position-guide.md`](docs/excel-position-guide.md)。
+持仓 Excel、KGI / Bybit 全量交易导入、移动加权成本配对、累计损益、恢复、导出和紧凑热力图操作见 [`docs/excel-position-guide.md`](docs/excel-position-guide.md)。
 
 ## 快速启动
 

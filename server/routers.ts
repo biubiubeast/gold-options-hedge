@@ -24,8 +24,16 @@ import {
   getDeribitEthOptionChain,
 } from "./marketData";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
-import { evaluateNamedFormula, validateFormula } from "@shared/formulaEngine";
+import {
+  evaluateNamedFormula,
+  resolveGldContractMultiplier,
+  resolveGldXauMultiplier,
+  resolveXautContractMultiplier,
+  resolveXautXauMultiplier,
+  validateFormula,
+} from "@shared/formulaEngine";
 import { createPositionWorkbook, parsePositionWorkbook } from "./positionExcel";
+import { parseTransactionWorkbook } from "./transactionExcel";
 import { recalculatePositionFormulaData, refreshPositionMarketData } from "./positionMarketRefresh";
 import { createAuthSession, revokeAuthToken } from "./auth";
 
@@ -33,6 +41,11 @@ const numericString = z.string().trim().refine(value => {
   const parsed = Number(value);
   return Number.isFinite(parsed);
 }, "必须是有效数字");
+const deltaOrMissingString = z.string().trim().refine(value => {
+  if (value === "") return true;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= -1 && parsed <= 1;
+}, "Delta 必须为空或在 -1 到 1 之间");
 
 const positiveConstantFormulaNames = new Set([
   "gld_xau_multiplier",
@@ -87,6 +100,8 @@ const optionalPositionFields = {
   unitTheta: nullableNumericText.optional(),
   unitVega: nullableNumericText.optional(),
   contractMultiplier: nullableNumericText.optional(),
+  cumulativeEntryCost: nullableNumericText.optional(),
+  cumulativeRealizedPnl: nullableNumericText.optional(),
   rawMarginMode: nullableText.optional(),
   rawMarginType: nullableText.optional(),
   importSource: nullableText.optional(),
@@ -95,6 +110,9 @@ const optionalPositionFields = {
 };
 const importedPositionSchema = z.object({
   ...positionFields,
+  // Full transaction files do not carry live Greeks. Preserve MISSING rather
+  // than manufacturing a zero delta; the market refresh can populate it later.
+  entryDelta: deltaOrMissingString,
   sourceAccount: nullableText,
   venue: nullableText,
   instrument: z.string().trim().min(1).max(500),
@@ -119,11 +137,31 @@ const importedPositionSchema = z.object({
   unitTheta: nullableNumericText,
   unitVega: nullableNumericText,
   contractMultiplier: nullableNumericText,
+  cumulativeEntryCost: nullableNumericText,
+  cumulativeRealizedPnl: nullableNumericText,
   rawMarginMode: nullableText,
   rawMarginType: nullableText,
   importSource: nullableText,
   importRow: z.number().int().positive().nullable(),
   dataStatus: z.enum(["LIVE", "STALE", "WARN", "MISSING", "FAIL"]),
+});
+
+const transactionSummarySchema = z.object({
+  underlying: z.enum(["XAUT", "GLD", "BTC"]),
+  source: z.enum(["KGI", "BYBIT"]),
+  sheetName: z.string().trim().min(1).max(255),
+  sourceAccount: z.string().trim().min(1).max(255),
+  venue: z.string().trim().min(1).max(500),
+  currency: z.enum(["USD", "USDT"]),
+  referenceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  tradeRows: z.number().int().nonnegative(),
+  ignoredRows: z.number().int().nonnegative(),
+  duplicateRows: z.number().int().nonnegative(),
+  openPositions: z.number().int().nonnegative(),
+  netQty: z.number().finite(),
+  currentEntryCost: z.number().finite(),
+  cumulativeEntryCost: z.number().finite(),
+  cumulativeRealizedPnl: z.number().finite(),
 });
 
 const formulaInput = z.object({
@@ -169,6 +207,7 @@ export const appRouter = router({
 
   positions: router({
     list: protectedProcedure.query(({ ctx }) => db.getPositionsByUser(ctx.user.id)),
+    transactionSummaries: protectedProcedure.query(({ ctx }) => db.getTransactionSummaries(ctx.user.id)),
     get: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(({ ctx, input }) =>
       db.getPositionById(input.id, ctx.user.id),
     ),
@@ -208,6 +247,30 @@ export const appRouter = router({
       mode: z.enum(["replace", "upsert"]),
       positions: z.array(importedPositionSchema).min(1).max(2_000),
     })).mutation(({ ctx, input }) => db.importPositions(ctx.user.id, input.positions, input.mode)),
+    previewTransactions: protectedProcedure.input(z.object({
+      fileName: z.string().trim().min(1).max(255).refine(value => /\.xlsx$/i.test(value), "只支持 .xlsx 文件"),
+      base64: z.string().min(1).max(18_000_000),
+    })).mutation(async ({ ctx, input }) => {
+      const buffer = Buffer.from(input.base64, "base64");
+      if (buffer.byteLength > 12_000_000) throw new Error("Excel 文件不能超过 12 MB");
+      const formulas = await db.getFormulasByUser(ctx.user.id);
+      return parseTransactionWorkbook(buffer, input.fileName, {
+        gldMultiplierXau: resolveGldXauMultiplier(formulas),
+        xautMultiplierXau: resolveXautXauMultiplier(formulas),
+        gldContractMultiplier: resolveGldContractMultiplier(formulas),
+        xautContractMultiplier: resolveXautContractMultiplier(formulas),
+      });
+    }),
+    importTransactions: protectedProcedure.input(z.object({
+      fileName: z.string().trim().min(1).max(255),
+      positions: z.array(importedPositionSchema).max(2_000),
+      summaries: z.array(transactionSummarySchema).min(1).max(3),
+    })).mutation(({ ctx, input }) => db.importTransactionPositions(
+      ctx.user.id,
+      input.positions,
+      input.summaries,
+      input.fileName,
+    )),
     refreshMarketData: protectedProcedure.input(z.object({
       gldMultiplierXau: z.number().positive().nullable().optional(),
       xautMultiplierXau: z.number().positive().nullable().optional(),
@@ -220,7 +283,8 @@ export const appRouter = router({
     exportExcel: protectedProcedure.query(async ({ ctx }) => {
       const positions = await db.getPositionsByUser(ctx.user.id);
       const formulas = await db.getFormulasByUser(ctx.user.id);
-      const workbook = await createPositionWorkbook(positions, formulas);
+      const transactionSummaries = await db.getTransactionSummaries(ctx.user.id);
+      const workbook = await createPositionWorkbook(positions, formulas, transactionSummaries);
       return {
         fileName: `DinoSignal持仓_${new Date().toISOString().slice(0, 10).replaceAll("-", "")}.xlsx`,
         mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

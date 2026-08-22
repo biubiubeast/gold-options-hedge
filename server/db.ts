@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
 import type { ImportedPosition, ImportMode } from "@shared/positionExcel";
+import type { TransactionUnderlyingSummary } from "@shared/transactionExcel";
 import { DEFAULT_VIEWER_PAGE_PERMISSIONS, type ViewerPagePermissions } from "@shared/access";
 
 export type LocalUser = {
@@ -59,6 +60,8 @@ export type PositionRecord = {
   unitTheta?: string | null;
   unitVega?: string | null;
   contractMultiplier?: string | null;
+  cumulativeEntryCost?: string | null;
+  cumulativeRealizedPnl?: string | null;
   rawMarginMode?: string | null;
   rawMarginType?: string | null;
   importSource?: string | null;
@@ -102,12 +105,19 @@ type StoredFormula = Omit<FormulaRecord, "createdAt" | "updatedAt"> & {
   updatedAt: string;
 };
 
+export type StoredTransactionSummary = TransactionUnderlyingSummary & {
+  userId: number;
+  fileName: string;
+  importedAt: string;
+};
+
 type Store = {
   version: 1;
   nextPositionId: number;
   nextFormulaId: number;
   positions: StoredPosition[];
   formulas: StoredFormula[];
+  transactionSummaries?: StoredTransactionSummary[];
   viewerPagePermissions?: ViewerPagePermissions;
   viewerPagePermissionsVersion?: number;
 };
@@ -126,6 +136,7 @@ const emptyStore = (): Store => ({
   nextFormulaId: 1,
   positions: [],
   formulas: [],
+  transactionSummaries: [],
   viewerPagePermissions: { ...DEFAULT_VIEWER_PAGE_PERMISSIONS },
   viewerPagePermissionsVersion: VIEWER_PAGE_PERMISSIONS_VERSION,
 });
@@ -360,7 +371,15 @@ export async function importPositions(userId: number, positions: ImportedPositio
     const backupName = `portfolio-before-import-${now.replace(/[:.]/g, "-")}.json`;
     await writeFile(path.join(backupDirectory, backupName), `${JSON.stringify({ exportedAt: now, positions: before }, null, 2)}\n`, "utf8");
 
-    const incoming = positions.map(position => ({ ...position, userId }));
+    const incoming = positions.map(position => {
+      const existing = before.find(item => positionIdentity(item) === positionIdentity(position));
+      return {
+        ...position,
+        cumulativeEntryCost: position.cumulativeEntryCost ?? existing?.cumulativeEntryCost ?? null,
+        cumulativeRealizedPnl: position.cumulativeRealizedPnl ?? existing?.cumulativeRealizedPnl ?? null,
+        userId,
+      };
+    });
     let created = 0;
     let updated = 0;
     if (mode === "replace") {
@@ -384,6 +403,48 @@ export async function importPositions(userId: number, positions: ImportedPositio
     }
     await saveStore(store);
     return { created, updated, removed: mode === "replace" ? before.length : 0, backupName };
+  });
+}
+
+export async function getTransactionSummaries(userId: number) {
+  const store = await loadStore();
+  return (store.transactionSummaries ?? [])
+    .filter(summary => summary.userId === userId)
+    .sort((left, right) => left.underlying.localeCompare(right.underlying));
+}
+
+export async function importTransactionPositions(
+  userId: number,
+  positions: ImportedPosition[],
+  summaries: TransactionUnderlyingSummary[],
+  fileName: string,
+) {
+  return serialize(async () => {
+    const store = await loadStore();
+    const before = store.positions.filter(position => position.userId === userId);
+    const previousSummaries = (store.transactionSummaries ?? []).filter(summary => summary.userId === userId);
+    const now = new Date().toISOString();
+    const backupDirectory = path.join(path.dirname(dataFile), "backups");
+    await mkdir(backupDirectory, { recursive: true });
+    const backupName = `portfolio-before-transaction-import-${now.replace(/[:.]/g, "-")}.json`;
+    await writeFile(path.join(backupDirectory, backupName), `${JSON.stringify({ exportedAt: now, positions: before, transactionSummaries: previousSummaries }, null, 2)}\n`, "utf8");
+
+    const affectedUnderlyings = new Set(summaries.map(summary => summary.underlying));
+    store.positions = store.positions.filter(position => position.userId !== userId || !affectedUnderlyings.has(position.underlying));
+    for (const position of positions) {
+      store.positions.push({ ...position, userId, id: store.nextPositionId++, createdAt: now, updatedAt: now });
+    }
+    store.transactionSummaries = [
+      ...(store.transactionSummaries ?? []).filter(summary => summary.userId !== userId || !affectedUnderlyings.has(summary.underlying)),
+      ...summaries.map(summary => ({ ...summary, userId, fileName, importedAt: now })),
+    ];
+    await saveStore(store);
+    return {
+      created: positions.length,
+      removed: before.filter(position => affectedUnderlyings.has(position.underlying)).length,
+      underlyings: [...affectedUnderlyings],
+      backupName,
+    };
   });
 }
 
@@ -475,5 +536,6 @@ export async function exportPortfolio(userId: number) {
     exportedAt: new Date().toISOString(),
     positions: store.positions.filter(position => position.userId === userId),
     formulas: store.formulas.filter(formula => formula.userId === userId),
+    transactionSummaries: (store.transactionSummaries ?? []).filter(summary => summary.userId === userId),
   };
 }

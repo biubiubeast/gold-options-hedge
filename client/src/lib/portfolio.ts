@@ -96,6 +96,8 @@ export type PortfolioPosition = {
   unitTheta?: string | null;
   unitVega?: string | null;
   contractMultiplier?: string | null;
+  cumulativeEntryCost?: string | null;
+  cumulativeRealizedPnl?: string | null;
   rawMarginMode?: string | null;
   rawMarginType?: string | null;
   importSource?: string | null;

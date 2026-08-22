@@ -7,10 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Info, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileClock, FileSpreadsheet, Info, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { formatReferenceSnapshotTime, POSITION_SOURCE_DEFAULTS, type PositionExcelPreview } from "@shared/positionExcel";
+import type { TransactionExcelPreview } from "@shared/transactionExcel";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { calculatePosition, getPositionMarketData, type PortfolioPosition } from "@/lib/portfolio";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
@@ -85,6 +86,7 @@ function downloadBase64(base64: string, mimeType: string, fileName: string) {
 export default function Positions() {
   const utils = trpc.useUtils();
   const { data: positions, isLoading } = trpc.positions.list.useQuery();
+  const { data: transactionSummaries } = trpc.positions.transactionSummaries.useQuery();
   const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
   const { data: formulas } = trpc.formulas.list.useQuery();
   const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
@@ -97,12 +99,23 @@ export default function Positions() {
   const exportExcelQuery = trpc.positions.exportExcel.useQuery(undefined, { enabled: false });
   const exportMarketRefreshMutation = trpc.positions.refreshMarketData.useMutation();
   const previewMutation = trpc.positions.previewExcel.useMutation({ onError: error => toast.error(error.message) });
+  const previewTransactionsMutation = trpc.positions.previewTransactions.useMutation({ onError: error => toast.error(error.message) });
   const importMutation = trpc.positions.importExcel.useMutation({
     onSuccess: result => {
       utils.positions.list.invalidate();
       setImportOpen(false);
       setPreview(null);
       toast.success(`已导入：新增 ${result.created}、更新 ${result.updated}、移除 ${result.removed}；导入前备份 ${result.backupName}`);
+    },
+    onError: error => toast.error(error.message),
+  });
+  const importTransactionsMutation = trpc.positions.importTransactions.useMutation({
+    onSuccess: result => {
+      utils.positions.list.invalidate();
+      utils.positions.transactionSummaries.invalidate();
+      setTransactionImportOpen(false);
+      setTransactionPreview(null);
+      toast.success(`已从全量交易推导并更新 ${result.underlyings.join(" / ")}：新增 ${result.created}、移除旧仓 ${result.removed}；导入前备份 ${result.backupName}`);
     },
     onError: error => toast.error(error.message),
   });
@@ -126,6 +139,9 @@ export default function Positions() {
   const [preview, setPreview] = useState<PositionExcelPreview | null>(null);
   const [importMode, setImportMode] = useState<"replace" | "upsert">("replace");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [transactionImportOpen, setTransactionImportOpen] = useState(false);
+  const [transactionPreview, setTransactionPreview] = useState<TransactionExcelPreview | null>(null);
+  const transactionFileInputRef = useRef<HTMLInputElement>(null);
 
   const summary = useMemo(() => {
     const all = positions ?? [];
@@ -144,8 +160,10 @@ export default function Positions() {
       gldQty: forUnderlying("GLD").reduce((sum, position) => sum + Number(position.quantity), 0),
       btcQty: forUnderlying("BTC").reduce((sum, position) => sum + Number(position.quantity), 0),
       referenceDate: formatReferenceSnapshotTime(latestReference?.referenceDate, latestReference?.createdAt),
+      cumulativeEntryCost: (transactionSummaries ?? []).reduce((sum, item) => sum + item.cumulativeEntryCost, 0),
+      cumulativeRealizedPnl: (transactionSummaries ?? []).reduce((sum, item) => sum + item.cumulativeRealizedPnl, 0),
     };
-  }, [positions]);
+  }, [positions, transactionSummaries]);
 
   const formPayload = () => ({
     underlying: form.underlying,
@@ -219,6 +237,25 @@ export default function Positions() {
     importMutation.mutate({ mode: importMode, positions: preview.positions });
   };
 
+  const handleTransactionFile = async (file?: File) => {
+    if (!file) return;
+    if (!/\.xlsx$/i.test(file.name)) return toast.error("请选择 .xlsx 文件");
+    if (file.size > 12_000_000) return toast.error("Excel 文件不能超过 12 MB");
+    setTransactionPreview(null);
+    const base64 = bufferToBase64(await file.arrayBuffer());
+    const result = await previewTransactionsMutation.mutateAsync({ fileName: file.name, base64 });
+    setTransactionPreview(result);
+  };
+
+  const confirmTransactionImport = () => {
+    if (!transactionPreview || transactionPreview.errors.length || !transactionPreview.summaries.length) return;
+    importTransactionsMutation.mutate({
+      fileName: transactionPreview.fileName,
+      positions: transactionPreview.positions,
+      summaries: transactionPreview.summaries,
+    });
+  };
+
   const handleExportExcel = async () => {
     try {
       const refreshed = await exportMarketRefreshMutation.mutateAsync({
@@ -264,7 +301,7 @@ export default function Positions() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gold-gradient">期权仓位管理</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Excel 快照是主导入流程；手工录入用于临时修正或单腿补录。</p>
+          <p className="mt-1 text-sm text-muted-foreground">全量交易台账用于推导当前仓位与累计损益；持仓快照和手工录入用于兼容、应急或临时修正。</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {settings.pageMarketRefreshButtons.positions && <MarketRefreshButton />}
@@ -274,7 +311,7 @@ export default function Positions() {
           <Dialog open={importOpen} onOpenChange={value => { setImportOpen(value); if (!value) setPreview(null); }}>
             <DialogTrigger asChild><Button variant="outline" className="gap-2"><Upload className="h-4 w-4" /> 上传持仓 Excel</Button></DialogTrigger>
             <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-5xl">
-              <DialogHeader><DialogTitle>上传、校验并更新仓位</DialogTitle><DialogDescription>校验 期权持仓_XAUT_GLD 的29列必需结构；Shares/Contract及4列Unit Greeks可选，再选择替换或更新。</DialogDescription></DialogHeader>
+              <DialogHeader><DialogTitle>上传、校验并更新仓位</DialogTitle><DialogDescription>校验 期权持仓_XAUT_GLD 的29列必需结构；Shares/Contract、4列Unit Greeks及2列累计成本/已实现损益可选，再选择替换或更新。</DialogDescription></DialogHeader>
               <input ref={fileInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={event => handleFile(event.target.files?.[0])} />
               <button type="button" onClick={() => fileInputRef.current?.click()} className="flex min-h-28 w-full flex-col items-center justify-center gap-2 border border-dashed border-primary/50 bg-primary/5 text-sm hover:bg-primary/10">
                 {previewMutation.isPending ? <Loader2 className="h-7 w-7 animate-spin text-primary" /> : <FileSpreadsheet className="h-7 w-7 text-primary" />}
@@ -292,7 +329,7 @@ export default function Positions() {
                   <div className={`flex items-center gap-2 border p-2 text-xs ${preview.exactHeaderMatch ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-amber-500/40 bg-amber-500/10 text-amber-200"}`}>
                     {preview.exactHeaderMatch ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
                     {preview.exactHeaderMatch
-                      ? preview.extendedHeaderMatch ? "34列新版模板完整匹配（29列必需字段 + 5列合约规格/Unit Greeks）。" : "29列必需字段完整匹配；新增5列可以不提供，系统会按标准规格及Total Greeks推导。"
+                      ? preview.extendedHeaderMatch ? "36列新版模板完整匹配（29列必需字段 + 5列合约规格/Unit Greeks + 2列累计台账指标）。" : "29列必需字段完整匹配；后续合约规格、Unit Greeks及累计台账列可以不提供。"
                       : "必需列可识别但并非完全同序；请检查预览警告。"}
                   </div>
                   {(preview.errors.length > 0 || preview.warnings.length > 0) && <div className="grid gap-2 md:grid-cols-2">
@@ -310,6 +347,59 @@ export default function Positions() {
                   </div>
                 </div>
               )}
+            </DialogContent>
+          </Dialog>
+          <Dialog open={transactionImportOpen} onOpenChange={value => { setTransactionImportOpen(value); if (!value) setTransactionPreview(null); }}>
+            <DialogTrigger asChild><Button variant="outline" className="gap-2"><FileClock className="h-4 w-4" /> 上传全量交易记录</Button></DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-6xl">
+              <DialogHeader>
+                <DialogTitle>从全量交易记录推导当前仓位</DialogTitle>
+                <DialogDescription>支持 KGI GLD、Bybit/SignalPlus XAUT 明细及包含两者 RAW 工作表的推导工作簿。先按时间顺序用移动加权平均成本法预览，不会立即写入。</DialogDescription>
+              </DialogHeader>
+              <input ref={transactionFileInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={event => handleTransactionFile(event.target.files?.[0])} />
+              <button type="button" onClick={() => transactionFileInputRef.current?.click()} className="flex min-h-28 w-full flex-col items-center justify-center gap-2 border border-dashed border-cyan-500/50 bg-cyan-500/5 text-sm hover:bg-cyan-500/10">
+                {previewTransactionsMutation.isPending ? <Loader2 className="h-7 w-7 animate-spin text-cyan-300" /> : <FileClock className="h-7 w-7 text-cyan-300" />}
+                <span>{previewTransactionsMutation.isPending ? "正在归一化成交数量、配对平仓成本并核对到期记录…" : "选择 KGI / Bybit 全量交易明细 .xlsx"}</span>
+                <span className="text-xs text-muted-foreground">上限 12 MB；KGI Qty按 Shares/Contract（默认100）换算为合约张数，Bybit Qty按合约数量读取</span>
+              </button>
+              {transactionPreview && <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-7">
+                  {[
+                    ["文件", transactionPreview.fileName],
+                    ["来源工作表", transactionPreview.sourceSheets.join(" / ")],
+                    ["有效交易", transactionPreview.summary.tradeRows],
+                    ["当前仓位", transactionPreview.summary.openPositions],
+                    ["忽略/重复", `${transactionPreview.summary.ignoredRows} / ${transactionPreview.summary.duplicateRows}`],
+                    ["Cumulative Entry", money(transactionPreview.summary.cumulativeEntryCost)],
+                    ["Cumulative Realized PnL", money(transactionPreview.summary.cumulativeRealizedPnl)],
+                  ].map(([label, value]) => <div key={String(label)} className="border border-border/60 bg-secondary/20 p-2"><p className="text-[10px] uppercase text-muted-foreground">{label}</p><p className="truncate font-mono text-xs" title={String(value)}>{value}</p></div>)}
+                </div>
+                <div className="border border-cyan-500/30 bg-cyan-500/5 p-2 text-xs text-cyan-100">
+                  成本法：移动加权平均。每次卖出/交割只结转对应数量的账面成本；平仓手续费计入已实现损益，未平仓手续费留在当前 Entry Cost。
+                </div>
+                {(transactionPreview.errors.length > 0 || transactionPreview.warnings.length > 0) && <div className="grid gap-2 md:grid-cols-2">
+                  <div className="border border-red-500/30 bg-red-500/5 p-2 text-xs"><strong>Errors ({transactionPreview.errors.length})</strong>{transactionPreview.errors.length ? transactionPreview.errors.map(message => <p key={message} className="mt-1 text-red-300">{message}</p>) : <p className="mt-1 text-muted-foreground">无阻断错误</p>}</div>
+                  <div className="border border-amber-500/30 bg-amber-500/5 p-2 text-xs"><strong>Warnings ({transactionPreview.warnings.length})</strong>{transactionPreview.warnings.length ? transactionPreview.warnings.slice(0, 12).map(message => <p key={message} className="mt-1 text-amber-200">{message}</p>) : <p className="mt-1 text-muted-foreground">无警告</p>}</div>
+                </div>}
+                <div className="grid gap-2 md:grid-cols-2">
+                  {transactionPreview.summaries.map(item => <div key={item.underlying} className="border border-border/60 bg-background/40 p-3">
+                    <div className="flex items-center justify-between"><strong>{item.underlying} · {item.source}</strong><Badge variant="outline">{item.referenceDate}</Badge></div>
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                      <span>Trades <b className="font-mono">{item.tradeRows}</b></span><span>Open <b className="font-mono">{item.openPositions}</b></span><span>Net Qty <b className="font-mono">{item.netQty}</b></span>
+                      <span>Current Cost <b className="font-mono">{money(item.currentEntryCost)}</b></span><span>Cum Entry <b className="font-mono">{money(item.cumulativeEntryCost)}</b></span><span>Cum Realized <b className="font-mono">{money(item.cumulativeRealizedPnl)}</b></span>
+                    </div>
+                  </div>)}
+                </div>
+                <div className="max-h-64 overflow-auto border border-border/60">
+                  <Table><TableHeader><TableRow><TableHead>Instrument</TableHead><TableHead>U</TableHead><TableHead>Expiry</TableHead><TableHead>Qty</TableHead><TableHead>Avg Entry</TableHead><TableHead>Current Entry Cost</TableHead><TableHead>Cumulative Entry</TableHead><TableHead>Cumulative Realized PnL</TableHead></TableRow></TableHeader>
+                    <TableBody>{transactionPreview.positions.slice(0, 30).map(position => <TableRow key={position.instrument}><TableCell className="max-w-64 truncate font-mono text-[11px]">{position.instrument}</TableCell><TableCell>{position.underlying}</TableCell><TableCell className="font-mono">{position.expiry}</TableCell><TableCell className="font-mono">{position.quantity}</TableCell><TableCell className="font-mono">{position.entryPrice}</TableCell><TableCell className="font-mono">{money(position.importedEntryCost)}</TableCell><TableCell className="font-mono">{money(position.cumulativeEntryCost)}</TableCell><TableCell className="font-mono">{money(position.cumulativeRealizedPnl)}</TableCell></TableRow>)}</TableBody>
+                  </Table>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+                  <p className="max-w-3xl text-xs text-muted-foreground">确认后只替换本文件包含的 Underlying；例如上传 KGI 只替换 GLD，现有 XAUT 不受影响。市场字段先标记 MISSING，可随后点击“更新市场数据”补齐。</p>
+                  <Button onClick={confirmTransactionImport} disabled={Boolean(transactionPreview.errors.length) || !transactionPreview.summaries.length || importTransactionsMutation.isPending} className="gap-2">{importTransactionsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}确认推导并更新 {transactionPreview.positions.length} 条当前仓位</Button>
+                </div>
+              </div>}
             </DialogContent>
           </Dialog>
           <Dialog open={open} onOpenChange={setOpen}>
@@ -343,15 +433,15 @@ export default function Positions() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-        {[["Positions", summary.count], ["XAUT", `${summary.xaut} / Qty ${summary.xautQty}`], ["GLD", `${summary.gld} / Qty ${summary.gldQty}`], ["BTC", `${summary.btc} / Qty ${summary.btcQty}`], ["Reference Date / Time", summary.referenceDate], ["Import Status", positions?.some(position => position.importSource) ? "EXCEL SNAPSHOT" : "MANUAL"]].map(([label, value]) => <Card key={String(label)} className="glass-card"><CardContent className="p-3"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-xs font-semibold" title={String(value)}>{value}</p></CardContent></Card>)}
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
+        {[["Positions", summary.count], ["XAUT", `${summary.xaut} / Qty ${summary.xautQty}`], ["GLD", `${summary.gld} / Qty ${summary.gldQty}`], ["BTC", `${summary.btc} / Qty ${summary.btcQty}`], ["Reference Date / Time", summary.referenceDate], ["Cumulative Entry Cost", transactionSummaries?.length ? money(summary.cumulativeEntryCost) : "—"], ["Cumulative Realized PnL", transactionSummaries?.length ? money(summary.cumulativeRealizedPnl) : "—"], ["Import Status", transactionSummaries?.length ? "TRANSACTION LEDGER" : positions?.some(position => position.importSource) ? "EXCEL SNAPSHOT" : "MANUAL"]].map(([label, value]) => <Card key={String(label)} className="glass-card"><CardContent className="p-3"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-xs font-semibold" title={String(value)}>{value}</p></CardContent></Card>)}
       </div>
 
       <Card className="glass-card">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table className="min-w-[2350px]">
-              <TableHeader><TableRow><TableHead>Source / Venue</TableHead><TableHead>Instrument</TableHead><TableHead>U</TableHead><TableHead>Expiry</TableHead><TableHead>Strike</TableHead><TableHead>C/P</TableHead><TableHead>Qty (Contracts)</TableHead><TableHead>Shares/Contract × XAU/Unit</TableHead><TableHead>Notional USD</TableHead><TableHead>Mark / Unit</TableHead><TableHead>Mark IV</TableHead><TableHead>Bid / Ask</TableHead><TableHead>Entry / Unit</TableHead><TableHead>MV</TableHead><TableHead>Entry Cost</TableHead><TableHead>UPL</TableHead><TableHead>Unit Δ</TableHead><TableHead>Unit Γ</TableHead><TableHead>Unit Θ</TableHead><TableHead>Unit Vega</TableHead><TableHead>Total Δ XAU</TableHead><TableHead>Γ XAU</TableHead><TableHead>Θ USD/d</TableHead><TableHead>Vega USD/v</TableHead><TableHead>As-of / Source</TableHead><TableHead>Status</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
+            <Table className="min-w-[2650px]">
+              <TableHeader><TableRow><TableHead>Source / Venue</TableHead><TableHead>Instrument</TableHead><TableHead>U</TableHead><TableHead>Expiry</TableHead><TableHead>Strike</TableHead><TableHead>C/P</TableHead><TableHead>Qty (Contracts)</TableHead><TableHead>Shares/Contract × XAU/Unit</TableHead><TableHead>Notional USD</TableHead><TableHead>Mark / Unit</TableHead><TableHead>Mark IV</TableHead><TableHead>Bid / Ask</TableHead><TableHead>Entry / Unit</TableHead><TableHead>MV</TableHead><TableHead>Entry Cost</TableHead><TableHead>Cumulative Entry Cost</TableHead><TableHead>Cumulative Realized PnL</TableHead><TableHead>UPL</TableHead><TableHead>Unit Δ</TableHead><TableHead>Unit Γ</TableHead><TableHead>Unit Θ</TableHead><TableHead>Unit Vega</TableHead><TableHead>Total Δ XAU</TableHead><TableHead>Γ XAU</TableHead><TableHead>Θ USD/d</TableHead><TableHead>Vega USD/v</TableHead><TableHead>As-of / Source</TableHead><TableHead>Status</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
               <TableBody>{positions?.length ? positions.map(position => (
                 <TableRow key={position.id} className="hover:bg-secondary/30">
                   <TableCell className="max-w-48"><p className="truncate text-xs" title={position.sourceAccount ?? POSITION_SOURCE_DEFAULTS[position.underlying].sourceAccount}>{position.sourceAccount ?? POSITION_SOURCE_DEFAULTS[position.underlying].sourceAccount}</p><p className="truncate text-[10px] text-muted-foreground">{position.venue ?? POSITION_SOURCE_DEFAULTS[position.underlying].venue}</p></TableCell>
@@ -365,7 +455,7 @@ export default function Positions() {
                   <TableCell className="font-mono">{position.markIv ? `${(Number(position.markIv) * 100).toFixed(2)}%` : "—"}</TableCell>
                   <TableCell className="font-mono text-xs">{position.bid1Price ?? "—"} / {position.ask1Price ?? "—"}</TableCell>
                   <TableCell className="font-mono">{position.entryPrice}</TableCell>
-                  <TableCell className="font-mono">{money(position.importedMarketValue)}</TableCell><TableCell className="font-mono">{money(position.importedEntryCost)}</TableCell>
+                  <TableCell className="font-mono">{money(position.importedMarketValue)}</TableCell><TableCell className="font-mono">{money(position.importedEntryCost)}</TableCell><TableCell className="font-mono">{money(position.cumulativeEntryCost)}</TableCell><TableCell className="font-mono">{money(position.cumulativeRealizedPnl)}</TableCell>
                   <TableCell className={`font-mono ${Number(position.importedUnrealizedPnl) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{money(position.importedUnrealizedPnl)}</TableCell>
                   <TableCell className="font-mono">{money(position.entryDelta)}</TableCell><TableCell className="font-mono">{money(position.unitGamma)}</TableCell><TableCell className="font-mono">{money(position.unitTheta)}</TableCell><TableCell className="font-mono">{money(position.unitVega)}</TableCell><TableCell className="font-mono">{money(position.importedTotalDeltaXau)}</TableCell>
                   <TableCell className="font-mono">{money(position.importedTotalGammaXau)}</TableCell><TableCell className="font-mono">{money(position.importedTotalThetaUsdDay)}</TableCell><TableCell className="font-mono">{money(position.importedTotalVegaUsdVol)}</TableCell>
@@ -373,7 +463,7 @@ export default function Positions() {
                   <TableCell><Badge variant="outline" className={position.dataStatus === "STALE" ? "border-amber-500/40 text-amber-300" : ""}>{position.dataStatus ?? (position.importSource ? "STALE" : "WARN")}</Badge></TableCell>
                   <TableCell className="text-right"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(position)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { if (window.confirm(`确认删除 ${position.underlying} ${position.strike} ${position.optionType.toUpperCase()}？`)) deleteMutation.mutate({ id: position.id }); }}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell>
                 </TableRow>
-              )) : <TableRow><TableCell colSpan={27} className="py-12 text-center text-muted-foreground"><FileSpreadsheet className="mx-auto mb-2 h-8 w-8 opacity-50" />上传持仓 Excel，或添加第一条仓位</TableCell></TableRow>}</TableBody>
+              )) : <TableRow><TableCell colSpan={29} className="py-12 text-center text-muted-foreground"><FileSpreadsheet className="mx-auto mb-2 h-8 w-8 opacity-50" />上传持仓 Excel、全量交易记录，或添加第一条仓位</TableCell></TableRow>}</TableBody>
             </Table>
           </div>
           {settings.positionsVisibleSections.marketPersistenceHint && <div className="flex items-center gap-2 border-t border-border/50 px-3 py-2 text-[11px] text-muted-foreground"><Info className="h-3.5 w-3.5 shrink-0" /><span>Notional USD = signed Net Qty × actual contract multiplier × current underlying spot；它是标的名义金额，不是期权 MV。“更新市场数据”会把 Mark、IV、Bid/Ask、Greeks、MV、UPL、Source 与 As-of 写入当前服务器的仓位记录，并用于页面和随后导出的 Excel；Render 免费实例重新部署或重建后可能恢复到部署时数据。</span></div>}

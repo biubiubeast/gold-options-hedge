@@ -85,8 +85,20 @@ describe("position Excel import/export", () => {
   it("exports a workbook that round-trips through the same template", async () => {
     const preview = await parsePositionWorkbook(await fixtureWorkbook(), "source.xlsx");
     const now = new Date("2026-08-11T00:00:00.000Z");
-    const records: PositionRecord[] = preview.positions.map((position, index) => ({ ...position, product: "Legacy Wrong Product", id: index + 1, userId: 1, createdAt: now, updatedAt: now }));
-    const exported = await createPositionWorkbook(records);
+    const records: PositionRecord[] = preview.positions.map((position, index) => ({
+      ...position,
+      product: "Legacy Wrong Product",
+      cumulativeEntryCost: position.underlying === "GLD" ? "1200" : "150",
+      cumulativeRealizedPnl: position.underlying === "GLD" ? "300" : "-20",
+      id: index + 1,
+      userId: 1,
+      createdAt: now,
+      updatedAt: now,
+    }));
+    const exported = await createPositionWorkbook(records, DEFAULT_FORMULAS, [{
+      underlying: "GLD", source: "KGI", sheetName: "Sheet1", sourceAccount: "ACC-G", venue: "KGI", currency: "USD", referenceDate: "2026-08-07",
+      tradeRows: 8, ignoredRows: 0, duplicateRows: 0, openPositions: 1, netQty: 2, currentEntryCost: 1005, cumulativeEntryCost: 2500, cumulativeRealizedPnl: 700,
+    }]);
     const exportedWorkbook = new ExcelJS.Workbook();
     await exportedWorkbook.xlsx.load(exported as any);
     expect(exportedWorkbook.worksheets.map(sheet => sheet.name)).toEqual(["期权持仓_XAUT_GLD", "Market_Data_实时明细"]);
@@ -98,6 +110,10 @@ describe("position Excel import/export", () => {
     expect(detailSheet.getCell("AE6").value).toBeCloseTo(0.5, 10);
     expect(detailSheet.getCell("E5").value).toBe("XAUT Option");
     expect(detailSheet.getCell("E6").value).toBe("GLD Option");
+    expect(detailSheet.getCell("AI6").value).toBe(1200);
+    expect(detailSheet.getCell("AJ6").value).toBe(300);
+    expect(detailSheet.getCell("AI4").value).toBe(2500);
+    expect(detailSheet.getCell("AJ4").value).toBe(700);
     const roundTrip = await parsePositionWorkbook(exported, "exported.xlsx");
     expect(roundTrip.exactHeaderMatch).toBe(true);
     expect(roundTrip.extendedHeaderMatch).toBe(true);
@@ -105,6 +121,7 @@ describe("position Excel import/export", () => {
     expect(roundTrip.summary.detailRows).toBe(2);
     expect(roundTrip.totals.find(total => total.underlying === "GLD")?.netQty).toBe(2);
     expect(roundTrip.positions.find(position => position.underlying === "XAUT")?.instrument).toBe("XAUT-20260828-3400-C");
+    expect(roundTrip.positions.find(position => position.underlying === "GLD")?.cumulativeRealizedPnl).toBe("300");
   });
 
   it("exports current editable GLD/XAUT contract multipliers and recalculated Greeks", async () => {
