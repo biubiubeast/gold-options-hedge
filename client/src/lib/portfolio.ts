@@ -126,6 +126,9 @@ export type PortfolioSettings = {
   };
   positionsVisibleSections: {
     marketPersistenceHint: boolean;
+    cumulativeEntryCostCard: boolean;
+    cumulativeRealizedPnlCard: boolean;
+    importStatusCard: boolean;
   };
   heatmapClickActions: {
     cellDetail: boolean;
@@ -227,6 +230,9 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   },
   positionsVisibleSections: {
     marketPersistenceHint: false,
+    cumulativeEntryCostCard: false,
+    cumulativeRealizedPnlCard: false,
+    importStatusCard: false,
   },
   heatmapClickActions: {
     cellDetail: false,

@@ -243,6 +243,16 @@ export default function Settings() {
               <div><Label htmlFor="positions-market-persistence-hint" className="text-xs">仓位管理底部市场数据说明</Label><p className="mt-1 text-[10px] leading-snug text-muted-foreground">默认隐藏；开启后解释 Notional、行情字段写入范围、Excel 导出及 Render 免费实例的数据限制。</p></div>
               <Switch id="positions-market-persistence-hint" checked={draft.positionsVisibleSections.marketPersistenceHint} onCheckedChange={checked => setDraft(current => ({ ...current, positionsVisibleSections: { ...current.positionsVisibleSections, marketPersistenceHint: checked } }))} aria-label="仓位管理显示底部市场数据说明" />
             </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold">仓位管理顶部状态栏</p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {([
+                  ["cumulativeEntryCostCard", "Cumulative Entry Cost", "累计开仓成本"],
+                  ["cumulativeRealizedPnlCard", "Cumulative Realized PnL", "累计已实现损益"],
+                  ["importStatusCard", "Import Status", "仓位数据导入方式"],
+                ] as const).map(([key, label, description]) => <div key={key} className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"><div><Label htmlFor={`positions-${key}`} className="text-xs">{label}</Label><p className="mt-1 text-[10px] text-muted-foreground">{description}；默认隐藏</p></div><Switch id={`positions-${key}`} checked={draft.positionsVisibleSections[key]} onCheckedChange={checked => setDraft(current => ({ ...current, positionsVisibleSections: { ...current.positionsVisibleSections, [key]: checked } }))} aria-label={`仓位管理显示 ${label}`} /></div>)}
+              </div>
+            </div>
             <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 rounded-md bg-secondary/25 p-3 text-xs">
               <Clock3 className="row-span-2 h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground">最近成功刷新</span>

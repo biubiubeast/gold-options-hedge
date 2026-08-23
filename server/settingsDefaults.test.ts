@@ -40,8 +40,13 @@ describe("operator display defaults", () => {
     });
   });
 
-  it("hides the positions persistence hint and PNL hover preset by default", () => {
-    expect(DEFAULT_PORTFOLIO_SETTINGS.positionsVisibleSections.marketPersistenceHint).toBe(false);
+  it("hides optional positions status cards, the persistence hint, and PNL hover preset by default", () => {
+    expect(DEFAULT_PORTFOLIO_SETTINGS.positionsVisibleSections).toEqual({
+      marketPersistenceHint: false,
+      cumulativeEntryCostCard: false,
+      cumulativeRealizedPnlCard: false,
+      importStatusCard: false,
+    });
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.hover.pnl).toBe(false);
   });
 

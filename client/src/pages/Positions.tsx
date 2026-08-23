@@ -164,6 +164,16 @@ export default function Positions() {
       cumulativeRealizedPnl: (transactionSummaries ?? []).reduce((sum, item) => sum + item.cumulativeRealizedPnl, 0),
     };
   }, [positions, transactionSummaries]);
+  const statusCards: Array<[string, string | number]> = [
+    ["Positions", summary.count],
+    ["XAUT", `${summary.xaut} / Qty ${summary.xautQty}`],
+    ["GLD", `${summary.gld} / Qty ${summary.gldQty}`],
+    ["BTC", `${summary.btc} / Qty ${summary.btcQty}`],
+    ["Reference Date / Time", summary.referenceDate],
+  ];
+  if (settings.positionsVisibleSections.cumulativeEntryCostCard) statusCards.push(["Cumulative Entry Cost", transactionSummaries?.length ? money(summary.cumulativeEntryCost) : "—"]);
+  if (settings.positionsVisibleSections.cumulativeRealizedPnlCard) statusCards.push(["Cumulative Realized PnL", transactionSummaries?.length ? money(summary.cumulativeRealizedPnl) : "—"]);
+  if (settings.positionsVisibleSections.importStatusCard) statusCards.push(["Import Status", transactionSummaries?.length ? "TRANSACTION LEDGER" : positions?.some(position => position.importSource) ? "EXCEL SNAPSHOT" : "MANUAL"]);
 
   const formPayload = () => ({
     underlying: form.underlying,
@@ -434,7 +444,7 @@ export default function Positions() {
       </div>
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-        {[["Positions", summary.count], ["XAUT", `${summary.xaut} / Qty ${summary.xautQty}`], ["GLD", `${summary.gld} / Qty ${summary.gldQty}`], ["BTC", `${summary.btc} / Qty ${summary.btcQty}`], ["Reference Date / Time", summary.referenceDate], ["Cumulative Entry Cost", transactionSummaries?.length ? money(summary.cumulativeEntryCost) : "—"], ["Cumulative Realized PnL", transactionSummaries?.length ? money(summary.cumulativeRealizedPnl) : "—"], ["Import Status", transactionSummaries?.length ? "TRANSACTION LEDGER" : positions?.some(position => position.importSource) ? "EXCEL SNAPSHOT" : "MANUAL"]].map(([label, value]) => <Card key={String(label)} className="glass-card"><CardContent className="p-3"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-xs font-semibold" title={String(value)}>{value}</p></CardContent></Card>)}
+        {statusCards.map(([label, value]) => <Card key={label} className="glass-card"><CardContent className="p-3"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-xs font-semibold" title={String(value)}>{value}</p></CardContent></Card>)}
       </div>
 
       <Card className="glass-card">
