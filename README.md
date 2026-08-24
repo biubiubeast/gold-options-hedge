@@ -109,6 +109,26 @@ docker compose -f docker-compose.public.yml down
 
 免费 Render 适合当前先取得稳定公网地址并测试功能，但重启或重新部署后仓位 JSON 可能丢失。长期正式使用建议添加付款方式，把 `render.yaml` 的 `plan` 改为 `starter` 并恢复 1 GB 持久磁盘；或把数据层迁移到托管 PostgreSQL。单块 Render 磁盘限制为单实例运行，这与当前单用户 JSON 架构匹配。
 
+### 公司服务器子路径部署与持续更新
+
+网站部署在 `https://steven.spailab.com/optionhedger/` 这类子路径时，在服务器 `.env` 设置：
+
+```bash
+VITE_BASE_PATH=/optionhedger/
+```
+
+然后重新构建镜像；这个值是前端构建参数，不能只重启旧镜像：
+
+```bash
+docker compose up -d --build
+```
+
+反向代理应把 `/optionhedger/*` 转发到应用的 `3000` 端口，并在转发前去掉 `/optionhedger` 前缀。前端路由和 API 请求会根据同一个 `VITE_BASE_PATH` 自动生成，根域名部署继续使用默认值 `/`。
+
+GitHub 代码不会天然自动更新公司服务器。推荐让 `main` 分支在测试通过后通过 GitHub Actions + SSH 部署“指定 commit”：服务器拉取该 commit、重新构建 Docker、检查健康接口，失败时回滚。SSH 私钥、服务器地址和部署用户只放在 GitHub Actions Secrets；服务器使用只读 Deploy Key 拉取私有仓库。也可由同事手动在服务器执行 `git pull` 和上面的 Docker 命令，但每次更新都需要人工操作。
+
+`data/portfolio.json` 必须继续挂载到宿主持久目录并独立备份。GitHub 只同步程序代码，不同步 Render、公司服务器之间的仓位数据；浏览器本地设置也按域名分别保存。
+
 ### 安全边界
 
 - 当前使用应用内双账户 Bearer 会话；令牌不写入 localStorage/sessionStorage，硬刷新后必须重新登录。公网必须使用 HTTPS，不要通过普通 HTTP 发送密码。

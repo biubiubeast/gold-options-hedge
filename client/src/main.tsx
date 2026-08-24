@@ -3,9 +3,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
+import { Router as WouterRouter } from "wouter";
 import App from "./App";
 import "./index.css";
+import { getRouterBase, getTrpcUrl } from "./lib/appBase";
 import { getAuthToken } from "./lib/authSession";
+
+const deploymentBaseUrl = import.meta.env.BASE_URL;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -16,7 +20,7 @@ const queryClient = new QueryClient({
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: "/api/trpc",
+      url: getTrpcUrl(deploymentBaseUrl),
       transformer: superjson,
       fetch(url, options) {
         const headers = new Headers(options?.headers);
@@ -31,7 +35,9 @@ const trpcClient = trpc.createClient({
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <WouterRouter base={getRouterBase(deploymentBaseUrl)}>
+        <App />
+      </WouterRouter>
     </QueryClientProvider>
   </trpc.Provider>,
 );

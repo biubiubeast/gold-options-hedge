@@ -1,6 +1,9 @@
 services:
   gold-options-hedge:
-    build: .
+    build:
+      context: .
+      args:
+        VITE_BASE_PATH: ${VITE_BASE_PATH:-/}
     environment:
       PORT: 3000
       DATA_FILE: /app/data/portfolio.json

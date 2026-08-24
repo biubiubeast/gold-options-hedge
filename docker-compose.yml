@@ -1,6 +1,9 @@
 services:
   gold-options-hedge:
-    build: .
+    build:
+      context: .
+      args:
+        VITE_BASE_PATH: ${VITE_BASE_PATH:-/}
     ports:
       - "3000:3000"
     environment:

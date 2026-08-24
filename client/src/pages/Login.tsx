@@ -13,18 +13,18 @@ export default function Login() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const { login } = useAuth();
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setPending(true);
     setError("");
     try {
-      const user = await login(username, password);
+      await login(username, password);
       setPassword("");
-      if (location === "/" || (user.role !== "admin" && location !== "/matrix" && location !== "/positions")) {
-        setLocation("/matrix");
-      }
+      // Every successful login starts from the primary trading workspace.
+      // Wouter's base router adds a deployment prefix such as /optionhedger.
+      setLocation("/matrix");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "登录失败，请重试");
     } finally {

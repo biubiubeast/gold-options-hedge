@@ -164,16 +164,16 @@ export default function Positions() {
       cumulativeRealizedPnl: (transactionSummaries ?? []).reduce((sum, item) => sum + item.cumulativeRealizedPnl, 0),
     };
   }, [positions, transactionSummaries]);
-  const statusCards: Array<[string, string | number]> = [
-    ["Positions", summary.count],
-    ["XAUT", `${summary.xaut} / Qty ${summary.xautQty}`],
-    ["GLD", `${summary.gld} / Qty ${summary.gldQty}`],
-    ["BTC", `${summary.btc} / Qty ${summary.btcQty}`],
-    ["Reference Date / Time", summary.referenceDate],
+  const statusCards: Array<{ label: string; value: string | number; wide?: boolean }> = [
+    { label: "Positions", value: summary.count },
+    { label: "XAUT", value: `${summary.xaut} / Qty ${summary.xautQty}` },
+    { label: "GLD", value: `${summary.gld} / Qty ${summary.gldQty}` },
+    { label: "BTC", value: `${summary.btc} / Qty ${summary.btcQty}` },
+    { label: "Reference Date / Time", value: summary.referenceDate, wide: true },
   ];
-  if (settings.positionsVisibleSections.cumulativeEntryCostCard) statusCards.push(["Cumulative Entry Cost", transactionSummaries?.length ? money(summary.cumulativeEntryCost) : "—"]);
-  if (settings.positionsVisibleSections.cumulativeRealizedPnlCard) statusCards.push(["Cumulative Realized PnL", transactionSummaries?.length ? money(summary.cumulativeRealizedPnl) : "—"]);
-  if (settings.positionsVisibleSections.importStatusCard) statusCards.push(["Import Status", transactionSummaries?.length ? "TRANSACTION LEDGER" : positions?.some(position => position.importSource) ? "EXCEL SNAPSHOT" : "MANUAL"]);
+  if (settings.positionsVisibleSections.cumulativeEntryCostCard) statusCards.push({ label: "Cumulative Entry Cost", value: transactionSummaries?.length ? money(summary.cumulativeEntryCost) : "—" });
+  if (settings.positionsVisibleSections.cumulativeRealizedPnlCard) statusCards.push({ label: "Cumulative Realized PnL", value: transactionSummaries?.length ? money(summary.cumulativeRealizedPnl) : "—" });
+  if (settings.positionsVisibleSections.importStatusCard) statusCards.push({ label: "Import Status", value: transactionSummaries?.length ? "TRANSACTION LEDGER" : positions?.some(position => position.importSource) ? "EXCEL SNAPSHOT" : "MANUAL" });
 
   const formPayload = () => ({
     underlying: form.underlying,
@@ -443,8 +443,8 @@ export default function Positions() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-        {statusCards.map(([label, value]) => <Card key={label} className="glass-card"><CardContent className="p-3"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-xs font-semibold" title={String(value)}>{value}</p></CardContent></Card>)}
+      <div className="flex flex-wrap gap-2">
+        {statusCards.map(({ label, value, wide }) => <Card key={label} className={`glass-card min-w-[9rem] flex-1 ${wide ? "basis-[21rem]" : "basis-[10rem]"}`}><CardContent className="p-3"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 font-mono text-xs font-semibold ${wide ? "whitespace-normal break-words" : "truncate"}`} title={String(value)}>{value}</p></CardContent></Card>)}
       </div>
 
       <Card className="glass-card">
