@@ -86,6 +86,8 @@ export function buildLiveRiskPositions(args: {
       bidIV: market.bidIv ?? null,
       askIV: market.askIv ?? null,
       ivSpread: market.bidIv != null && market.askIv != null ? market.askIv - market.bidIv : null,
+      bidIvDerived: market.bidIvDerived,
+      askIvDerived: market.askIvDerived,
       unitDelta: finiteOrNull(market.delta),
       unitGamma: market.available ? finiteOrNull(market.gamma) : null,
       unitTheta: market.available ? finiteOrNull(market.theta) : null,
@@ -122,6 +124,7 @@ export function buildLiveRiskPositions(args: {
 type ChainQuote = {
   symbol: string; expiry: string; strike: number; optionType: "call" | "put"; markPrice: number; markIv: number;
   bidIv?: number | null; askIv?: number | null; ivSpread?: number | null;
+  bidIvDerived?: boolean; askIvDerived?: boolean; expiryTimestamp?: number | null;
   bid1Price: number; ask1Price: number; bid1Size?: number | null; ask1Size?: number | null; delta: number; gamma: number; theta: number; vega: number;
   timestamp: number; source: string; openInterest?: number; volume?: number;
   marketAvailable?: boolean;
@@ -166,6 +169,9 @@ export function buildChainRiskPositions(
     bidIV: quote.bidIv ?? null,
     askIV: quote.askIv ?? null,
     ivSpread: quote.ivSpread ?? null,
+    bidIvDerived: quote.bidIvDerived,
+    askIvDerived: quote.askIvDerived,
+    expiryTimestamp: quote.expiryTimestamp ?? null,
     unitDelta: marketAvailable && Number.isFinite(quote.delta) ? quote.delta : null,
     unitGamma: marketAvailable && Number.isFinite(quote.gamma) ? quote.gamma : null,
     unitTheta: marketAvailable && Number.isFinite(quote.theta) ? quote.theta : null,

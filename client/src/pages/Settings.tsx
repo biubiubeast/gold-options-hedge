@@ -35,6 +35,7 @@ const heatmapFilterLabels: Array<[keyof PortfolioSettings["heatmapVisibleFilters
   ["spot", "Spot 标记", "GLD、XAUT、BTC、ETH 或 XAU Spot"],
   ["label", "Label", "方格内数值标签模式"],
   ["hover", "Hover", "Hover 弹窗的数据预设"],
+  ["targetOption", "Target Option", "用 + / − 模式选择或取消热力图目标合约；选择结果保存在当前浏览器"],
   ["range", "色标上下限", "MIN、MAX 和自定义范围按钮"],
   ["transpose", "Transpose", "Expiry 与 Strike 转置"],
   ["reverseStrikes", "Strike 排序", "升序或降序"],

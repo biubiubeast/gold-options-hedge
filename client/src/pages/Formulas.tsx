@@ -7,10 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, RotateCcw, Save, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, Plus, RotateCcw, Save, RefreshCw, Trash2, Power } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
+import { BID_ASK_IV_INVERSION_TOGGLE, isBidAskIvInversionEnabled } from "@shared/impliedVolatility";
 
 type NewFormula = {
   name: string;
@@ -53,6 +54,7 @@ export default function Formulas() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newFormula, setNewFormula] = useState<NewFormula>(emptyFormula);
   const builtInNames = new Set(DEFAULT_FORMULAS.map(formula => formula.name));
+  const ivInversionEnabled = isBidAskIvInversionEnabled(formulas ?? []);
 
   if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
@@ -68,7 +70,7 @@ export default function Formulas() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gold-gradient">公式管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">这里的表达式直接驱动 GLD/XAUT 的 XAU 量纲、每张合约规格、模型估值与 Greeks 汇总</p>
+          <p className="text-sm text-muted-foreground mt-1">这里的表达式直接驱动量纲、合约规格、模型估值、IV价格反解与 Greeks 汇总</p>
         </div>
         <div className="flex gap-2">
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -103,7 +105,7 @@ export default function Formulas() {
             <div className="mt-3 grid gap-3 text-xs text-muted-foreground lg:grid-cols-2">
               <div className="border border-border/60 p-3"><strong className="text-foreground">1. 编辑与发布</strong><p className="mt-1 leading-relaxed">点击任一公式的“编辑”，可同时修改表达式、业务说明和生效位置。点击“验证并保存”后，系统检查语法、未知变量和循环引用，并立即重算服务器中的仓位数据；Dashboard、仓位管理、市场热力图、详情和随后导出的 Excel 使用同一结果。内置公式可单独恢复，也可恢复所有默认。</p></div>
               <div className="border border-border/60 p-3"><strong className="text-foreground">2. GLD/XAUT 量纲与合约规格</strong><p className="mt-1 leading-relaxed"><code>gld_xau_multiplier = 0.092</code>、<code>xaut_xau_multiplier = 1</code> 定义 XAU 统一量纲；<code>gld_contract_multiplier = 100</code>、<code>xaut_contract_multiplier = 1</code> 定义每张期权对应的标的数量。Total Delta 乘一次 XAU 比例，Total Gamma 乘比例平方；Theta/Vega 已是 USD 量纲，不乘 XAU 比例，但仍乘合约数量。调整或非标准合约继续优先采用逐仓位实际规格。</p></div>
-              <div className="border border-border/60 p-3"><strong className="text-foreground">3. 市场数据与公式的边界</strong><p className="mt-1 leading-relaxed">Mark、IV、Bid/Ask 和 Unit Greeks 来自行情源，不由这里的公式生成；只有缺少 GLD Greeks 时，Black-Scholes 才使用可编辑模型公式估算。点击“更新市场数据”会重新获取行情，并按当前 GLD/XAUT 量纲、合约规格和 Total Greeks 公式重算、写入 MV、UPL 和 Greeks。</p></div>
+              <div className="border border-border/60 p-3"><strong className="text-foreground">3. 市场数据与IV反解边界</strong><p className="mt-1 leading-relaxed">原生 Mark IV、Bid IV、Ask IV 永远优先。当对应 Bid/Ask IV 缺失但价格有效时，开启 <code>bid_ask_iv_inversion_enabled</code> 会数值求解模型价格等于盘口价格的 sigma；结果标记为 CALC，不伪装成行情源原生IV。关闭后计算型IV恢复为 MISSING。模型价格由 <code>iv_inversion_model_price_call/put</code> 编辑。</p></div>
               <div className="border border-border/60 p-3"><strong className="text-foreground">4. Largest Data Error</strong><p className="mt-1 leading-relaxed">这是固定的数据质量排序，不是交易公式：FAIL &gt; MISSING &gt; STALE &gt; WARN &gt; LIVE；同级按 Quote Age 最大排序。缺 Source、Mark、Multiplier 或 Greeks 显示 MISSING；Quote Age 超过 15 分钟显示 STALE。该规则为安全校验，不能被自定义表达式改成静默的 0。</p></div>
               <div className="border border-border/60 p-3"><strong className="text-foreground">5. 热力颜色、固定范围与 Roll Priority</strong><p className="mt-1 leading-relaxed">热力颜色为低值绿色、中值黄色、高值红色；默认按当前 metric 做 99 分位裁剪。矩阵页可为每个 metric 单独保存固定 MIN/MAX，切换 GLD/XAUT 时继续使用同一范围以便横向比较。Roll Priority 是透明加权 heuristic（DTE、Theta/MV、距 Strike、Delta、Spread、Time Value、Hedge Contribution、Residual Improvement），详情可在矩阵格弹窗展开。</p></div>
             </div>
@@ -116,6 +118,7 @@ export default function Formulas() {
           <Badge variant="outline" className={categoryColors[category] || ""}>{categoryLabels[category] || category}</Badge>
           {categoryFormulas?.map(formula => {
             const isBuiltIn = builtInNames.has(formula.name as (typeof DEFAULT_FORMULAS)[number]["name"]);
+            const isIvInversionToggle = formula.name === BID_ASK_IV_INVERSION_TOGGLE;
             return (
               <Card key={formula.id} className="glass-card">
                 <CardContent className="p-4">
@@ -124,6 +127,7 @@ export default function Formulas() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-sm font-medium text-primary">{formula.name}</span>
                         <Badge variant="outline" className="text-[10px]">{isBuiltIn ? "内置钩子" : "可引用组件"}</Badge>
+                        {isIvInversionToggle && <Badge variant="outline" className={`text-[10px] ${ivInversionEnabled ? "border-sky-400/40 text-sky-300" : "border-muted text-muted-foreground"}`}>IV反解 {ivInversionEnabled ? "ON" : "OFF"}</Badge>}
                         {formula.isDefault === 0 && <Badge variant="outline" className="text-[10px] text-yellow-400 border-yellow-400/30">已修改</Badge>}
                       </div>
                       <p className="text-xs text-muted-foreground">{formula.description}</p>
@@ -141,6 +145,7 @@ export default function Formulas() {
                       ) : <div className="p-3 rounded bg-background/50 border border-border/30 overflow-x-auto"><code className="text-sm font-mono whitespace-nowrap">{formula.expression}</code></div>}
                     </div>
                     <div className="flex gap-1 shrink-0">
+                      {isIvInversionToggle && editingId !== formula.id && <Button variant="outline" size="sm" aria-pressed={ivInversionEnabled} className={`gap-1 ${ivInversionEnabled ? "border-sky-400/50 text-sky-300" : "text-muted-foreground"}`} onClick={() => updateMutation.mutate({ id: formula.id, expression: ivInversionEnabled ? "0" : "1", description: formula.description ?? "", usedIn: formula.usedIn ?? "" })} disabled={updateMutation.isPending}><Power className="h-3.5 w-3.5" />{ivInversionEnabled ? "关闭" : "开启"}</Button>}
                       {editingId !== formula.id && <Button variant="ghost" size="sm" onClick={() => { setEditingId(formula.id); setEditExpression(formula.expression); setEditDescription(formula.description ?? ""); setEditUsedIn(formula.usedIn ?? ""); }}>编辑</Button>}
                       {formula.isDefault === 0 && isBuiltIn && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => resetMutation.mutate({ id: formula.id })} title="恢复默认"><RotateCcw className="w-3.5 h-3.5" /></Button>}
                       {!isBuiltIn && <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => {

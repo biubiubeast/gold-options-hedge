@@ -8,6 +8,7 @@ import { DEFAULT_HEATMAP_VIEW, DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT, getPosi
 import { buildChainRiskPositions, buildGldChainRiskPositions, buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import { parseStoredTargetOptions, TARGET_OPTION_STORAGE_KEY, targetCellKeysForScope, targetOptionScope, targetOptionStorageKey, type TargetOptionMode } from "@/lib/heatmapTargets";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { resolveHeatmapSpots } from "@/lib/spotSelection";
 import { resolveGldContractMultiplier, resolveGldXauMultiplier, resolveXautContractMultiplier, resolveXautXauMultiplier } from "@shared/formulaEngine";
@@ -74,6 +75,10 @@ function formatHongKongAsOf(value: Date | string | number) {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) return "MISSING · HKT (UTC+8)";
   return `${date.toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Hong_Kong" })} HKT (UTC+8)`;
+}
+
+function ivWithSource(value: number | null, metric: "bidIV" | "askIV", derived?: boolean) {
+  return `${formatCompact(value, metric)}${derived && value !== null ? " CALC" : ""}`;
 }
 
 function NativeSelect({ label, value, options, onChange, className = "" }: {
@@ -183,7 +188,7 @@ function PositionDetailDialog({ position, content, onClose }: { position: Enrich
     ["venueBrokerAccount", "Venue / Broker / Account", `${position.venue} / ${position.broker} / ${position.account}`], ["netQty", "Net Qty", position.netQty],
     ["contractMultiplier", "Contract Multiplier", position.contractMultiplier], ["xauPerUnit", "XAU per unit", position.underlying === "GLD" ? position.gldOzPerShare : position.underlyingOzPerUnit],
     ["markBidAsk", "Mark / Bid / Ask · Size · $ Notional", `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)} ${position.premiumCurrency ?? ""} · ${formatCompact(position.bidSize)} / ${formatCompact(position.askSize)} · $${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`], ["markIv", "Mark IV", formatCompact(position.markIV, "markIV")],
-    ["bidAskIv", "Bid IV / Ask IV / Spread", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")} / ${formatCompact(position.ivSpread, "ivSpread")}`],
+    ["bidAskIv", "Bid IV / Ask IV / Spread", `${ivWithSource(position.bidIV, "bidIV", position.bidIvDerived)} / ${ivWithSource(position.askIV, "askIV", position.askIvDerived)} / ${formatCompact(position.ivSpread, "ivSpread")}`],
     ["qtyNotional", "Qty / Notional USD", `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`],
     ["unitDelta", "Unit Delta", formatCompact(position.unitDelta, "unitDelta")], ["totalDelta", "Total Delta XAU", position.totalDeltaXAU],
     ["unitGamma", "Unit Gamma", position.unitGamma], ["totalGamma", "Total Gamma XAU", position.totalGammaXAU],
@@ -271,6 +276,8 @@ export default function Matrix() {
   const [highlightCellKey, setHighlightCellKey] = useState<string | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<EnrichedRiskPosition | null>(null);
   const [selectedExpiry, setSelectedExpiry] = useState<ExpirySelection | null>(null);
+  const [targetMode, setTargetMode] = useState<TargetOptionMode>("idle");
+  const [targetOptionKeys, setTargetOptionKeys] = useState<Set<string>>(() => parseStoredTargetOptions(localStorage.getItem(TARGET_OPTION_STORAGE_KEY)));
   const [cardsVisible, setCardsVisible] = useState(false);
   const [dataErrorHelp, setDataErrorHelp] = useState(false);
   const [customRanges, setCustomRanges] = useState<Partial<Record<HeatmapMetric, MetricRange>>>(() => {
@@ -379,7 +386,7 @@ export default function Matrix() {
     ].filter(position => !heldKeys.has(contractKey(position)));
     return [...held, ...listed];
   }, [asOf, btcChain?.quotes, dataset, deribitBtcChain?.quotes, deribitEthChain?.quotes, ethChain?.quotes, formulas, gldChain?.quotes, liveSpots, liveViews, settings, xautChain?.quotes]);
-  const enriched = useMemo(() => enrichRiskPositions(riskPositions, displaySpots, asOf, formulas), [asOf, displaySpots, formulas, riskPositions]);
+  const enriched = useMemo(() => enrichRiskPositions(riskPositions, displaySpots, asOf, formulas, { riskFreeRate: settings.riskFreeRate }), [asOf, displaySpots, formulas, riskPositions, settings.riskFreeRate]);
 
   const filterOptions = useMemo(() => ({
     venue: [...new Set(enriched.map(position => position.venue))].sort().filter(value => !settings.heatmapHiddenDynamicOptions.venue.includes(value)),
@@ -434,6 +441,9 @@ export default function Matrix() {
   useEffect(() => {
     localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify(customRanges));
   }, [customRanges]);
+  useEffect(() => {
+    localStorage.setItem(TARGET_OPTION_STORAGE_KEY, JSON.stringify([...targetOptionKeys].sort()));
+  }, [targetOptionKeys]);
   useEffect(() => {
     const saved = customRanges[metric];
     const factor = percentageMetrics.has(metric) ? 100 : 1;
@@ -585,6 +595,17 @@ export default function Matrix() {
   }, [filtered]);
   const cards = useMemo(() => buildDecisionCards(heldFiltered), [heldFiltered]);
   const spot = displaySpots[spotUnderlying];
+  const currentTargetScope = targetOptionScope(`${dataset}:${underlying}`, callPut);
+  const activeTargetCellKeys = useMemo(() => targetCellKeysForScope(targetOptionKeys, currentTargetScope), [currentTargetScope, targetOptionKeys]);
+  const updateTargetCell = (key: string, selected: boolean) => {
+    const storedKey = targetOptionStorageKey(currentTargetScope, key);
+    setTargetOptionKeys(current => {
+      const next = new Set(current);
+      if (selected) next.add(storedKey);
+      else next.delete(storedKey);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!highlightCellKey) return;
@@ -667,9 +688,10 @@ export default function Matrix() {
         {visibleFilters.moneyness && <NativeSelect className="w-[105px] flex-none" label="ITM/OTM" value={moneyness} onChange={value => setMoneyness(value as MoneynessFilter)} options={[{ value: "all", label: "ALL" }, { value: "itm", label: "ITM" }, { value: "otm", label: "OTM" }].filter(option => enabledOptions.moneyness[option.value as MoneynessFilter])} />}
         {visibleFilters.label && <NativeSelect label="LABEL" value={labelMode} onChange={value => setLabelMode(value as CellLabelMode)} options={[{ value: "none", label: "NONE" }, { value: "held", label: "POSITION METRIC" }, { value: "top", label: "TOP 15%" }, { value: "bottom", label: "BOTTOM 15%" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.label[option.value as keyof typeof enabledOptions.label])} />}
         {visibleFilters.hover && <NativeSelect label="HOVER" value={hoverPreset} onChange={value => setHoverPreset(value as HoverDataPreset)} options={[{ value: "risk", label: "RISK" }, { value: "market", label: "MARKET" }, { value: "pnl", label: "PNL" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.hover[option.value as keyof typeof enabledOptions.hover])} />}
+        {visibleFilters.targetOption && <div className="flex h-6 items-center border border-border/70 text-[8px] text-muted-foreground" aria-label="Target Option selection controls"><span className="px-1 whitespace-nowrap">TARGET OPTION</span><button type="button" aria-label="Select Target Options" aria-pressed={targetMode === "add"} title="点击 + 后，再点击热力图方格以选中；再次点击 + 退出" onClick={() => setTargetMode(current => current === "add" ? "idle" : "add")} className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "add" ? "bg-sky-400/20 text-sky-300" : "hover:text-foreground"}`}><Plus className="h-3 w-3" /></button><span className={`min-w-7 px-1 text-center font-mono ${activeTargetCellKeys.size ? "text-sky-300" : ""}`} title={`${targetOptionKeys.size} saved targets across all views`}>{activeTargetCellKeys.size}</span><button type="button" aria-label="Unselect Target Options" aria-pressed={targetMode === "remove"} title="点击 − 后，再点击天蓝色方格以取消选中；再次点击 − 退出" onClick={() => setTargetMode(current => current === "remove" ? "idle" : "remove")} className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "remove" ? "bg-rose-400/20 text-rose-300" : "hover:text-foreground"}`}><Minus className="h-3 w-3" /></button></div>}
       </div>}
 
-      {Object.entries(visibleFilters).some(([key, visible]) => visible && !["dataset", "underlying", "venue", "broker", "account", "callPut", "moneyness", "expiryBucket", "status", "metric", "label", "hover"].includes(key)) && <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1">
+      {Object.entries(visibleFilters).some(([key, visible]) => visible && !["dataset", "underlying", "venue", "broker", "account", "callPut", "moneyness", "expiryBucket", "status", "metric", "label", "hover", "targetOption"].includes(key)) && <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1">
         {visibleFilters.scale && <NativeSelect label="SCALE" value={scaleMode} onChange={value => setScaleMode(value as ColorScaleMode)} options={[{ value: "quantile", label: "QUANTILE" }, { value: "log", label: "LOG" }, { value: "symmetric", label: "ZERO-CENTER" }].filter(option => enabledOptions.scale[option.value as keyof typeof enabledOptions.scale])} />}
         {visibleFilters.spot && <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "BTC", label: "BTC" }, { value: "ETH", label: "ETH" }, { value: "XAU", label: "XAU" }].filter(option => enabledOptions.spot[option.value as keyof typeof enabledOptions.spot])} />}
         {visibleFilters.range && <>
@@ -730,6 +752,9 @@ export default function Matrix() {
           hoverContent={settings.heatmapHoverContent}
           cellDetailEnabled={settings.heatmapClickActions.cellDetail}
           expiryDetailEnabled={settings.heatmapClickActions.expiryDetail}
+          targetMode={targetMode}
+          targetCellKeys={activeTargetCellKeys}
+          onTargetCellChange={updateTargetCell}
           onSelectPosition={setSelectedPosition}
           onSelectExpiry={(expiry, expiryPositions) => setSelectedExpiry({ expiry, positions: expiryPositions })}
         />

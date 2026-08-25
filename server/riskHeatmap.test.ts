@@ -261,4 +261,42 @@ describe("institutional risk heatmap acceptance", () => {
     expect(missing.bidDollarNotional).toBeNull();
     expect(aggregateHeatmapCellMetric([missing], "bidDollarNotional")).toBeNull();
   });
+
+  it("derives missing Bid/Ask IV from prices, preserves native IV, and obeys the formula toggle", () => {
+    const source = generateMockPositions(100, 61, asOf).find(position => position.underlying === "GLD")!;
+    const missingIv = {
+      ...source,
+      underlying: "GLD" as const,
+      callPut: "call" as const,
+      expiry: "2026-09-18",
+      strike: 250,
+      bid: 8,
+      ask: 9,
+      bidIV: null,
+      askIV: null,
+      bidIvDerived: false,
+      askIvDerived: false,
+      quoteTime: asOf.toISOString(),
+    };
+    const calculated = enrichRiskPositions([missingIv], spots, asOf, DEFAULT_FORMULAS, { riskFreeRate: 0.04 })[0];
+    expect(calculated.bidIV).not.toBeNull();
+    expect(calculated.askIV).not.toBeNull();
+    expect(calculated.askIV!).toBeGreaterThan(calculated.bidIV!);
+    expect(calculated.ivSpread).toBeCloseTo(calculated.askIV! - calculated.bidIV!, 10);
+    expect(calculated.bidIvDerived).toBe(true);
+    expect(calculated.askIvDerived).toBe(true);
+
+    const withNativeBid = enrichRiskPositions([{ ...missingIv, bidIV: 0.33 }], spots, asOf, DEFAULT_FORMULAS)[0];
+    expect(withNativeBid.bidIV).toBe(0.33);
+    expect(withNativeBid.bidIvDerived).toBe(false);
+    expect(withNativeBid.askIvDerived).toBe(true);
+
+    const disabled = DEFAULT_FORMULAS.map(formula => formula.name === "bid_ask_iv_inversion_enabled"
+      ? { ...formula, expression: "0" }
+      : formula);
+    const notCalculated = enrichRiskPositions([missingIv], spots, asOf, disabled)[0];
+    expect(notCalculated.bidIV).toBeNull();
+    expect(notCalculated.askIV).toBeNull();
+    expect(notCalculated.ivSpread).toBeNull();
+  });
 });

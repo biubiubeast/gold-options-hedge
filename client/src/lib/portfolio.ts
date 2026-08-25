@@ -149,6 +149,7 @@ export type PortfolioSettings = {
     spot: boolean;
     label: boolean;
     hover: boolean;
+    targetOption: boolean;
     range: boolean;
     transpose: boolean;
     reverseStrikes: boolean;
@@ -253,6 +254,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     spot: false,
     label: true,
     hover: true,
+    targetOption: true,
     range: true,
     transpose: false,
     reverseStrikes: false,
@@ -402,6 +404,8 @@ export type MarketSnapshot = {
   askSize: number | null;
   bidIv?: number | null;
   askIv?: number | null;
+  bidIvDerived?: boolean;
+  askIvDerived?: boolean;
   delta: number;
   gamma: number;
   theta: number;
@@ -441,6 +445,8 @@ type GldQuote = {
   ask1Size?: number | null;
   bidIv?: number | null;
   askIv?: number | null;
+  bidIvDerived?: boolean;
+  askIvDerived?: boolean;
   delta: number;
   gamma: number;
   theta: number;
@@ -574,6 +580,8 @@ export function getPositionMarketData(args: {
         askSize: finiteImported(quote.ask1Size),
         bidIv: finiteImported(quote.bidIv),
         askIv: finiteImported(quote.askIv),
+        bidIvDerived: quote.bidIvDerived,
+        askIvDerived: quote.askIvDerived,
         delta: numberOf(quote.delta),
         gamma: numberOf(quote.gamma),
         theta: numberOf(quote.theta),

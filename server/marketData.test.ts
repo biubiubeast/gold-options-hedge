@@ -32,6 +32,7 @@ describe("Cboe GLD full-chain normalization", () => {
     expect(quote?.askIv).not.toBeNull();
     expect(quote!.askIv!).toBeGreaterThan(quote!.bidIv!);
     expect(quote!.ivSpread).toBeCloseTo(quote!.askIv! - quote!.bidIv!, 8);
+    expect(quote).toMatchObject({ bidIvDerived: true, askIvDerived: true });
   });
 
   it("does not invent a contract when an OCC symbol is invalid", () => {

@@ -1,6 +1,7 @@
 import { blackScholes } from "./blackScholes";
 import { evaluateNamedFormula } from "./formulaEngine";
 import { DEFAULT_FORMULAS, type FormulaLike } from "./marketTypes";
+import { impliedVolatilityFromPrice, isBidAskIvInversionEnabled } from "./impliedVolatility";
 
 export type RiskUnderlying = "GLD" | "XAUT" | "BTC" | "ETH";
 export type CallPut = "call" | "put";
@@ -58,6 +59,10 @@ export interface RiskPosition {
   bidIV: number | null;
   askIV: number | null;
   ivSpread: number | null;
+  /** True when IV was obtained by inverting Bid/Ask price rather than supplied by the venue. */
+  bidIvDerived?: boolean;
+  askIvDerived?: boolean;
+  expiryTimestamp?: number | null;
   unitDelta: number | null;
   unitGamma: number | null;
   unitTheta: number | null;
@@ -553,6 +558,7 @@ export function enrichRiskPositions(
   spots: Record<RiskUnderlying, number>,
   asOf: Date = new Date(),
   customFormulas: readonly FormulaLike[] = DEFAULT_FORMULAS,
+  options: { riskFreeRate?: number } = {},
 ): EnrichedRiskPosition[] {
   const formulas = customFormulas.length ? customFormulas : DEFAULT_FORMULAS;
   const totaled = positions.map(deriveTotals);
@@ -574,6 +580,28 @@ export function enrichRiskPositions(
     const askPrice = finiteOrNull(position.ask);
     const bidSize = finiteOrNull(position.bidSize);
     const askSize = finiteOrNull(position.askSize);
+    const inversionEnabled = isBidAskIvInversionEnabled(formulas);
+    const quoteAsOf = position.quoteTime ? new Date(position.quoteTime).getTime() : asOf.getTime();
+    const premiumToUsd = position.premiumCurrency === "BTC" || position.premiumCurrency === "ETH" ? spot : 1;
+    const deriveIv = (priceValue: number | null) => inversionEnabled && priceValue !== null && priceValue > 0 && spot > 0 && premiumToUsd > 0
+      ? impliedVolatilityFromPrice({
+          price: priceValue * premiumToUsd,
+          spot,
+          strike: position.strike,
+          expiry: position.expiry,
+          expiryTimestamp: position.expiryTimestamp,
+          optionType: position.callPut,
+          asOf: Number.isFinite(quoteAsOf) ? quoteAsOf : asOf.getTime(),
+          rate: options.riskFreeRate,
+          formulas,
+        })
+      : null;
+    const nativeBidIv = position.bidIvDerived ? null : finiteOrNull(position.bidIV);
+    const nativeAskIv = position.askIvDerived ? null : finiteOrNull(position.askIV);
+    const derivedBidIv = nativeBidIv === null ? deriveIv(bidPrice) : null;
+    const derivedAskIv = nativeAskIv === null ? deriveIv(askPrice) : null;
+    const bidIV = nativeBidIv ?? derivedBidIv;
+    const askIV = nativeAskIv ?? derivedAskIv;
     const bidDollarNotional = multiplier !== null && bidPrice !== null && bidSize !== null
       ? editableFormula("bid_dollar_notional", { bidPrice, bidSize, contractMultiplier: multiplier }, formulas, bidPrice * bidSize * multiplier)
       : null;
@@ -583,7 +611,15 @@ export function enrichRiskPositions(
     const bidAskDollarNotional = bidDollarNotional !== null && askDollarNotional !== null
       ? editableFormula("bid_ask_dollar_notional", { bidDollarNotional, askDollarNotional }, formulas, bidDollarNotional + askDollarNotional)
       : null;
-    const enrichedBase: RiskPosition = { ...position, dataStatus: deriveDataStatus(position, asOf) };
+    const enrichedBase: RiskPosition = {
+      ...position,
+      bidIV,
+      askIV,
+      ivSpread: bidIV !== null && askIV !== null ? askIV - bidIV : null,
+      bidIvDerived: nativeBidIv === null && derivedBidIv !== null,
+      askIvDerived: nativeAskIv === null && derivedAskIv !== null,
+      dataStatus: deriveDataStatus(position, asOf),
+    };
     return {
       ...enrichedBase,
       dte,

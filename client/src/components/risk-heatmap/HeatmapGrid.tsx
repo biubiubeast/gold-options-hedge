@@ -25,6 +25,7 @@ import {
 } from "@shared/riskHeatmap";
 import { cloneElement, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEventHandler, type ReactElement } from "react";
 import type { PortfolioSettings } from "@/lib/portfolio";
+import type { TargetOptionMode } from "@/lib/heatmapTargets";
 
 export type HeatmapCellModel = {
   key: string;
@@ -63,6 +64,9 @@ type Props = {
   hoverContent: PortfolioSettings["heatmapHoverContent"];
   cellDetailEnabled: boolean;
   expiryDetailEnabled: boolean;
+  targetMode: TargetOptionMode;
+  targetCellKeys: ReadonlySet<string>;
+  onTargetCellChange: (cellKey: string, selected: boolean) => void;
   onSelectPosition: (position: EnrichedRiskPosition) => void;
   onSelectExpiry: (expiry: string, positions: EnrichedRiskPosition[]) => void;
 };
@@ -78,6 +82,7 @@ const zoneClass = { ITM: "bg-sky-500/[0.03]", ATM: "bg-amber-400/[0.06]", OTM: "
 const heldStatusAbbreviation = (status: ReturnType<typeof worstStatus>) => ({ LIVE: "L", STALE: "S", WARN: "W", MISSING: "M", FAIL: "F" })[status];
 const heldStatusColor = (status: ReturnType<typeof worstStatus>) => ({ LIVE: "text-emerald-300", STALE: "text-amber-200", WARN: "text-yellow-200", MISSING: "text-orange-200", FAIL: "text-red-300" })[status];
 const cellMetricLabel = (value: number | null, metric: HeatmapMetric) => formatCompact(value, metric).replace(/^\+/, "");
+const ivWithSource = (value: number | null, metric: "bidIV" | "askIV", derived?: boolean) => `${formatCompact(value, metric)}${derived && value !== null ? " CALC" : ""}`;
 
 function TooltipPosition({ position, metric, preset, content }: { position: EnrichedRiskPosition; metric: HeatmapMetric; preset: HoverDataPreset; content: Props["hoverContent"] }) {
   const rows: Array<[string, string]> = [];
@@ -105,7 +110,7 @@ function TooltipPosition({ position, metric, preset, content }: { position: Enri
       rows.push(["Bid / Ask Size", `${formatCompact(position.bidSize)} / ${formatCompact(position.askSize)}`]);
       rows.push(["Bid / Ask $ Notional", `$${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`]);
     }
-    if (content.bidAskIv) rows.push(["Bid IV / Ask IV", `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")}`]);
+    if (content.bidAskIv) rows.push(["Bid IV / Ask IV", `${ivWithSource(position.bidIV, "bidIV", position.bidIvDerived)} / ${ivWithSource(position.askIV, "askIV", position.askIvDerived)}`]);
     if (content.ivSpread) rows.push(["IV spread", formatCompact(position.ivSpread, "ivSpread")]);
     if (content.sourceQuote) rows.push(["Source / Quote As-of", `${position.source ?? "MISSING"} / ${position.quoteTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`]);
   }
@@ -151,7 +156,7 @@ function HeatmapScopeTooltip({ positions, metric, moneyness, label }: { position
   return <Tooltip delayDuration={100} open={open} onOpenChange={setOpen}><TooltipTrigger asChild><button type="button" data-testid="heatmap-scope-summary-trigger" aria-label={`Current ${METRIC_LABELS[metric]} summary for all expiries and strikes`} className="sticky left-0 top-0 z-30 flex h-8 items-center border-b border-r border-border/60 bg-background px-1 text-[8px] text-muted-foreground hover:text-foreground focus-visible:ring-1 focus-visible:ring-primary" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onClick={() => setOpen(true)}>{label}</button></TooltipTrigger><TooltipContent data-testid="heatmap-scope-metric-summary" side="right" sideOffset={6} collisionPadding={10} className="z-[120] w-[430px] max-w-[calc(100vw-1rem)] border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{scopeLabel} · {optionScopeLabel}</strong><span className="text-[9px] text-primary">{METRIC_LABELS[metric]}</span></div><div className="mt-2 grid grid-cols-6 gap-px bg-border/60 text-center"><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MIN</p><strong className="font-mono text-[11px]">{formatCompact(distribution.min, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">P25</p><strong className="font-mono text-[11px]">{formatCompact(distribution.p25, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MEDIAN</p><strong className="font-mono text-[11px]">{formatCompact(distribution.median, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">AVERAGE</p><strong className="font-mono text-[11px]">{formatCompact(distribution.average, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">P75</p><strong className="font-mono text-[11px]">{formatCompact(distribution.p75, metric)}</strong></div><div className="bg-background p-1.5"><p className="text-[8px] text-muted-foreground">MAX</p><strong className="font-mono text-[11px]">{formatCompact(distribution.max, metric)}</strong></div></div><div className="mt-1 flex items-center justify-between text-[9px] text-muted-foreground"><span>{eligibilityLabel}</span><span>Valid {distribution.validCount} · Missing {distribution.missingCount}</span></div></TooltipContent></Tooltip>;
 }
 
-export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanceCutoff, lowImportanceCutoff, transpose, reverseStrikes, cellSize, fitAll, spot, callPut, moneyness, atmStrike, highlightCellKey, labelMode, hoverPreset, sequentialMagnitude, heldCellContent, hoverContent, cellDetailEnabled, expiryDetailEnabled, onSelectPosition, onSelectExpiry }: Props) {
+export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanceCutoff, lowImportanceCutoff, transpose, reverseStrikes, cellSize, fitAll, spot, callPut, moneyness, atmStrike, highlightCellKey, labelMode, hoverPreset, sequentialMagnitude, heldCellContent, hoverContent, cellDetailEnabled, expiryDetailEnabled, targetMode, targetCellKeys, onTargetCellChange, onSelectPosition, onSelectExpiry }: Props) {
   const [hoveredCellKey, setHoveredCellKey] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const centeredOnceRef = useRef<string | null>(null);
@@ -272,27 +277,34 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
                 || (heldCellContent.dataStatus && heldStatusMarker)
               ));
               const spotLine = range.nearestStrike === strike;
+              const targetSelected = targetCellKeys.has(key);
               const cellMetricText = cell?.ungradedReason === "zero"
                 ? "0.000 uncolored"
                 : formatCompact(cell?.value ?? null, metric);
               return <Tooltip key={key} delayDuration={80} open={hoveredCellKey === key} onOpenChange={open => setHoveredCellKey(open ? key : null)}><TooltipTrigger asChild><button
-                type="button" data-cell-key={key} data-held={cell?.held ? "true" : "false"} data-xaut-held={xautHeld ? "true" : "false"}
+                type="button" data-cell-key={key} data-held={cell?.held ? "true" : "false"} data-xaut-held={xautHeld ? "true" : "false"} data-target-selected={targetSelected ? "true" : "false"}
                 data-metric-missing={cell?.ungradedReason === "missing" ? "true" : "false"}
                 data-metric-zero={cell?.ungradedReason === "zero" ? "true" : "false"}
-                className={`relative overflow-hidden border border-solid px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${cell?.value == null ? "" : zoneClass[zoneFor(strike, spot, callPut, atmStrikes)]} ${cell ? "border-cyan-300/45" : "border-border/[0.07] opacity-30"} ${cell?.held ? "z-[3] border-white" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""}`}
+                className={`relative overflow-hidden border border-solid px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${targetMode !== "idle" && cell ? "cursor-crosshair" : ""} ${cell?.value == null ? "" : zoneClass[zoneFor(strike, spot, callPut, atmStrikes)]} ${cell ? "border-cyan-300/45" : "border-border/[0.07] opacity-30"} ${cell?.held ? "z-[3] border-white" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""}`}
                 style={{
                   height: rowHeight,
                   containerType: "size",
                   ...(cell?.value == null ? {} : { backgroundColor: colorFor(cell.value) }),
                 }}
-                onClick={() => cellDetailEnabled && topPositions[0] && onSelectPosition(topPositions[0])}
+                onClick={() => {
+                  if (cell && targetMode !== "idle") {
+                    onTargetCellChange(key, targetMode === "add");
+                    return;
+                  }
+                  if (cellDetailEnabled && topPositions[0]) onSelectPosition(topPositions[0]);
+                }}
                 onMouseEnter={() => cell && setHoveredCellKey(key)}
                 onMouseLeave={() => setHoveredCellKey(current => current === key ? null : current)}
                 onFocus={() => cell && setHoveredCellKey(key)}
                 onBlur={() => setHoveredCellKey(current => current === key ? null : current)}
-                aria-label={cell ? `${key} ${cellMetricText} ${cell.held ? "held" : "listed no position"} ${status}` : `${key} unavailable not listed`}
-              >{xautHeld && <span data-xaut-held-border="true" aria-hidden="true" className="pointer-events-none absolute inset-0 z-[1] border-solid border-amber-300" style={{ borderWidth: "clamp(1px, min(7cqi, 22cqh), 3px)" }} />}{showLabel && <span title={formatCompact(cell!.value, metric)} className="relative z-[2] block max-w-full truncate pl-px font-semibold leading-none text-white drop-shadow-sm" style={{ paddingRight: heldMarkerVisible ? "38%" : "1px", fontSize: "clamp(4px, min(28cqi, 65cqh), 11px)" }}>{cellMetricLabel(cell!.value, metric)}</span>}{heldMarkerVisible && <span data-held-marker="true" aria-hidden="true" title="持仓合约识别码" className="pointer-events-none absolute right-[3%] top-1/2 z-[2] flex -translate-y-1/2 gap-px font-mono font-black leading-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]" style={{ fontSize: "clamp(4px, min(15cqi, 50cqh), 8px)" }}>{heldCellContent.underlying && heldMarker && <span className="text-amber-100">{heldMarker}</span>}{heldCellContent.callPut && heldCallPutMarker && <span className="text-sky-100">{heldCallPutMarker}</span>}{heldCellContent.dataStatus && heldStatusMarker && <span className={heldStatusColor(status)}>{heldStatusMarker}</span>}</span>}{cell && cell.positions.length > 1 && labelMode !== "none" && <span className="absolute bottom-0 left-0 z-[2] text-[5px] leading-none text-white/60">{cell.positions.length}</span>}</button></TooltipTrigger>
-                {cell && <TooltipContent side="right" sideOffset={6} collisionPadding={12} className="z-[100] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatStrike(strike)}</strong><span className="text-[9px] text-muted-foreground">{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 rounded-sm bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">Cell {METRIC_LABELS[metric]} </span><strong className="float-right font-mono text-primary">{cell.ungradedReason === "zero" ? "ZERO · NOT COLORED" : cell.value === null ? "MISSING · NOT COLORED" : formatCompact(cell.value, metric)}</strong></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} content={hoverContent} /></div>)}</div>{cellDetailEnabled && <p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、数据质量与已选择的详情字段</p>}</TooltipContent>}
+                aria-label={cell ? `${key} ${cellMetricText} ${cell.held ? "held" : "listed no position"} ${status}${targetSelected ? " target selected" : ""}` : `${key} unavailable not listed`}
+              >{xautHeld && <span data-xaut-held-border="true" aria-hidden="true" className="pointer-events-none absolute inset-0 z-[1] border-solid border-amber-300" style={{ borderWidth: "clamp(1px, min(7cqi, 22cqh), 3px)" }} />}{targetSelected && <span data-target-border="true" aria-hidden="true" className="pointer-events-none absolute inset-0 z-[4] border-2 border-sky-300" />}{showLabel && <span title={formatCompact(cell!.value, metric)} className="relative z-[2] block max-w-full truncate pl-px font-semibold leading-none text-white drop-shadow-sm" style={{ paddingRight: heldMarkerVisible ? "38%" : "1px", fontSize: "clamp(4px, min(28cqi, 65cqh), 11px)" }}>{cellMetricLabel(cell!.value, metric)}</span>}{heldMarkerVisible && <span data-held-marker="true" aria-hidden="true" title="持仓合约识别码" className="pointer-events-none absolute right-[3%] top-1/2 z-[2] flex -translate-y-1/2 gap-px font-mono font-black leading-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]" style={{ fontSize: "clamp(4px, min(15cqi, 50cqh), 8px)" }}>{heldCellContent.underlying && heldMarker && <span className="text-amber-100">{heldMarker}</span>}{heldCellContent.callPut && heldCallPutMarker && <span className="text-sky-100">{heldCallPutMarker}</span>}{heldCellContent.dataStatus && heldStatusMarker && <span className={heldStatusColor(status)}>{heldStatusMarker}</span>}</span>}{cell && cell.positions.length > 1 && labelMode !== "none" && <span className="absolute bottom-0 left-0 z-[2] text-[5px] leading-none text-white/60">{cell.positions.length}</span>}</button></TooltipTrigger>
+                {cell && <TooltipContent side="right" sideOffset={6} collisionPadding={12} className="z-[100] w-80 border border-border bg-popover p-2 text-popover-foreground shadow-2xl"><div className="flex items-center justify-between border-b border-border/50 pb-1"><strong className="font-mono text-xs">{expiry} · {formatStrike(strike)}</strong><span className="text-[9px] text-muted-foreground">{targetSelected ? "TARGET · " : ""}{cell.held ? "HELD POSITION" : "LISTED / NO POSITION"} · {status}</span></div><div className="mt-1 rounded-sm bg-primary/10 px-2 py-1 text-[10px]"><span className="text-muted-foreground">Cell {METRIC_LABELS[metric]} </span><strong className="float-right font-mono text-primary">{cell.ungradedReason === "zero" ? "ZERO · NOT COLORED" : cell.value === null ? "MISSING · NOT COLORED" : formatCompact(cell.value, metric)}</strong></div><div className="mt-1 space-y-2">{topPositions.slice(0, 5).map(position => <div key={position.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-medium">{positionLabel(position)} · {position.account}</span><span className="font-mono">{formatCompact(metricValue(position, metric), metric)}</span></div><TooltipPosition position={position} metric={metric} preset={hoverPreset} content={hoverContent} /></div>)}</div>{targetMode !== "idle" && <p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-sky-300">点击将{targetMode === "add" ? "选中" : "取消选中"}此 Target Option</p>}{targetMode === "idle" && cellDetailEnabled && <p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-muted-foreground">点击查看完整行情、数据质量与已选择的详情字段</p>}</TooltipContent>}
               </Tooltip>;
             });
             return [axis, ...buttons];
@@ -308,6 +320,7 @@ export function HeatmapGrid({ cells, expiries, strikes, metric, scale, importanc
         <span className="mt-1 text-center text-[6px] font-semibold leading-tight text-white">WHITE<br />HELD</span>
         {(heldCellContent.underlying || heldCellContent.callPut) && <span className="mt-1 text-center font-mono text-[6px] font-bold leading-tight text-amber-100">X/G · C/P<br />CONTRACT</span>}
         {heldCellContent.dataStatus && <span className="mt-1 text-center font-mono text-[6px] leading-tight text-muted-foreground">L/S/W/M/F<br />HELD DATA</span>}
+        {targetCellKeys.size > 0 && <span className="mt-1 text-center text-[6px] font-semibold leading-tight text-sky-300">SKY BLUE<br />TARGET</span>}
       </aside>
     </div>
   );

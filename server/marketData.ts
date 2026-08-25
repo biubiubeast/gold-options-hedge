@@ -56,6 +56,9 @@ export interface GldOptionQuote {
   bidIv: number | null;
   askIv: number | null;
   ivSpread: number | null;
+  bidIvDerived?: boolean;
+  askIvDerived?: boolean;
+  expiryTimestamp?: number;
   bid1Price: number;
   ask1Price: number;
   bid1Size: number | null;
@@ -492,6 +495,9 @@ export function normalizeDeribitOption(
     bidIv,
     askIv,
     ivSpread: bidIv !== null && askIv !== null ? askIv - bidIv : null,
+    bidIvDerived: bidIv !== null,
+    askIvDerived: askIv !== null,
+    expiryTimestamp: instrument.expiration_timestamp,
     bid1Price: bidPrice,
     ask1Price: askPrice,
     bid1Size: null,
@@ -804,6 +810,8 @@ export function normalizeCboeGldOption(raw: any, timestamp: number, spot = 0): G
     bidIv,
     askIv,
     ivSpread: bidIv !== null && askIv !== null ? askIv - bidIv : null,
+    bidIvDerived: bidIv !== null,
+    askIvDerived: askIv !== null,
     bid1Price: bid,
     ask1Price: ask,
     bid1Size: toNumber(raw.bid_size ?? raw.bidsize) > 0 ? toNumber(raw.bid_size ?? raw.bidsize) : null,
