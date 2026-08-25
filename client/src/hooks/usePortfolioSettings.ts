@@ -4,16 +4,31 @@ import {
 } from "@/lib/portfolio";
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY = "gold-options-portfolio-settings-v9";
-const LEGACY_STORAGE_KEYS = ["gold-options-portfolio-settings-v8", "gold-options-portfolio-settings-v7", "gold-options-portfolio-settings-v6", "gold-options-portfolio-settings-v5", "gold-options-portfolio-settings-v4", "gold-options-portfolio-settings-v3", "gold-options-portfolio-settings-v2"];
+const STORAGE_KEY = "gold-options-portfolio-settings-v10";
+const LEGACY_STORAGE_KEYS = [
+  "gold-options-portfolio-settings-v9",
+  "gold-options-portfolio-settings-v8",
+  "gold-options-portfolio-settings-v7",
+  "gold-options-portfolio-settings-v6",
+  "gold-options-portfolio-settings-v5",
+  "gold-options-portfolio-settings-v4",
+  "gold-options-portfolio-settings-v3",
+  "gold-options-portfolio-settings-v2",
+];
 const SETTINGS_EVENT = "gold-options-portfolio-settings-change";
 
 function loadSettings(): PortfolioSettings {
   try {
     const current = localStorage.getItem(STORAGE_KEY);
-    const previousVersion = localStorage.getItem("gold-options-portfolio-settings-v8");
-    const legacy = LEGACY_STORAGE_KEYS.map(key => localStorage.getItem(key)).find(Boolean);
-    const saved = JSON.parse(current || legacy || "{}") as Partial<PortfolioSettings>;
+    const previousVersion = localStorage.getItem(
+      "gold-options-portfolio-settings-v9"
+    );
+    const legacy = LEGACY_STORAGE_KEYS.map(key =>
+      localStorage.getItem(key)
+    ).find(Boolean);
+    const saved = JSON.parse(
+      current || legacy || "{}"
+    ) as Partial<PortfolioSettings>;
     const migrated = {
       ...DEFAULT_PORTFOLIO_SETTINGS,
       ...saved,
@@ -24,7 +39,9 @@ function loadSettings(): PortfolioSettings {
       heatmapVisibleFilters: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleFilters,
         ...(current || previousVersion ? saved.heatmapVisibleFilters : {}),
-        ...(!current && previousVersion ? { reverseStrikes: false, fitAll: false } : {}),
+        ...(!current && previousVersion
+          ? { reverseStrikes: false, fitAll: false }
+          : {}),
       },
       visiblePages: {
         ...DEFAULT_PORTFOLIO_SETTINGS.visiblePages,
@@ -43,17 +60,55 @@ function loadSettings(): PortfolioSettings {
         ...saved.heatmapClickActions,
       },
       heatmapFilterOptions: {
-        dataset: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.dataset, ...saved.heatmapFilterOptions?.dataset },
-        underlying: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.underlying, ...saved.heatmapFilterOptions?.underlying, ...(!current ? { all: false } : {}) },
-        callPut: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.callPut, ...saved.heatmapFilterOptions?.callPut, ...(!current ? { combined: true } : {}) },
-        moneyness: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.moneyness, ...saved.heatmapFilterOptions?.moneyness },
-        expiryBucket: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.expiryBucket, ...saved.heatmapFilterOptions?.expiryBucket },
-        status: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.status, ...saved.heatmapFilterOptions?.status },
-        metric: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.metric, ...saved.heatmapFilterOptions?.metric },
-        scale: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.scale, ...saved.heatmapFilterOptions?.scale },
-        spot: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.spot, ...saved.heatmapFilterOptions?.spot },
-        label: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.label, ...(current ? saved.heatmapFilterOptions?.label : {}) },
-        hover: { ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.hover, ...saved.heatmapFilterOptions?.hover },
+        dataset: {
+          ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.dataset,
+          ...saved.heatmapFilterOptions?.dataset,
+        },
+        underlying: {
+          ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.underlying,
+          ...saved.heatmapFilterOptions?.underlying,
+          ...(!current ? { all: false } : {}),
+        },
+        callPut: {
+          ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.callPut,
+          ...saved.heatmapFilterOptions?.callPut,
+          ...(!current ? { combined: true } : {}),
+        },
+        moneyness: {
+          ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.moneyness,
+          ...saved.heatmapFilterOptions?.moneyness,
+        },
+        expiryBucket: {
+          ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.expiryBucket,
+          ...saved.heatmapFilterOptions?.expiryBucket,
+        },
+        status: {
+          ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.status,
+          ...saved.heatmapFilterOptions?.status,
+        },
+        metric: {
+          ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.metric,
+          ...saved.heatmapFilterOptions?.metric,
+        },
+        scale: {
+          ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.scale,
+          ...saved.heatmapFilterOptions?.scale,
+        },
+        spot: {
+          ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.spot,
+          ...saved.heatmapFilterOptions?.spot,
+        },
+        label: {
+          ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.label,
+          ...(current || previousVersion
+            ? saved.heatmapFilterOptions?.label
+            : {}),
+        },
+        hover: {
+          ...DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.hover,
+          ...saved.heatmapFilterOptions?.hover,
+          ...(!current && previousVersion ? { pnl: true } : {}),
+        },
       },
       heatmapHiddenDynamicOptions: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapHiddenDynamicOptions,
@@ -80,7 +135,9 @@ function loadSettings(): PortfolioSettings {
         ...saved.heatmapVisibleSections,
       },
     };
-    if (!current && saved.gldSpotScaleOverride === null) migrated.gldSpotScaleOverride = DEFAULT_PORTFOLIO_SETTINGS.gldSpotScaleOverride;
+    if (!current && saved.gldSpotScaleOverride === null)
+      migrated.gldSpotScaleOverride =
+        DEFAULT_PORTFOLIO_SETTINGS.gldSpotScaleOverride;
     return migrated;
   } catch {
     return DEFAULT_PORTFOLIO_SETTINGS;
@@ -88,7 +145,8 @@ function loadSettings(): PortfolioSettings {
 }
 
 export function usePortfolioSettings() {
-  const [settings, setSettingsState] = useState<PortfolioSettings>(loadSettings);
+  const [settings, setSettingsState] =
+    useState<PortfolioSettings>(loadSettings);
   useEffect(() => {
     const sync = () => setSettingsState(loadSettings());
     window.addEventListener("storage", sync);
@@ -98,14 +156,21 @@ export function usePortfolioSettings() {
       window.removeEventListener(SETTINGS_EVENT, sync);
     };
   }, []);
-  const setSettings = useCallback((next: PortfolioSettings | ((current: PortfolioSettings) => PortfolioSettings)) => {
-    setSettingsState(current => {
-      const value = typeof next === "function" ? next(current) : next;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
-      queueMicrotask(() => window.dispatchEvent(new Event(SETTINGS_EVENT)));
-      return value;
-    });
-  }, []);
+  const setSettings = useCallback(
+    (
+      next:
+        | PortfolioSettings
+        | ((current: PortfolioSettings) => PortfolioSettings)
+    ) => {
+      setSettingsState(current => {
+        const value = typeof next === "function" ? next(current) : next;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+        queueMicrotask(() => window.dispatchEvent(new Event(SETTINGS_EVENT)));
+        return value;
+      });
+    },
+    []
+  );
   const resetSettings = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     LEGACY_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));

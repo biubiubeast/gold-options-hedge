@@ -44,7 +44,7 @@ describe("operator display defaults", () => {
     });
   });
 
-  it("hides optional positions status cards, the persistence hint, and PNL hover preset by default", () => {
+  it("hides optional positions status cards and the persistence hint while keeping PNL selectable", () => {
     expect(DEFAULT_PORTFOLIO_SETTINGS.positionsVisibleSections).toEqual({
       marketPersistenceHint: false,
       cumulativeEntryCostCard: false,
@@ -52,8 +52,13 @@ describe("operator display defaults", () => {
       importStatusCard: false,
     });
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.hover.pnl).toBe(
-      false
+      true
     );
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapHoverContent).toMatchObject({
+      modelIvStatus: false,
+      ivReferenceSpot: false,
+      ivReferenceSource: false,
+    });
   });
 
   it("keeps heatmap click-through detail dialogs disabled by default", () => {

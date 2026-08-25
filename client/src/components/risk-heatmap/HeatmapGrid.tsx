@@ -123,7 +123,7 @@ const cellMetricLabel = (value: number | null, metric: HeatmapMetric) =>
 const modelIvLabel = (
   value: number | null,
   metric: "modelMarkIV" | "modelBidIV" | "modelAskIV" | "modelIVSpread"
-) => `${formatCompact(value, metric)}${value !== null ? " MODEL" : ""}`;
+) => formatCompact(value, metric);
 
 function TooltipPosition({
   position,
@@ -185,7 +185,7 @@ function TooltipPosition({
       rows.push(["Qty", formatCompact(position.netQty)]);
     if (content.markIv) {
       rows.push([
-        ivSource === "model" ? "Mark / Model Mark IV" : "Mark / Market Mark IV",
+        "Mark / Mark IV",
         `${formatPrice(position.markPrice)} ${position.premiumCurrency ?? ""} / ${
           ivSource === "model"
             ? modelIvLabel(position.modelMarkIV, "modelMarkIV")
@@ -209,23 +209,25 @@ function TooltipPosition({
     }
     if (content.bidAskIv) {
       if (ivSource === "model") {
-        rows.push(
-          [
-            "Model Bid / Ask IV",
-            `${modelIvLabel(position.modelBidIV, "modelBidIV")} / ${modelIvLabel(position.modelAskIV, "modelAskIV")}`,
-          ],
-          [
+        rows.push([
+          "Bid / Ask IV",
+          `${modelIvLabel(position.modelBidIV, "modelBidIV")} / ${modelIvLabel(position.modelAskIV, "modelAskIV")}`,
+        ]);
+        if (content.ivReferenceSpot) {
+          rows.push([
             "IV Reference Spot / As-of",
             `${formatPrice(position.ivReferenceSpot)} / ${position.ivReferenceTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`,
-          ],
-          [
-            "Model Mark / Bid / Ask Status",
+          ]);
+        }
+        if (content.modelIvStatus) {
+          rows.push([
+            "Mark / Bid / Ask IV Status",
             `${position.modelMarkIvStatus} / ${position.modelBidIvStatus} / ${position.modelAskIvStatus}`,
-          ]
-        );
+          ]);
+        }
       } else {
         rows.push([
-          "Market Bid / Ask IV",
+          "Bid / Ask IV",
           `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")}`,
         ]);
       }
@@ -234,10 +236,10 @@ function TooltipPosition({
       rows.push(
         ivSource === "model"
           ? [
-              "Model IV spread",
+              "Bid Ask IV Spread",
               modelIvLabel(position.modelIVSpread, "modelIVSpread"),
             ]
-          : ["Market IV spread", formatCompact(position.ivSpread, "ivSpread")]
+          : ["Bid Ask IV Spread", formatCompact(position.ivSpread, "ivSpread")]
       );
     }
     if (content.sourceQuote) {
@@ -245,7 +247,7 @@ function TooltipPosition({
         "Source / Quote As-of",
         `${position.source ?? "MISSING"} / ${position.quoteTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`,
       ]);
-      if (ivSource === "model") {
+      if (ivSource === "model" && content.ivReferenceSource) {
         rows.push([
           "IV Reference Source",
           position.ivReferenceSource ?? "MISSING",

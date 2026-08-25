@@ -61,6 +61,9 @@ export type HeatmapHoverField =
   | "bidAsk"
   | "bidAskIv"
   | "ivSpread"
+  | "modelIvStatus"
+  | "ivReferenceSpot"
+  | "ivReferenceSource"
   | "sourceQuote"
   | "mvEntry"
   | "upl";
@@ -402,7 +405,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     scale: { quantile: true, log: true, symmetric: true },
     spot: { GLD: true, XAUT: true, BTC: true, ETH: true, XAU: true },
     label: { none: true, held: true, top: false, bottom: false, all: true },
-    hover: { risk: true, market: true, pnl: false, all: true },
+    hover: { risk: true, market: true, pnl: true, all: true },
   },
   heatmapHiddenDynamicOptions: { venue: [], broker: [], account: [] },
   heatmapHoverContent: {
@@ -421,6 +424,9 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     bidAsk: true,
     bidAskIv: true,
     ivSpread: true,
+    modelIvStatus: false,
+    ivReferenceSpot: false,
+    ivReferenceSource: false,
     sourceQuote: true,
     mvEntry: true,
     upl: true,
