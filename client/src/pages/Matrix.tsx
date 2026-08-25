@@ -73,11 +73,14 @@ import {
   formatSpotPrice,
   formatStrike,
   generateMockPositions,
+  isIvSelectorMetric,
+  isModelIvMetric,
   metricValue,
   metricDistribution,
   nearestStrikeLevels,
   percentile,
   positionLabel,
+  resolveIvMetric,
   spotRangeState,
   worstStatus,
   type CallPut,
@@ -86,6 +89,7 @@ import {
   type EnrichedRiskPosition,
   type ExpiryBucket,
   type HeatmapMetric,
+  type IvValueSource,
   type MoneynessFilter,
   type RiskUnderlying,
 } from "@shared/riskHeatmap";
@@ -871,6 +875,8 @@ export default function Matrix() {
   const [metric, setMetric] = useState<HeatmapMetric>(
     DEFAULT_HEATMAP_VIEW.metric
   );
+  const [ivSource, setIvSource] = useState<IvValueSource>("model");
+  const effectiveMetric = resolveIvMetric(metric, ivSource);
   const [scaleMode, setScaleMode] = useState<ColorScaleMode>("quantile");
   const [transpose, setTranspose] = useState(false);
   const [reverseStrikes, setReverseStrikes] = useState(false);
@@ -1205,11 +1211,14 @@ export default function Matrix() {
   const enabledOptions = settings.heatmapFilterOptions;
   const metricOptions = (
     Object.entries(METRIC_LABELS) as Array<[HeatmapMetric, string]>
-  ).filter(([key]) => enabledOptions.metric[key]);
+  ).filter(([key]) => !isModelIvMetric(key) && enabledOptions.metric[key]);
   useEffect(() => {
     const riskUnderlying = selectedRiskUnderlying(underlying);
     if (riskUnderlying !== "all") setSpotUnderlying(riskUnderlying);
   }, [underlying]);
+  useEffect(() => {
+    if (underlying === "GLD" && ivSource !== "model") setIvSource("model");
+  }, [ivSource, underlying]);
   useEffect(() => {
     const fallback = <T extends string>(
       current: T,
@@ -1319,12 +1328,12 @@ export default function Matrix() {
     );
   }, [targetOptionKeys]);
   useEffect(() => {
-    const saved = customRanges[metric];
-    const factor = percentageMetrics.has(metric) ? 100 : 1;
+    const saved = customRanges[effectiveMetric];
+    const factor = percentageMetrics.has(effectiveMetric) ? 100 : 1;
     setRangeMinDraft(saved ? String(saved.min * factor) : "");
     setRangeMaxDraft(saved ? String(saved.max * factor) : "");
     setRangeError("");
-  }, [customRanges, metric]);
+  }, [customRanges, effectiveMetric]);
   useEffect(() => {
     const syncFullscreen = () => {
       const active = document.fullscreenElement !== null;
@@ -1422,20 +1431,23 @@ export default function Matrix() {
   );
 
   const applyCustomRange = () => {
-    const factor = percentageMetrics.has(metric) ? 100 : 1;
+    const factor = percentageMetrics.has(effectiveMetric) ? 100 : 1;
     const min = Number(rangeMinDraft) / factor;
     const max = Number(rangeMaxDraft) / factor;
     if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
       setRangeError("MIN 必须小于 MAX");
       return;
     }
-    setCustomRanges(current => ({ ...current, [metric]: { min, max } }));
+    setCustomRanges(current => ({
+      ...current,
+      [effectiveMetric]: { min, max },
+    }));
     setRangeError("");
   };
   const resetCustomRange = () => {
     setCustomRanges(current => {
       const next = { ...current };
-      delete next[metric];
+      delete next[effectiveMetric];
       return next;
     });
   };
@@ -1450,9 +1462,12 @@ export default function Matrix() {
     }
     const cellModels: HeatmapCellModel[] = [...grouped.entries()].map(
       ([key, cellPositions]) => {
-        const value = aggregateHeatmapCellMetric(cellPositions, metric);
+        const value = aggregateHeatmapCellMetric(
+          cellPositions,
+          effectiveMetric
+        );
         const metricInputs = cellPositions.map(position =>
-          metricValue(position, metric)
+          metricValue(position, effectiveMetric)
         );
         const hasMissingMetric = metricInputs.some(
           input => input === null || !Number.isFinite(input)
@@ -1468,7 +1483,7 @@ export default function Matrix() {
               ? null
               : hasMissingMetric
                 ? "missing"
-                : metric === "unitDelta" &&
+                : effectiveMetric === "unitDelta" &&
                     metricInputs.some(input => input === 0)
                   ? "zero"
                   : "missing",
@@ -1488,26 +1503,26 @@ export default function Matrix() {
         ...new Set(filtered.map(position => canonicalStrike(position.strike))),
       ].sort((a, b) => a - b),
     };
-  }, [filtered, metric]);
+  }, [effectiveMetric, filtered]);
   const sequentialMagnitude =
-    metric === "unitDelta" ||
-    metric === "totalDelta" ||
-    metric === "markIV" ||
-    metric === "bidIV" ||
-    metric === "askIV" ||
-    metric === "ivSpread" ||
-    metric === "modelMarkIV" ||
-    metric === "modelBidIV" ||
-    metric === "modelAskIV" ||
-    metric === "modelIVSpread" ||
-    metric === "qty" ||
-    metric === "notionalSize" ||
-    metric === "bidDollarNotional" ||
-    metric === "askDollarNotional" ||
-    metric === "bidAskDollarNotional";
-  const activeCustomRange = customRanges[metric] ?? null;
+    effectiveMetric === "unitDelta" ||
+    effectiveMetric === "totalDelta" ||
+    effectiveMetric === "markIV" ||
+    effectiveMetric === "bidIV" ||
+    effectiveMetric === "askIV" ||
+    effectiveMetric === "ivSpread" ||
+    effectiveMetric === "modelMarkIV" ||
+    effectiveMetric === "modelBidIV" ||
+    effectiveMetric === "modelAskIV" ||
+    effectiveMetric === "modelIVSpread" ||
+    effectiveMetric === "qty" ||
+    effectiveMetric === "notionalSize" ||
+    effectiveMetric === "bidDollarNotional" ||
+    effectiveMetric === "askDollarNotional" ||
+    effectiveMetric === "bidAskDollarNotional";
+  const activeCustomRange = customRanges[effectiveMetric] ?? null;
   const heldOnlyAutoRange = useMemo(() => {
-    if (!HELD_ONLY_HEATMAP_METRICS.has(metric) || activeCustomRange)
+    if (!HELD_ONLY_HEATMAP_METRICS.has(effectiveMetric) || activeCustomRange)
       return null;
     const values = cells
       .filter(
@@ -1520,7 +1535,44 @@ export default function Matrix() {
       max: Math.max(...values),
       basis: "held" as const,
     };
-  }, [activeCustomRange, cells, metric]);
+  }, [activeCustomRange, cells, effectiveMetric]);
+  const currentP25P75Range = useMemo(() => {
+    const values = cells.flatMap(cell => {
+      if (cell.value === null || !Number.isFinite(cell.value)) return [];
+      return [sequentialMagnitude ? Math.abs(cell.value) : cell.value];
+    });
+    if (!values.length) return null;
+    const min = percentile(values, 0.25);
+    const rawMax = percentile(values, 0.75);
+    if (!Number.isFinite(min) || !Number.isFinite(rawMax)) return null;
+    const max =
+      rawMax > min ? rawMax : min + Math.max(Math.abs(min) * 0.01, 1e-9);
+    return { min, max };
+  }, [cells, sequentialMagnitude]);
+  useEffect(() => {
+    if (
+      underlying !== "GLD" ||
+      customRanges[effectiveMetric] ||
+      !currentP25P75Range
+    ) {
+      return;
+    }
+    setCustomRanges(current => ({
+      ...current,
+      [effectiveMetric]: currentP25P75Range,
+    }));
+  }, [customRanges, currentP25P75Range, effectiveMetric, underlying]);
+  const rescaleToCurrentP25P75 = () => {
+    if (!currentP25P75Range) {
+      setRangeError("当前筛选没有足够的有效数据");
+      return;
+    }
+    setCustomRanges(current => ({
+      ...current,
+      [effectiveMetric]: currentP25P75Range,
+    }));
+    setRangeError("");
+  };
   const scale = useMemo(
     () =>
       buildHeatScale(
@@ -1532,7 +1584,7 @@ export default function Matrix() {
               : cell.value
         ),
         scaleMode,
-        !sequentialMagnitude && CENTERED_METRICS.has(metric),
+        !sequentialMagnitude && CENTERED_METRICS.has(effectiveMetric),
         activeCustomRange
           ? { ...activeCustomRange, basis: "custom" }
           : heldOnlyAutoRange
@@ -1540,8 +1592,8 @@ export default function Matrix() {
     [
       activeCustomRange,
       cells,
+      effectiveMetric,
       heldOnlyAutoRange,
-      metric,
       scaleMode,
       sequentialMagnitude,
     ]
@@ -1915,6 +1967,22 @@ export default function Matrix() {
               }))}
             />
           )}
+          {visibleFilters.metric && isIvSelectorMetric(metric) && (
+            <NativeSelect
+              className="w-[112px] flex-none"
+              label="IV SOURCE"
+              value={ivSource}
+              onChange={value => setIvSource(value as IvValueSource)}
+              options={
+                underlying === "GLD"
+                  ? [{ value: "model", label: "MODEL" }]
+                  : [
+                      { value: "market", label: "MARKET" },
+                      { value: "model", label: "MODEL" },
+                    ]
+              }
+            />
+          )}
           {visibleFilters.moneyness && (
             <NativeSelect
               className="w-[105px] flex-none"
@@ -2072,7 +2140,9 @@ export default function Matrix() {
           {visibleFilters.range && (
             <>
               <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground">
-                <span>MIN{percentageMetrics.has(metric) ? "%" : ""}</span>
+                <span>
+                  MIN{percentageMetrics.has(effectiveMetric) ? "%" : ""}
+                </span>
                 <input
                   aria-label="Color scale minimum"
                   inputMode="decimal"
@@ -2080,14 +2150,16 @@ export default function Matrix() {
                   onChange={event => setRangeMinDraft(event.target.value)}
                   placeholder={
                     heldOnlyAutoRange
-                      ? formatCompact(heldOnlyAutoRange.min, metric)
+                      ? formatCompact(heldOnlyAutoRange.min, effectiveMetric)
                       : "AUTO"
                   }
                   className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none"
                 />
               </label>
               <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground">
-                <span>MAX{percentageMetrics.has(metric) ? "%" : ""}</span>
+                <span>
+                  MAX{percentageMetrics.has(effectiveMetric) ? "%" : ""}
+                </span>
                 <input
                   aria-label="Color scale maximum"
                   inputMode="decimal"
@@ -2095,12 +2167,21 @@ export default function Matrix() {
                   onChange={event => setRangeMaxDraft(event.target.value)}
                   placeholder={
                     heldOnlyAutoRange
-                      ? formatCompact(heldOnlyAutoRange.max, metric)
+                      ? formatCompact(heldOnlyAutoRange.max, effectiveMetric)
                       : "AUTO"
                   }
                   className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none"
                 />
               </label>
+              <button
+                type="button"
+                onClick={rescaleToCurrentP25P75}
+                disabled={!currentP25P75Range}
+                title="按当前标的、当前筛选和当前 Metric 的 P25 / P75 重新设定色标"
+                className="h-6 border border-sky-400/60 px-1.5 text-[8px] text-sky-300 hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Rescale P25/P75
+              </button>
               <button
                 type="button"
                 onClick={applyCustomRange}
@@ -2320,7 +2401,7 @@ export default function Matrix() {
           </div>
         )}
       {visibleSections.positionOnlyMetricBanner &&
-        HELD_ONLY_HEATMAP_METRICS.has(metric) && (
+        HELD_ONLY_HEATMAP_METRICS.has(effectiveMetric) && (
           <div className="shrink-0 border border-amber-300/25 bg-amber-300/5 px-2 py-0.5 font-mono text-[8px] text-amber-100">
             POSITION-ONLY METRIC · only held cells are colored and included in
             the default min/max · listed contracts remain hoverable but
@@ -2355,7 +2436,8 @@ export default function Matrix() {
           cells={cells}
           expiries={expiries}
           strikes={strikes}
-          metric={metric}
+          metric={effectiveMetric}
+          ivSource={ivSource}
           scale={scale}
           importanceCutoff={importanceCutoff}
           lowImportanceCutoff={lowImportanceCutoff}
@@ -2406,7 +2488,7 @@ export default function Matrix() {
       />
       <ExpiryDetailDialog
         selection={selectedExpiry}
-        metric={metric}
+        metric={effectiveMetric}
         content={settings.heatmapExpiryHoverContent}
         onClose={() => setSelectedExpiry(null)}
       />

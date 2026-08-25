@@ -20,6 +20,9 @@ import {
   metricDistribution,
   metricValue,
   nearestStrikeLevels,
+  resolveIvMetric,
+  isIvSelectorMetric,
+  isModelIvMetric,
   spotRangeState,
   strikeDistanceFromSpot,
 } from "../shared/riskHeatmap";
@@ -35,6 +38,14 @@ const spots = {
 } as const;
 
 describe("institutional risk heatmap acceptance", () => {
+  it("keeps IV metric labels source-neutral and resolves Market/Model separately", () => {
+    expect(isIvSelectorMetric("ivSpread")).toBe(true);
+    expect(isModelIvMetric("modelIVSpread")).toBe(true);
+    expect(resolveIvMetric("ivSpread", "market")).toBe("ivSpread");
+    expect(resolveIvMetric("ivSpread", "model")).toBe("modelIVSpread");
+    expect(resolveIvMetric("unitDelta", "model")).toBe("unitDelta");
+  });
+
   it("formats every IV metric with two decimal places", () => {
     expect(formatCompact(0.1834, "markIV")).toBe("18.34%");
     expect(formatCompact(0.207, "bidIV")).toBe("20.70%");

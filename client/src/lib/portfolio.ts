@@ -129,7 +129,7 @@ export const DEFAULT_HEATMAP_VIEW = {
   underlying: "GLD",
   moneyness: "otm",
   callPut: "combined",
-  metric: "modelIVSpread",
+  metric: "ivSpread",
   labelMode: "held",
   hoverPreset: "all",
 } as const;
@@ -771,10 +771,8 @@ export function getPositionMarketData(args: {
         ask1: numberOf(ticker.ask1Price),
         bidSize: finiteImported(ticker.bid1Size),
         askSize: finiteImported(ticker.ask1Size),
-        bidIv:
-          numberOf(ticker.bid1Iv) > 0 ? numberOf(ticker.bid1Iv) : null,
-        askIv:
-          numberOf(ticker.ask1Iv) > 0 ? numberOf(ticker.ask1Iv) : null,
+        bidIv: numberOf(ticker.bid1Iv) > 0 ? numberOf(ticker.bid1Iv) : null,
+        askIv: numberOf(ticker.ask1Iv) > 0 ? numberOf(ticker.ask1Iv) : null,
         ...modelIv,
         delta: numberOf(ticker.delta),
         gamma: numberOf(ticker.gamma),

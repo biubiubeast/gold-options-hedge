@@ -13,7 +13,11 @@ import {
   DEFAULT_PORTFOLIO_SETTINGS,
   type PortfolioSettings,
 } from "@/lib/portfolio";
-import { METRIC_LABELS, type HeatmapMetric } from "@shared/riskHeatmap";
+import {
+  METRIC_LABELS,
+  isModelIvMetric,
+  type HeatmapMetric,
+} from "@shared/riskHeatmap";
 import {
   DEFAULT_VIEWER_PAGE_PERMISSIONS,
   type ViewerPage,
@@ -1121,38 +1125,38 @@ export default function Settings() {
           <div>
             <p className="mb-2 text-xs font-semibold">Metric</p>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              {(
-                Object.entries(METRIC_LABELS) as Array<[HeatmapMetric, string]>
-              ).map(([key, label]) => (
-                <div
-                  key={key}
-                  className="flex items-center justify-between gap-2 rounded-md border border-border/60 p-2"
-                >
-                  <Label
-                    htmlFor={`heatmap-option-metric-${key}`}
-                    className="text-[11px]"
+              {(Object.entries(METRIC_LABELS) as Array<[HeatmapMetric, string]>)
+                .filter(([key]) => !isModelIvMetric(key))
+                .map(([key, label]) => (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between gap-2 rounded-md border border-border/60 p-2"
                   >
-                    {label}
-                  </Label>
-                  <Switch
-                    id={`heatmap-option-metric-${key}`}
-                    checked={draft.heatmapFilterOptions.metric[key]}
-                    onCheckedChange={checked =>
-                      setDraft(current => ({
-                        ...current,
-                        heatmapFilterOptions: {
-                          ...current.heatmapFilterOptions,
-                          metric: {
-                            ...current.heatmapFilterOptions.metric,
-                            [key]: checked,
+                    <Label
+                      htmlFor={`heatmap-option-metric-${key}`}
+                      className="text-[11px]"
+                    >
+                      {label}
+                    </Label>
+                    <Switch
+                      id={`heatmap-option-metric-${key}`}
+                      checked={draft.heatmapFilterOptions.metric[key]}
+                      onCheckedChange={checked =>
+                        setDraft(current => ({
+                          ...current,
+                          heatmapFilterOptions: {
+                            ...current.heatmapFilterOptions,
+                            metric: {
+                              ...current.heatmapFilterOptions.metric,
+                              [key]: checked,
+                            },
                           },
-                        },
-                      }))
-                    }
-                    aria-label={`Metric 显示 ${label}`}
-                  />
-                </div>
-              ))}
+                        }))
+                      }
+                      aria-label={`Metric 显示 ${label}`}
+                    />
+                  </div>
+                ))}
             </div>
           </div>
           {fixedOptionGroups.map(([groupKey, groupLabel, options]) => (

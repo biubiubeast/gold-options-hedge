@@ -7,7 +7,7 @@
 ## 主要功能
 
 1. 仓位录入、编辑和删除；支持导入 DinoSignal 持仓快照，也支持上传 KGI / Bybit（SignalPlus）全量交易记录，自动配对开平仓、推导当前仓位与累计成本/已实现损益；导入前自动备份，并可导出 36 列审计表。
-2. Expiry × Strike 矩阵：支持 Unit/Total Delta、Gamma、Theta、Vega、Market IV、Model IV、MV、UPL 等指标；紧凑无文字模式可容纳 100–200 条仓位，右侧 P99 色标与 Display Spot marker 用于快速识别集中风险。
+2. Expiry × Strike 矩阵：支持 Unit/Total Delta、Mark/Bid/Ask IV、Bid Ask IV Spread、MV、UPL 等指标；选择 IV 指标时再用 IV Source 切换 Market / Model，避免在 Metric 列表重复展示同一指标。紧凑无文字模式可容纳 100–200 条仓位，色标与 Display Spot marker 用于快速识别集中风险。
 3. 期权详情：单位 Greeks、持仓 Total Greeks、Entry Cost、Current Value、P&L、数据来源和“实时/估算”标识。
 4. 组合 Dashboard：按 Underlying / Expiry / Strike 筛选；显示 XAUT、GLD 和 XAU 代理现价；统一汇总估值与 XAU 风险量纲。
 5. 可执行公式：编辑会直接影响 Black-Scholes、估值和汇总；支持新增公式并在其他公式中按名称引用；可逐项或全部恢复默认。
@@ -22,8 +22,8 @@
 进入“矩阵视图”即可使用。生产仓位选择 `LIVE`；验收或培训可选择 `MOCK 100` / `MOCK 200`，也可直接打开 `/matrix?mock=200`。Mock 使用固定 seed，每次刷新都可复现，不会写入真实仓位。
 
 1. 默认是 **Expiry 列 × Strike 行**；`Transpose` 可转置。先用 Underlying、Venue、Broker、Account、Call/Put、DTE bucket、Status 缩小决策范围。
-2. Metric 可切换 Unit Delta、Total Delta、Gamma、Theta、Vega、Market IV、Model IV、MV、UPL、DTE、Distance-to-Strike、Roll Priority。Market IV 是交易所/数据商直接发布值；Model IV 是网站使用同步 IV Reference Spot 反解的统一模型值，两者不可混用。Unit 是单份合约敏感度，Total 已乘数量、实际 multiplier 和黄金量纲。
-3. 默认 `Quantile + P99 clip` 适合快速找集中风险；`Log` 用于同时保留 50 和 1000 级别的差异；`Symmetric Zero` 把 0 固定为中性色，适合有正负方向的 Delta、Theta、UPL。
+2. Metric 中的 IV 名称保持为 Mark IV、Bid IV、Ask IV、Bid Ask IV Spread；仅在选择这些指标时显示 IV Source。Market 是交易所/数据商直接发布值，Model 是网站使用同步 IV Reference Spot 反解的统一模型值，两者不会混用；GLD 当前只开放 Model。Unit 是单份合约敏感度，Total 已乘数量、实际 multiplier 和黄金量纲。
+3. 色标 MIN / MAX 首次按 GLD 当前指标的 P25 / P75 初始化。切换 Underlying 不会自动改变已保存范围，便于跨品种对比；需要适配新标的时点击 `Rescale P25/P75`，按当前标的、筛选条件和指标重新计算。每个 Market / Model IV 指标分别保存范围。
 4. 只有最高重要度 cell 常显数值，其余 hover 查看仓位、source、as-of、状态和 Roll Priority 分项，避免 100+ 仓位文字拥挤。点击顶部决策卡只会定位并高亮相应 cell。
 5. Spot 可选 GLD、XAUT 或 XAU。Spot 超出当前 Strike range 时页面明确显示 Above/Below Range；点击 `Center Spot` 把 spot marker 纳入矩阵。
 6. GLD DTE<=2 时自动出现 Expiry panel。资金覆盖低于 100% 且可能 ITM 时显示 `FAIL`；adjusted contract 使用仓位的实际 deliverable，不使用硬编码 100。

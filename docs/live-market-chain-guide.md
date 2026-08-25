@@ -23,7 +23,8 @@
 - 黄色横线：Spot 最近的 Strike；页面打开后自动居中到 Spot，右侧 `CENTER SPOT` 可再次定位；
 - 鼠标悬停：按 HOVER 选择展示 Risk / Market / PnL / All；
 - 点击格子：完整行情、Greeks、Source、As-of、OI/Volume 和 Roll 解释；
-- Metric 将 `Market Mark/Bid/Ask IV` 与 `Model Mark/Bid/Ask IV`、两套 IV Spread 分开。Market IV 只保留交易所/数据商直接发布的数值；Model IV 才是网站根据 Mark/Bid/Ask 价格反解的数值，旁边统一显示 `MODEL`。上市未持仓合约的 Total 指标显示 MISSING，不伪造为 0。
+- Metric 继续使用 `Mark IV`、`Bid IV`、`Ask IV`、`Bid Ask IV Spread` 四个通用名称；选择任一 IV 指标后才显示 `IV Source`。Market 只读取交易所/数据商直接发布的数值，Model 才使用网站根据 Mark/Bid/Ask 价格反解的数值，二者不会在色标或 Hover 中混合。GLD 当前只提供 Model 选项；其他支持的标的可在 Market / Model 间切换。上市未持仓合约的 Total 指标显示 MISSING，不伪造为 0。
+- 色标 MIN / MAX 首次按 GLD 当前指标有效 cell 的 P25 / P75 初始化。切换 Underlying 保留原范围，便于相同指标跨品种直接比较；点击 `Rescale P25/P75` 才会按当前标的、当前筛选与当前指标重算。Market / Model 的范围独立保存。
 - `Display Spot` 用于顶部现货、ATM 和矩阵定位，可以采用更新的独立现货报价；`IV Reference Spot` 必须与期权价格来自同一行情快照，只用于 Model IV。两者不再混用。
 - Cboe 完整链目前只直接返回 Mark IV，不返回原生 Bid IV / Ask IV。网站用该链同一快照的 `current_price`、Bid/Ask、Strike、到期时间和默认 4.5% 无风险利率分别反解 Model Bid/Ask IV；无法满足无套利边界时显示明确状态并保持 MISSING，不会退回 Display Spot，也不会把 Model IV 填入 Market IV。
 - Bybit ticker 本身直接提供 Mark/Bid/Ask IV；网站原样保存在 Market IV，并另外使用同一 ticker 的 `underlyingPrice` 计算 Model IV，便于比较交易所波动率与网站统一模型的差异。

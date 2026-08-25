@@ -40,6 +40,43 @@ export type HeatmapMetric =
   | "DTE"
   | "distanceToStrike"
   | "rollPriority";
+
+export type IvValueSource = "market" | "model";
+
+export type IvSelectorMetric = "markIV" | "bidIV" | "askIV" | "ivSpread";
+
+export const IV_SELECTOR_METRICS: readonly IvSelectorMetric[] = [
+  "markIV",
+  "bidIV",
+  "askIV",
+  "ivSpread",
+];
+
+const MODEL_IV_METRIC_BY_SELECTOR: Record<IvSelectorMetric, HeatmapMetric> = {
+  markIV: "modelMarkIV",
+  bidIV: "modelBidIV",
+  askIV: "modelAskIV",
+  ivSpread: "modelIVSpread",
+};
+
+export function isIvSelectorMetric(
+  metric: HeatmapMetric
+): metric is IvSelectorMetric {
+  return IV_SELECTOR_METRICS.includes(metric as IvSelectorMetric);
+}
+
+export function isModelIvMetric(metric: HeatmapMetric): boolean {
+  return Object.values(MODEL_IV_METRIC_BY_SELECTOR).includes(metric);
+}
+
+export function resolveIvMetric(
+  metric: HeatmapMetric,
+  source: IvValueSource
+): HeatmapMetric {
+  return source === "model" && isIvSelectorMetric(metric)
+    ? MODEL_IV_METRIC_BY_SELECTOR[metric]
+    : metric;
+}
 export type ColorScaleMode = "quantile" | "log" | "symmetric";
 export type ExpiryBucket = "all" | "expired" | "0-2" | "3-7" | "8-30" | "31+";
 export type MoneynessFilter = "all" | "itm" | "otm";
@@ -227,10 +264,10 @@ export const METRIC_LABELS: Record<HeatmapMetric, string> = {
   gamma: "Gamma XAU",
   theta: "Theta USD/day",
   vega: "Vega USD/vol",
-  markIV: "Market Mark IV",
-  bidIV: "Market Bid IV",
-  askIV: "Market Ask IV",
-  ivSpread: "Market Bid Ask IV Spread",
+  markIV: "Mark IV",
+  bidIV: "Bid IV",
+  askIV: "Ask IV",
+  ivSpread: "Bid Ask IV Spread",
   modelMarkIV: "Model Mark IV",
   modelBidIV: "Model Bid IV",
   modelAskIV: "Model Ask IV",

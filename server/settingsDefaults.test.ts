@@ -12,7 +12,7 @@ describe("operator display defaults", () => {
       underlying: "GLD",
       moneyness: "otm",
       callPut: "combined",
-      metric: "modelIVSpread",
+      metric: "ivSpread",
       labelMode: "held",
       hoverPreset: "all",
     });

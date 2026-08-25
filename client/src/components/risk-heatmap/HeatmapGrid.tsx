@@ -25,6 +25,7 @@ import {
   type EnrichedRiskPosition,
   type HeatScale,
   type HeatmapMetric,
+  type IvValueSource,
   type MoneynessFilter,
 } from "@shared/riskHeatmap";
 import {
@@ -58,6 +59,7 @@ type Props = {
   expiries: string[];
   strikes: number[];
   metric: HeatmapMetric;
+  ivSource: IvValueSource;
   scale: HeatScale;
   importanceCutoff: number;
   lowImportanceCutoff: number;
@@ -126,11 +128,13 @@ const modelIvLabel = (
 function TooltipPosition({
   position,
   metric,
+  ivSource,
   preset,
   content,
 }: {
   position: EnrichedRiskPosition;
   metric: HeatmapMetric;
+  ivSource: IvValueSource;
   preset: HoverDataPreset;
   content: Props["hoverContent"];
 }) {
@@ -179,11 +183,16 @@ function TooltipPosition({
   if (preset === "market" || preset === "all") {
     if (content.qtyNotional && preset === "market")
       rows.push(["Qty", formatCompact(position.netQty)]);
-    if (content.markIv)
+    if (content.markIv) {
       rows.push([
-        "Mark / Market Mark IV",
-        `${formatPrice(position.markPrice)} ${position.premiumCurrency ?? ""} / ${formatCompact(position.markIV, "markIV")}`.trim(),
+        ivSource === "model" ? "Mark / Model Mark IV" : "Mark / Market Mark IV",
+        `${formatPrice(position.markPrice)} ${position.premiumCurrency ?? ""} / ${
+          ivSource === "model"
+            ? modelIvLabel(position.modelMarkIV, "modelMarkIV")
+            : formatCompact(position.markIV, "markIV")
+        }`.trim(),
       ]);
+    }
     if (content.bidAsk) {
       rows.push([
         "Bid / Ask",
@@ -198,41 +207,51 @@ function TooltipPosition({
         `$${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`,
       ]);
     }
-    if (content.bidAskIv)
-      rows.push(
-        [
+    if (content.bidAskIv) {
+      if (ivSource === "model") {
+        rows.push(
+          [
+            "Model Bid / Ask IV",
+            `${modelIvLabel(position.modelBidIV, "modelBidIV")} / ${modelIvLabel(position.modelAskIV, "modelAskIV")}`,
+          ],
+          [
+            "IV Reference Spot / As-of",
+            `${formatPrice(position.ivReferenceSpot)} / ${position.ivReferenceTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`,
+          ],
+          [
+            "Model Mark / Bid / Ask Status",
+            `${position.modelMarkIvStatus} / ${position.modelBidIvStatus} / ${position.modelAskIvStatus}`,
+          ]
+        );
+      } else {
+        rows.push([
           "Market Bid / Ask IV",
           `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")}`,
-        ],
-        [
-          "Model Mark / Bid / Ask IV",
-          `${modelIvLabel(position.modelMarkIV, "modelMarkIV")} / ${modelIvLabel(position.modelBidIV, "modelBidIV")} / ${modelIvLabel(position.modelAskIV, "modelAskIV")}`,
-        ],
-        [
-          "IV Reference Spot / As-of",
-          `${formatPrice(position.ivReferenceSpot)} / ${position.ivReferenceTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`,
-        ],
-        [
-          "Model Mark / Bid / Ask Status",
-          `${position.modelMarkIvStatus} / ${position.modelBidIvStatus} / ${position.modelAskIvStatus}`,
-        ]
-      );
-    if (content.ivSpread)
+        ]);
+      }
+    }
+    if (content.ivSpread) {
       rows.push(
-        ["Market IV spread", formatCompact(position.ivSpread, "ivSpread")],
-        [
-          "Model IV spread",
-          modelIvLabel(position.modelIVSpread, "modelIVSpread"),
-        ]
+        ivSource === "model"
+          ? [
+              "Model IV spread",
+              modelIvLabel(position.modelIVSpread, "modelIVSpread"),
+            ]
+          : ["Market IV spread", formatCompact(position.ivSpread, "ivSpread")]
       );
-    if (content.sourceQuote)
-      rows.push(
-        [
-          "Source / Quote As-of",
-          `${position.source ?? "MISSING"} / ${position.quoteTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`,
-        ],
-        ["IV Reference Source", position.ivReferenceSource ?? "MISSING"]
-      );
+    }
+    if (content.sourceQuote) {
+      rows.push([
+        "Source / Quote As-of",
+        `${position.source ?? "MISSING"} / ${position.quoteTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`,
+      ]);
+      if (ivSource === "model") {
+        rows.push([
+          "IV Reference Source",
+          position.ivReferenceSource ?? "MISSING",
+        ]);
+      }
+    }
   }
   if (preset === "pnl" || preset === "all") {
     if (content.qtyNotional && preset === "pnl")
@@ -513,6 +532,7 @@ export function HeatmapGrid({
   expiries,
   strikes,
   metric,
+  ivSource,
   scale,
   importanceCutoff,
   lowImportanceCutoff,
@@ -1036,6 +1056,7 @@ export function HeatmapGrid({
                             <TooltipPosition
                               position={position}
                               metric={metric}
+                              ivSource={ivSource}
                               preset={hoverPreset}
                               content={hoverContent}
                             />
