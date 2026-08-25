@@ -4,10 +4,18 @@ import {
   type PortfolioPosition,
   type PortfolioSettings,
 } from "@/lib/portfolio";
-import { finiteOrNull, type DataStatus, type RiskPosition } from "@shared/riskHeatmap";
+import {
+  finiteOrNull,
+  type DataStatus,
+  type RiskPosition,
+} from "@shared/riskHeatmap";
 import type { FormulaLike } from "@shared/marketTypes";
-import { DEFAULT_GLD_CONTRACT_MULTIPLIER, DEFAULT_XAUT_CONTRACT_MULTIPLIER } from "@shared/formulaEngine";
+import {
+  DEFAULT_GLD_CONTRACT_MULTIPLIER,
+  DEFAULT_XAUT_CONTRACT_MULTIPLIER,
+} from "@shared/formulaEngine";
 import { POSITION_SOURCE_DEFAULTS } from "@shared/positionExcel";
+import type { ModelIvStatus } from "@shared/impliedVolatility";
 
 export type LivePositionView = {
   position: PortfolioPosition;
@@ -42,42 +50,58 @@ export function buildLiveRiskPositions(args: {
     const multiplier = finiteOrNull(calculated.contractMultiplier);
     const importedOunces = finiteOrNull(position.multiplierXau);
     const ounces = finiteOrNull(calculated.spotScale);
-    const contractAdjusted = position.underlying === "GLD"
-      && importedMultiplier !== null
-      && Math.abs(importedMultiplier - DEFAULT_GLD_CONTRACT_MULTIPLIER) > 1e-9;
-    const xautNonStandard = position.underlying === "XAUT"
-      && importedMultiplier !== null
-      && Math.abs(importedMultiplier - DEFAULT_XAUT_CONTRACT_MULTIPLIER) > 1e-9;
+    const contractAdjusted =
+      position.underlying === "GLD" &&
+      importedMultiplier !== null &&
+      Math.abs(importedMultiplier - DEFAULT_GLD_CONTRACT_MULTIPLIER) > 1e-9;
+    const xautNonStandard =
+      position.underlying === "XAUT" &&
+      importedMultiplier !== null &&
+      Math.abs(importedMultiplier - DEFAULT_XAUT_CONTRACT_MULTIPLIER) > 1e-9;
     const sourceDefaults = POSITION_SOURCE_DEFAULTS[position.underlying];
     const positionTime = position.referenceDate
       ? `${position.referenceDate}T23:59:59.000Z`
       : position.updatedAt instanceof Date
-      ? position.updatedAt.toISOString()
-      : typeof position.updatedAt === "string" ? position.updatedAt : null;
+        ? position.updatedAt.toISOString()
+        : typeof position.updatedAt === "string"
+          ? position.updatedAt
+          : null;
     const riskPosition: RiskPosition = {
       id: String(position.id),
       venue: position.venue || sourceDefaults.venue,
       broker: position.venue || sourceDefaults.venue,
       account: position.sourceAccount || sourceDefaults.sourceAccount,
       underlying: position.underlying,
-      instrument: position.instrument || `${position.underlying}-${position.expiry.replaceAll("-", "")}-${position.strike}-${position.optionType === "call" ? "C" : "P"}`,
+      instrument:
+        position.instrument ||
+        `${position.underlying}-${position.expiry.replaceAll("-", "")}-${position.strike}-${position.optionType === "call" ? "C" : "P"}`,
       callPut: position.optionType,
       expiry: position.expiry,
       strike: Number(position.strike),
       netQty: Number(position.quantity),
-      contractMultiplier: multiplier !== null && Number.isFinite(multiplier) && multiplier > 0 ? multiplier : null,
-      deliverableSource: (contractAdjusted || xautNonStandard) && importedOunces !== null
-        ? `Adjusted contract / Excel actual · ${position.importSource ?? "position snapshot"}`
-        : position.underlying === "GLD" || position.underlying === "XAUT"
-          ? `Formula · ${position.underlying === "GLD" ? "gld_contract_multiplier + gld_xau_multiplier" : "xaut_contract_multiplier + xaut_xau_multiplier"}`
-          : importedOunces !== null
-            ? `Position snapshot · ${position.importSource ?? "manual"}`
-            : "fallback account setting / live ratio",
+      contractMultiplier:
+        multiplier !== null && Number.isFinite(multiplier) && multiplier > 0
+          ? multiplier
+          : null,
+      deliverableSource:
+        (contractAdjusted || xautNonStandard) && importedOunces !== null
+          ? `Adjusted contract / Excel actual · ${position.importSource ?? "position snapshot"}`
+          : position.underlying === "GLD" || position.underlying === "XAUT"
+            ? `Formula · ${position.underlying === "GLD" ? "gld_contract_multiplier + gld_xau_multiplier" : "xaut_contract_multiplier + xaut_xau_multiplier"}`
+            : importedOunces !== null
+              ? `Position snapshot · ${position.importSource ?? "manual"}`
+              : "fallback account setting / live ratio",
       contractAdjusted,
-      gldOzPerShare: position.underlying === "GLD" ? finiteOrNull(ounces) : null,
-      underlyingOzPerUnit: position.underlying !== "GLD" ? finiteOrNull(ounces) : null,
+      gldOzPerShare:
+        position.underlying === "GLD" ? finiteOrNull(ounces) : null,
+      underlyingOzPerUnit:
+        position.underlying !== "GLD" ? finiteOrNull(ounces) : null,
       markPrice: market.available ? finiteOrNull(market.markPrice) : null,
-      premiumCurrency: position.currency ?? (position.underlying === "XAUT" || position.underlying === "BTC" ? "USDT" : "USD"),
+      premiumCurrency:
+        position.currency ??
+        (position.underlying === "XAUT" || position.underlying === "BTC"
+          ? "USDT"
+          : "USD"),
       bid: market.bid1 > 0 ? market.bid1 : null,
       ask: market.ask1 > 0 ? market.ask1 : null,
       bidSize: market.bidSize,
@@ -85,9 +109,20 @@ export function buildLiveRiskPositions(args: {
       markIV: market.markIv > 0 ? market.markIv : null,
       bidIV: market.bidIv ?? null,
       askIV: market.askIv ?? null,
-      ivSpread: market.bidIv != null && market.askIv != null ? market.askIv - market.bidIv : null,
-      bidIvDerived: market.bidIvDerived,
-      askIvDerived: market.askIvDerived,
+      ivSpread:
+        market.bidIv != null && market.askIv != null
+          ? market.askIv - market.bidIv
+          : null,
+      modelMarkIV: market.modelMarkIv ?? null,
+      modelBidIV: market.modelBidIv ?? null,
+      modelAskIV: market.modelAskIv ?? null,
+      modelIVSpread: market.modelIvSpread ?? null,
+      modelMarkIvStatus: market.modelMarkIvStatus ?? "INVALID_INPUT",
+      modelBidIvStatus: market.modelBidIvStatus ?? "INVALID_INPUT",
+      modelAskIvStatus: market.modelAskIvStatus ?? "INVALID_INPUT",
+      ivReferenceSpot: market.ivReferenceSpot ?? null,
+      ivReferenceTime: market.ivReferenceTime ?? null,
+      ivReferenceSource: market.ivReferenceSource ?? null,
       unitDelta: finiteOrNull(market.delta),
       unitGamma: market.available ? finiteOrNull(market.gamma) : null,
       unitTheta: market.available ? finiteOrNull(market.theta) : null,
@@ -98,7 +133,9 @@ export function buildLiveRiskPositions(args: {
       totalVegaUSD: finiteOrNull(calculated.totalVega),
       MV: market.available ? finiteOrNull(calculated.currentValue) : null,
       entryPrice: finiteOrNull(position.entryPrice),
-      entryCost: finiteOrNull(position.importedEntryCost) ?? finiteOrNull(calculated.entryCost),
+      entryCost:
+        finiteOrNull(position.importedEntryCost) ??
+        finiteOrNull(calculated.entryCost),
       UPL: market.available ? finiteOrNull(calculated.pnl) : null,
       notionalSizeUSD: finiteOrNull(calculated.notionalSize),
       quoteTime: market.quoteTime,
@@ -110,7 +147,8 @@ export function buildLiveRiskPositions(args: {
       volume: finiteOrNull(position.optionVolume),
       availableUSD: null,
       buyingPower: null,
-      officialClose: position.underlying === "GLD" ? finiteOrNull(spots.gld) : null,
+      officialClose:
+        position.underlying === "GLD" ? finiteOrNull(spots.gld) : null,
       brokerCutoff: null,
       plannedAction: null,
       owner: null,
@@ -122,11 +160,38 @@ export function buildLiveRiskPositions(args: {
 }
 
 type ChainQuote = {
-  symbol: string; expiry: string; strike: number; optionType: "call" | "put"; markPrice: number; markIv: number;
-  bidIv?: number | null; askIv?: number | null; ivSpread?: number | null;
-  bidIvDerived?: boolean; askIvDerived?: boolean; expiryTimestamp?: number | null;
-  bid1Price: number; ask1Price: number; bid1Size?: number | null; ask1Size?: number | null; delta: number; gamma: number; theta: number; vega: number;
-  timestamp: number; source: string; openInterest?: number; volume?: number;
+  symbol: string;
+  expiry: string;
+  strike: number;
+  optionType: "call" | "put";
+  markPrice: number;
+  markIv: number;
+  bidIv?: number | null;
+  askIv?: number | null;
+  ivSpread?: number | null;
+  modelMarkIv?: number | null;
+  modelBidIv?: number | null;
+  modelAskIv?: number | null;
+  modelIvSpread?: number | null;
+  modelMarkIvStatus?: ModelIvStatus;
+  modelBidIvStatus?: ModelIvStatus;
+  modelAskIvStatus?: ModelIvStatus;
+  ivReferenceSpot?: number | null;
+  ivReferenceTimestamp?: number | null;
+  ivReferenceSource?: string | null;
+  expiryTimestamp?: number | null;
+  bid1Price: number;
+  ask1Price: number;
+  bid1Size?: number | null;
+  ask1Size?: number | null;
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  timestamp: number;
+  source: string;
+  openInterest?: number;
+  volume?: number;
   marketAvailable?: boolean;
   contractMultiplier?: number;
   premiumCurrency?: string;
@@ -137,58 +202,99 @@ export function buildChainRiskPositions(
   underlying: "GLD" | "XAUT" | "BTC" | "ETH",
   xauPerUnit: number | null,
   standardContractMultiplier?: number,
-  market?: { venue?: string; deliverableSource?: string },
+  market?: { venue?: string; deliverableSource?: string }
 ): RiskPosition[] {
   return quotes.map(quote => {
     const marketAvailable = quote.marketAvailable !== false;
-    return ({
-    id: `chain:${market?.venue ?? (underlying === "GLD" ? "Cboe / OPRA" : "Bybit")}:${quote.symbol}`,
-    venue: market?.venue ?? (underlying === "GLD" ? "Cboe / OPRA" : "Bybit"),
-    broker: "MARKET CHAIN",
-    account: "LISTED-NO-POSITION",
-    underlying,
-    instrument: quote.symbol,
-    callPut: quote.optionType,
-    expiry: quote.expiry,
-    strike: quote.strike,
-    netQty: 0,
-    contractMultiplier: quote.contractMultiplier ?? standardContractMultiplier ?? (underlying === "GLD" ? 100 : 1),
-    deliverableSource: market?.deliverableSource ?? (underlying === "GLD"
-      ? "OCC standard GLD contract display · verify adjusted deliverables with broker contract master"
-      : "Bybit V5 instrument specification"),
-    contractAdjusted: false,
-    gldOzPerShare: underlying === "GLD" ? xauPerUnit : null,
-    underlyingOzPerUnit: underlying !== "GLD" ? xauPerUnit : null,
-    markPrice: marketAvailable && quote.markPrice > 0 ? quote.markPrice : null,
-    premiumCurrency: quote.premiumCurrency ?? (underlying === "GLD" ? "USD" : "USDT"),
-    bid: quote.bid1Price > 0 ? quote.bid1Price : 0,
-    ask: quote.ask1Price > 0 ? quote.ask1Price : 0,
-    bidSize: quote.bid1Size ?? null,
-    askSize: quote.ask1Size ?? null,
-    markIV: marketAvailable && quote.markIv > 0 ? quote.markIv : null,
-    bidIV: quote.bidIv ?? null,
-    askIV: quote.askIv ?? null,
-    ivSpread: quote.ivSpread ?? null,
-    bidIvDerived: quote.bidIvDerived,
-    askIvDerived: quote.askIvDerived,
-    expiryTimestamp: quote.expiryTimestamp ?? null,
-    unitDelta: marketAvailable && Number.isFinite(quote.delta) ? quote.delta : null,
-    unitGamma: marketAvailable && Number.isFinite(quote.gamma) ? quote.gamma : null,
-    unitTheta: marketAvailable && Number.isFinite(quote.theta) ? quote.theta : null,
-    unitVega: marketAvailable && Number.isFinite(quote.vega) ? quote.vega : null,
-    totalDeltaXAU: null, totalGammaXAU: null, totalThetaUSD: null, totalVegaUSD: null,
-    MV: null, entryPrice: null, entryCost: null, UPL: null,
-    quoteTime: new Date(quote.timestamp).toISOString(),
-    positionTime: null,
-    source: quote.source,
-    dataStatus: !marketAvailable ? "MISSING" : quote.source.includes("Cboe") || Date.now() - quote.timestamp > 15 * 60_000 ? "STALE" : "LIVE",
-    positionKind: "listed",
-    openInterest: quote.openInterest ?? null,
-    volume: quote.volume ?? null,
-  });
+    return {
+      id: `chain:${market?.venue ?? (underlying === "GLD" ? "Cboe / OPRA" : "Bybit")}:${quote.symbol}`,
+      venue: market?.venue ?? (underlying === "GLD" ? "Cboe / OPRA" : "Bybit"),
+      broker: "MARKET CHAIN",
+      account: "LISTED-NO-POSITION",
+      underlying,
+      instrument: quote.symbol,
+      callPut: quote.optionType,
+      expiry: quote.expiry,
+      strike: quote.strike,
+      netQty: 0,
+      contractMultiplier:
+        quote.contractMultiplier ??
+        standardContractMultiplier ??
+        (underlying === "GLD" ? 100 : 1),
+      deliverableSource:
+        market?.deliverableSource ??
+        (underlying === "GLD"
+          ? "OCC standard GLD contract display · verify adjusted deliverables with broker contract master"
+          : "Bybit V5 instrument specification"),
+      contractAdjusted: false,
+      gldOzPerShare: underlying === "GLD" ? xauPerUnit : null,
+      underlyingOzPerUnit: underlying !== "GLD" ? xauPerUnit : null,
+      markPrice:
+        marketAvailable && quote.markPrice > 0 ? quote.markPrice : null,
+      premiumCurrency:
+        quote.premiumCurrency ?? (underlying === "GLD" ? "USD" : "USDT"),
+      bid: quote.bid1Price > 0 ? quote.bid1Price : 0,
+      ask: quote.ask1Price > 0 ? quote.ask1Price : 0,
+      bidSize: quote.bid1Size ?? null,
+      askSize: quote.ask1Size ?? null,
+      markIV: marketAvailable && quote.markIv > 0 ? quote.markIv : null,
+      bidIV: quote.bidIv ?? null,
+      askIV: quote.askIv ?? null,
+      ivSpread: quote.ivSpread ?? null,
+      modelMarkIV: quote.modelMarkIv ?? null,
+      modelBidIV: quote.modelBidIv ?? null,
+      modelAskIV: quote.modelAskIv ?? null,
+      modelIVSpread: quote.modelIvSpread ?? null,
+      modelMarkIvStatus: quote.modelMarkIvStatus ?? "INVALID_INPUT",
+      modelBidIvStatus: quote.modelBidIvStatus ?? "INVALID_INPUT",
+      modelAskIvStatus: quote.modelAskIvStatus ?? "INVALID_INPUT",
+      ivReferenceSpot: quote.ivReferenceSpot ?? null,
+      ivReferenceTime: quote.ivReferenceTimestamp
+        ? new Date(quote.ivReferenceTimestamp).toISOString()
+        : null,
+      ivReferenceSource: quote.ivReferenceSource ?? null,
+      expiryTimestamp: quote.expiryTimestamp ?? null,
+      unitDelta:
+        marketAvailable && Number.isFinite(quote.delta) ? quote.delta : null,
+      unitGamma:
+        marketAvailable && Number.isFinite(quote.gamma) ? quote.gamma : null,
+      unitTheta:
+        marketAvailable && Number.isFinite(quote.theta) ? quote.theta : null,
+      unitVega:
+        marketAvailable && Number.isFinite(quote.vega) ? quote.vega : null,
+      totalDeltaXAU: null,
+      totalGammaXAU: null,
+      totalThetaUSD: null,
+      totalVegaUSD: null,
+      MV: null,
+      entryPrice: null,
+      entryCost: null,
+      UPL: null,
+      quoteTime: new Date(quote.timestamp).toISOString(),
+      positionTime: null,
+      source: quote.source,
+      dataStatus: !marketAvailable
+        ? "MISSING"
+        : quote.source.includes("Cboe") ||
+            Date.now() - quote.timestamp > 15 * 60_000
+          ? "STALE"
+          : "LIVE",
+      positionKind: "listed",
+      openInterest: quote.openInterest ?? null,
+      volume: quote.volume ?? null,
+    };
   });
 }
 
-export function buildGldChainRiskPositions(quotes: ChainQuote[], gldOzPerShare: number | null, contractMultiplier?: number): RiskPosition[] {
-  return buildChainRiskPositions(quotes, "GLD", gldOzPerShare, contractMultiplier);
+export function buildGldChainRiskPositions(
+  quotes: ChainQuote[],
+  gldOzPerShare: number | null,
+  contractMultiplier?: number
+): RiskPosition[] {
+  return buildChainRiskPositions(
+    quotes,
+    "GLD",
+    gldOzPerShare,
+    contractMultiplier
+  );
 }

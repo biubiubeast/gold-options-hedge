@@ -6,7 +6,7 @@
 
 1. 清除短时行情缓存并重新联网读取 XAUT / GLD；
 2. 按 Underlying + Expiry + Strike + Call/Put 匹配每条仓位；
-3. 更新 Mark、Mark IV、Bid1、Ask1、Unit Delta/Gamma/Theta/Vega；
+3. 更新 Mark、市场源 Mark IV、Bid1、Ask1、Unit Delta/Gamma/Theta/Vega；
 4. 重新计算并写入 Market Value、UPL、Total Delta/Gamma/Theta/Vega；
 5. 保存 Source、Quote As-of、Refresh At、Open Interest、Volume 和 Status；
 6. 后续 Dashboard、仓位表、矩阵和 Excel 导出都使用本次持久化结果。
@@ -15,7 +15,7 @@
 
 ## 2. GLD / XAUT FULL CHAIN 热力图
 
-矩阵页 DATA 默认选择 `FULL OPTION CHAIN`，Call/Put 默认显示 `CALL`。Underlying 选择 GLD 时读取 Cboe 完整延迟链；选择 XAUT 时读取 Bybit V5 全部 Trading instruments，并将 ticker 的 Mark、Bid/Ask、Mark IV、Bid IV、Ask IV、Greeks、OI 与 Volume 合并。
+矩阵页 DATA 默认选择 `FULL OPTION CHAIN`。Underlying 选择 GLD 时读取 Cboe 完整延迟链；选择 XAUT 时读取 Bybit V5 全部 Trading instruments，并将 ticker 的 Mark、Bid/Ask、市场源 Mark/Bid/Ask IV、Greeks、OI 与 Volume 合并。
 
 - 青色边框：期权链已上市、可交易，但当前没有仓位；
 - 金色边框：当前有仓位；
@@ -23,8 +23,11 @@
 - 黄色横线：Spot 最近的 Strike；页面打开后自动居中到 Spot，右侧 `CENTER SPOT` 可再次定位；
 - 鼠标悬停：按 HOVER 选择展示 Risk / Market / PnL / All；
 - 点击格子：完整行情、Greeks、Source、As-of、OI/Volume 和 Roll 解释；
-- Metric 可切换 Unit Delta、Total Delta、Mark IV、Bid IV、Ask IV、Bid Ask IV Spread 等；IV 与 Delta 默认都使用低值蓝、高值红的 99 分位裁剪色标；上市未持仓合约的 Total 指标显示 MISSING，不伪造为 0。
-- Cboe 本身不直接返回 Bid IV / Ask IV，系统分别用 Bid/Ask 价格、GLD Spot、Strike、DTE 和 4.5% 默认无风险利率反解 Black-Scholes IV；无法满足无套利边界的报价显示 MISSING。
+- Metric 将 `Market Mark/Bid/Ask IV` 与 `Model Mark/Bid/Ask IV`、两套 IV Spread 分开。Market IV 只保留交易所/数据商直接发布的数值；Model IV 才是网站根据 Mark/Bid/Ask 价格反解的数值，旁边统一显示 `MODEL`。上市未持仓合约的 Total 指标显示 MISSING，不伪造为 0。
+- `Display Spot` 用于顶部现货、ATM 和矩阵定位，可以采用更新的独立现货报价；`IV Reference Spot` 必须与期权价格来自同一行情快照，只用于 Model IV。两者不再混用。
+- Cboe 完整链目前只直接返回 Mark IV，不返回原生 Bid IV / Ask IV。网站用该链同一快照的 `current_price`、Bid/Ask、Strike、到期时间和默认 4.5% 无风险利率分别反解 Model Bid/Ask IV；无法满足无套利边界时显示明确状态并保持 MISSING，不会退回 Display Spot，也不会把 Model IV 填入 Market IV。
+- Bybit ticker 本身直接提供 Mark/Bid/Ask IV；网站原样保存在 Market IV，并另外使用同一 ticker 的 `underlyingPrice` 计算 Model IV，便于比较交易所波动率与网站统一模型的差异。
+- Deribit 批量期权摘要直接提供 Mark IV 和 `underlying_price`，但不含 Bid/Ask IV；因此 Market Bid/Ask IV 保持 MISSING，Model IV 使用该摘要的同步参考现货反解。Deribit 单合约 ticker 虽能提供原生 Bid/Ask IV，但不用于当前完整链批量路径，避免为数千合约逐笔请求。
 - `− / +` 调整单格高度；`Fit All` 根据当前窗口和行列数压缩矩阵，目标是在无需上下滚动时查看全部 Strike/Expiry。极端多列时轴标签会简化，但 Hover/点击仍保留完整数据。
 - `Transpose` 只交换轴；`Strike ↑/↓` 独立控制行权价从低到高或从高到低，不会改变风险数据。
 
@@ -41,7 +44,7 @@
 导出文件包含两个工作表：
 
 - `期权持仓_XAUT_GLD`：保持原 29 列模板和 Total 行；Reference Date、Mark、Market Value、UPL、Total Greeks 使用最近一次刷新值；
-- `Market_Data_实时明细`：增加 Mark IV、Bid/Ask、Unit Greeks、OI、Volume、Source、Quote As-of、Refresh At 与 Status，便于审计行情来源和延迟。
+- `Market_Data_实时明细`：增加市场源 Mark IV、Bid/Ask、Unit Greeks、OI、Volume、Source、Quote As-of、Refresh At 与 Status，便于审计行情来源和延迟。Model IV 目前属于热力图的可重算模型字段，不覆盖持仓 Excel 的市场源 IV。
 
 ## 5. 行情延迟说明
 

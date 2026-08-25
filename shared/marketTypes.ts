@@ -42,9 +42,11 @@ export const DEFAULT_FORMULAS = [
     name: "d1",
     category: "greeks",
     expression: "(ln(S / K) + (r + sigma ^ 2 / 2) * T) / (sigma * sqrt(T))",
-    description: "Black-Scholes 中间变量 d1。S=现价，K=行权价，r=无风险利率，sigma=年化 IV，T=剩余年数。",
+    description:
+      "Black-Scholes 中间变量 d1。S=现价，K=行权价，r=无风险利率，sigma=年化 IV，T=剩余年数。",
     usedIn: "所有 Black-Scholes 价格、Delta、Gamma、Theta、Vega 公式",
-    defaultExpression: "(ln(S / K) + (r + sigma ^ 2 / 2) * T) / (sigma * sqrt(T))",
+    defaultExpression:
+      "(ln(S / K) + (r + sigma ^ 2 / 2) * T) / (sigma * sqrt(T))",
   },
   {
     name: "d2",
@@ -74,24 +76,30 @@ export const DEFAULT_FORMULAS = [
     name: "bid_ask_iv_inversion_enabled",
     category: "valuation",
     expression: "1",
-    description: "Bid/Ask IV 价格反解开关：大于 0 为开启，0 或负数为关闭。只在行情源缺少对应 IV、但存在有效 Bid/Ask 价格时启用；原生行情 IV 永远优先。",
-    usedIn: "市场热力图 Bid IV、Ask IV、Bid Ask IV Spread；公式页提供 ON/OFF 快捷切换",
+    description:
+      "Model IV 价格反解开关：大于 0 为开启，0 或负数为关闭。Model Mark/Bid/Ask IV 只使用与期权价格同一快照的 IV Reference Spot；市场原生 IV 保持独立，不会被覆盖。",
+    usedIn:
+      "市场热力图 Model Mark IV、Model Bid IV、Model Ask IV、Model Bid Ask IV Spread；公式页提供 ON/OFF 快捷切换",
     defaultExpression: "1",
   },
   {
     name: "iv_inversion_model_price_call",
     category: "valuation",
     expression: "black_scholes_price_call",
-    description: "Call 的 IV 反解模型价格。系统数值求解 sigma，使本公式结果等于 Bid 或 Ask 期权价格；可编辑以替换估值模型组件。变量：S、K、T、r、sigma。",
-    usedIn: "缺失 Call Bid/Ask IV 时的价格反解；影响热力图 Bid IV、Ask IV 与 IV Spread",
+    description:
+      "Call 的 Model IV 反解价格公式。系统分别用 Mark/Bid/Ask 价格求解 sigma；S 固定为同一行情快照的 IV Reference Spot。变量：S、K、T、r、sigma。",
+    usedIn:
+      "Call 的 Model Mark/Bid/Ask IV 与 Model IV Spread；不覆盖市场原生 IV",
     defaultExpression: "black_scholes_price_call",
   },
   {
     name: "iv_inversion_model_price_put",
     category: "valuation",
     expression: "black_scholes_price_put",
-    description: "Put 的 IV 反解模型价格。系统数值求解 sigma，使本公式结果等于 Bid 或 Ask 期权价格；可编辑以替换估值模型组件。变量：S、K、T、r、sigma。",
-    usedIn: "缺失 Put Bid/Ask IV 时的价格反解；影响热力图 Bid IV、Ask IV 与 IV Spread",
+    description:
+      "Put 的 Model IV 反解价格公式。系统分别用 Mark/Bid/Ask 价格求解 sigma；S 固定为同一行情快照的 IV Reference Spot。变量：S、K、T、r、sigma。",
+    usedIn:
+      "Put 的 Model Mark/Bid/Ask IV 与 Model IV Spread；不覆盖市场原生 IV",
     defaultExpression: "black_scholes_price_put",
   },
   {
@@ -121,18 +129,22 @@ export const DEFAULT_FORMULAS = [
   {
     name: "black_scholes_theta_call",
     category: "greeks",
-    expression: "(-(S * PDF(d1) * sigma) / (2 * sqrt(T)) - r * K * exp(-r * T) * N(d2)) / 365",
+    expression:
+      "(-(S * PDF(d1) * sigma) / (2 * sqrt(T)) - r * K * exp(-r * T) * N(d2)) / 365",
     description: "欧式看涨期权每日 Theta。",
     usedIn: "GLD 估算、详情和 Dashboard",
-    defaultExpression: "(-(S * PDF(d1) * sigma) / (2 * sqrt(T)) - r * K * exp(-r * T) * N(d2)) / 365",
+    defaultExpression:
+      "(-(S * PDF(d1) * sigma) / (2 * sqrt(T)) - r * K * exp(-r * T) * N(d2)) / 365",
   },
   {
     name: "black_scholes_theta_put",
     category: "greeks",
-    expression: "(-(S * PDF(d1) * sigma) / (2 * sqrt(T)) + r * K * exp(-r * T) * N(-d2)) / 365",
+    expression:
+      "(-(S * PDF(d1) * sigma) / (2 * sqrt(T)) + r * K * exp(-r * T) * N(-d2)) / 365",
     description: "欧式看跌期权每日 Theta。",
     usedIn: "GLD 估算、详情和 Dashboard",
-    defaultExpression: "(-(S * PDF(d1) * sigma) / (2 * sqrt(T)) + r * K * exp(-r * T) * N(-d2)) / 365",
+    defaultExpression:
+      "(-(S * PDF(d1) * sigma) / (2 * sqrt(T)) + r * K * exp(-r * T) * N(-d2)) / 365",
   },
   {
     name: "black_scholes_vega",
@@ -146,7 +158,8 @@ export const DEFAULT_FORMULAS = [
     name: "entry_cost",
     category: "valuation",
     expression: "entryPrice * quantity * contractMultiplier + fee",
-    description: "历史成本（USD/USDT）= 成交权利金 × 数量 × 合约乘数 + 手续费。GLD 标准合约默认乘数为 100。",
+    description:
+      "历史成本（USD/USDT）= 成交权利金 × 数量 × 合约乘数 + 手续费。GLD 标准合约默认乘数为 100。",
     usedIn: "详情页与 Dashboard",
     defaultExpression: "entryPrice * quantity * contractMultiplier + fee",
   },
@@ -162,32 +175,40 @@ export const DEFAULT_FORMULAS = [
     name: "notional_size",
     category: "valuation",
     expression: "quantity * contractMultiplier * underlyingPrice",
-    description: "Signed 标的名义金额（USD/USDT）= Net Qty × 实际合约乘数/Deliverable × 标的现价。正数为净多、负数为净空；热力图颜色使用其绝对值。它不是期权 Market Value。",
-    usedIn: "仓位管理 Notional USD、矩阵 Qty/Notional metric、方格/Expiry Hover 与完整详情",
+    description:
+      "Signed 标的名义金额（USD/USDT）= Net Qty × 实际合约乘数/Deliverable × 标的现价。正数为净多、负数为净空；热力图颜色使用其绝对值。它不是期权 Market Value。",
+    usedIn:
+      "仓位管理 Notional USD、矩阵 Qty/Notional metric、方格/Expiry Hover 与完整详情",
     defaultExpression: "quantity * contractMultiplier * underlyingPrice",
   },
   {
     name: "bid_dollar_notional",
     category: "valuation",
     expression: "bidPrice * bidSize * contractMultiplier",
-    description: "Bid 一档美元名义深度 = Bid1 Price × Bid1 Size × Contract Multiplier。它衡量买盘第一档可成交的期权权利金金额，不使用持仓 Qty。",
-    usedIn: "市场热力图 Bid Dollar Notional metric、方格 Hover 与完整详情；任一输入缺失时显示 MISSING 且不参与色标",
+    description:
+      "Bid 一档美元名义深度 = Bid1 Price × Bid1 Size × Contract Multiplier。它衡量买盘第一档可成交的期权权利金金额，不使用持仓 Qty。",
+    usedIn:
+      "市场热力图 Bid Dollar Notional metric、方格 Hover 与完整详情；任一输入缺失时显示 MISSING 且不参与色标",
     defaultExpression: "bidPrice * bidSize * contractMultiplier",
   },
   {
     name: "ask_dollar_notional",
     category: "valuation",
     expression: "askPrice * askSize * contractMultiplier",
-    description: "Ask 一档美元名义深度 = Ask1 Price × Ask1 Size × Contract Multiplier。它衡量卖盘第一档可成交的期权权利金金额，不使用持仓 Qty。",
-    usedIn: "市场热力图 Ask Dollar Notional metric、方格 Hover 与完整详情；任一输入缺失时显示 MISSING 且不参与色标",
+    description:
+      "Ask 一档美元名义深度 = Ask1 Price × Ask1 Size × Contract Multiplier。它衡量卖盘第一档可成交的期权权利金金额，不使用持仓 Qty。",
+    usedIn:
+      "市场热力图 Ask Dollar Notional metric、方格 Hover 与完整详情；任一输入缺失时显示 MISSING 且不参与色标",
     defaultExpression: "askPrice * askSize * contractMultiplier",
   },
   {
     name: "bid_ask_dollar_notional",
     category: "valuation",
     expression: "bidDollarNotional + askDollarNotional",
-    description: "Bid+Ask 一档美元名义深度 = Bid Dollar Notional + Ask Dollar Notional，用于比较合约盘口两侧总可见深度。",
-    usedIn: "市场热力图 Bid+Ask Dollar Notional metric、方格 Hover 与完整详情；任一侧缺失时显示 MISSING 且不参与色标",
+    description:
+      "Bid+Ask 一档美元名义深度 = Bid Dollar Notional + Ask Dollar Notional，用于比较合约盘口两侧总可见深度。",
+    usedIn:
+      "市场热力图 Bid+Ask Dollar Notional metric、方格 Hover 与完整详情；任一侧缺失时显示 MISSING 且不参与色标",
     defaultExpression: "bidDollarNotional + askDollarNotional",
   },
   {
@@ -202,63 +223,78 @@ export const DEFAULT_FORMULAS = [
     name: "gld_xau_multiplier",
     category: "conversion",
     expression: "0.092",
-    description: "标准 GLD 每股对应的 XAU 盎司量纲。默认 GLD/XAU = 0.092；表达式必须返回正数。标准 GLD 仓位统一使用该值，调整合约仍优先使用逐仓位实际 deliverable。",
-    usedIn: "GLD Multiplier XAU、XAU Eq Qty、Total Delta XAU、Total Gamma XAU、市场热力图、Dashboard、仓位管理、市场数据刷新与 Excel 导出",
+    description:
+      "标准 GLD 每股对应的 XAU 盎司量纲。默认 GLD/XAU = 0.092；表达式必须返回正数。标准 GLD 仓位统一使用该值，调整合约仍优先使用逐仓位实际 deliverable。",
+    usedIn:
+      "GLD Multiplier XAU、XAU Eq Qty、Total Delta XAU、Total Gamma XAU、市场热力图、Dashboard、仓位管理、市场数据刷新与 Excel 导出",
     defaultExpression: "0.092",
   },
   {
     name: "xaut_xau_multiplier",
     category: "conversion",
     expression: "1",
-    description: "标准 XAUT 每单位对应的 XAU 量纲。默认 XAUT/XAU = 1；表达式必须返回不依赖市场变量的正数。非标准合约仍优先采用逐仓位实际规格。",
-    usedIn: "XAUT Multiplier XAU、XAU Eq Qty、Total Delta XAU、Total Gamma XAU、市场热力图、Dashboard、仓位管理、市场数据刷新与 Excel 导出",
+    description:
+      "标准 XAUT 每单位对应的 XAU 量纲。默认 XAUT/XAU = 1；表达式必须返回不依赖市场变量的正数。非标准合约仍优先采用逐仓位实际规格。",
+    usedIn:
+      "XAUT Multiplier XAU、XAU Eq Qty、Total Delta XAU、Total Gamma XAU、市场热力图、Dashboard、仓位管理、市场数据刷新与 Excel 导出",
     defaultExpression: "1",
   },
   {
     name: "gld_contract_multiplier",
     category: "conversion",
     expression: "100",
-    description: "标准 GLD 期权每张对应的 GLD 股数，默认 100 shares。表达式必须返回不依赖市场变量的正数；调整合约继续使用逐仓位实际 deliverable。",
-    usedIn: "GLD Entry Value、Entry Cost、Market Value、UPL、Notional、全部 Total Greeks、市场热力图、仓位管理、市场刷新与 Excel 导出",
+    description:
+      "标准 GLD 期权每张对应的 GLD 股数，默认 100 shares。表达式必须返回不依赖市场变量的正数；调整合约继续使用逐仓位实际 deliverable。",
+    usedIn:
+      "GLD Entry Value、Entry Cost、Market Value、UPL、Notional、全部 Total Greeks、市场热力图、仓位管理、市场刷新与 Excel 导出",
     defaultExpression: "100",
   },
   {
     name: "xaut_contract_multiplier",
     category: "conversion",
     expression: "1",
-    description: "标准 XAUT 期权每张对应的 XAUT 数量，默认 1 XAUT。表达式必须返回不依赖市场变量的正数；非标准合约仍优先采用逐仓位实际规格。",
-    usedIn: "XAUT Entry Value、Entry Cost、Market Value、UPL、Notional、全部 Total Greeks、市场热力图、仓位管理、市场刷新与 Excel 导出",
+    description:
+      "标准 XAUT 期权每张对应的 XAUT 数量，默认 1 XAUT。表达式必须返回不依赖市场变量的正数；非标准合约仍优先采用逐仓位实际规格。",
+    usedIn:
+      "XAUT Entry Value、Entry Cost、Market Value、UPL、Notional、全部 Total Greeks、市场热力图、仓位管理、市场刷新与 Excel 导出",
     defaultExpression: "1",
   },
   {
     name: "spot_scale",
     category: "conversion",
     expression: "underlyingPrice / xauUsdPrice",
-    description: "BTC 等未配置固定量纲公式的标的，每变动 1 美元相对于 XAU/USD 每变动 1 美元的动态比例。标准 GLD 使用 gld_xau_multiplier；标准 XAUT 使用 xaut_xau_multiplier。",
-    usedIn: "BTC Delta、Gamma 的 XAU/USD 统一量纲 fallback；GLD/XAUT 分别使用各自固定量纲公式",
+    description:
+      "BTC 等未配置固定量纲公式的标的，每变动 1 美元相对于 XAU/USD 每变动 1 美元的动态比例。标准 GLD 使用 gld_xau_multiplier；标准 XAUT 使用 xaut_xau_multiplier。",
+    usedIn:
+      "BTC Delta、Gamma 的 XAU/USD 统一量纲 fallback；GLD/XAUT 分别使用各自固定量纲公式",
     defaultExpression: "underlyingPrice / xauUsdPrice",
   },
   {
     name: "total_delta_xau",
     category: "conversion",
     expression: "delta * quantity * contractMultiplier * spotScale",
-    description: "组合 XAU Delta = Unit Delta × Net Qty × Contract Multiplier × spotScale。标准 GLD/XAUT 分别使用 gld_xau_multiplier、xaut_xau_multiplier；合约乘数分别使用 gld_contract_multiplier、xaut_contract_multiplier。",
-    usedIn: "Dashboard、仓位管理、市场热力图、详情页、市场刷新持久化与 Excel 导出的 Total Delta XAU",
+    description:
+      "组合 XAU Delta = Unit Delta × Net Qty × Contract Multiplier × spotScale。标准 GLD/XAUT 分别使用 gld_xau_multiplier、xaut_xau_multiplier；合约乘数分别使用 gld_contract_multiplier、xaut_contract_multiplier。",
+    usedIn:
+      "Dashboard、仓位管理、市场热力图、详情页、市场刷新持久化与 Excel 导出的 Total Delta XAU",
     defaultExpression: "delta * quantity * contractMultiplier * spotScale",
   },
   {
     name: "total_gamma_xau",
     category: "conversion",
     expression: "gamma * quantity * contractMultiplier * spotScale ^ 2",
-    description: "组合 XAU Gamma = Unit Gamma × Net Qty × Contract Multiplier × spotScale²。标准 GLD/XAUT 分别使用各自 XAU Multiplier；二阶敏感度必须使用比例平方。",
-    usedIn: "Dashboard、仓位管理、市场热力图、详情页、市场刷新持久化与 Excel 导出的 Total Gamma XAU",
+    description:
+      "组合 XAU Gamma = Unit Gamma × Net Qty × Contract Multiplier × spotScale²。标准 GLD/XAUT 分别使用各自 XAU Multiplier；二阶敏感度必须使用比例平方。",
+    usedIn:
+      "Dashboard、仓位管理、市场热力图、详情页、市场刷新持久化与 Excel 导出的 Total Gamma XAU",
     defaultExpression: "gamma * quantity * contractMultiplier * spotScale ^ 2",
   },
   {
     name: "total_theta",
     category: "greeks",
     expression: "theta * quantity * contractMultiplier",
-    description: "组合每日 Theta（USD/USDT）。Theta 已是货币/日量纲，不乘 GLD/XAU 比例。",
+    description:
+      "组合每日 Theta（USD/USDT）。Theta 已是货币/日量纲，不乘 GLD/XAU 比例。",
     usedIn: "Dashboard 总 Theta 与详情页 Total Theta",
     defaultExpression: "theta * quantity * contractMultiplier",
   },
@@ -266,7 +302,8 @@ export const DEFAULT_FORMULAS = [
     name: "total_vega",
     category: "greeks",
     expression: "vega * quantity * contractMultiplier",
-    description: "组合 Vega（IV 每变化 1 个百分点对应的 USD/USDT 价值变化）。Vega 已是货币量纲，不乘 GLD/XAU 比例。",
+    description:
+      "组合 Vega（IV 每变化 1 个百分点对应的 USD/USDT 价值变化）。Vega 已是货币量纲，不乘 GLD/XAU 比例。",
     usedIn: "Dashboard 总 Vega 与详情页 Total Vega",
     defaultExpression: "vega * quantity * contractMultiplier",
   },

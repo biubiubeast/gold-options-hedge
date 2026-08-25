@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_HEATMAP_VIEW, DEFAULT_PORTFOLIO_SETTINGS, DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT } from "../client/src/lib/portfolio";
+import {
+  DEFAULT_HEATMAP_VIEW,
+  DEFAULT_PORTFOLIO_SETTINGS,
+  DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT,
+} from "../client/src/lib/portfolio";
 import { DEFAULT_VIEWER_PAGE_PERMISSIONS } from "../shared/access";
 
 describe("operator display defaults", () => {
@@ -8,7 +12,7 @@ describe("operator display defaults", () => {
       underlying: "GLD",
       moneyness: "otm",
       callPut: "combined",
-      metric: "ivSpread",
+      metric: "modelIVSpread",
       labelMode: "held",
       hoverPreset: "all",
     });
@@ -47,7 +51,9 @@ describe("operator display defaults", () => {
       cumulativeRealizedPnlCard: false,
       importStatusCard: false,
     });
-    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.hover.pnl).toBe(false);
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.hover.pnl).toBe(
+      false
+    );
   });
 
   it("keeps heatmap click-through detail dialogs disabled by default", () => {
@@ -58,11 +64,21 @@ describe("operator display defaults", () => {
   });
 
   it("hides the heatmap chain and position-only hint rows by default", () => {
-    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.chainStatusBanner).toBe(false);
-    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.positionOnlyMetricBanner).toBe(false);
-    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.chainContractCount).toBe(false);
-    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapChainContractCountLabel).toContain("Call + Put");
-    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapChainContractCountLabel).toContain("筛选前");
+    expect(
+      DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.chainStatusBanner
+    ).toBe(false);
+    expect(
+      DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.positionOnlyMetricBanner
+    ).toBe(false);
+    expect(
+      DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.chainContractCount
+    ).toBe(false);
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapChainContractCountLabel).toContain(
+      "Call + Put"
+    );
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapChainContractCountLabel).toContain(
+      "筛选前"
+    );
   });
 
   it("hides the ALL underlying option by default", () => {
@@ -78,7 +94,9 @@ describe("operator display defaults", () => {
   });
 
   it("shows the ITM/OTM filter with all three choices enabled by default", () => {
-    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleFilters.moneyness).toBe(true);
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleFilters.moneyness).toBe(
+      true
+    );
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.moneyness).toEqual({
       all: true,
       itm: true,

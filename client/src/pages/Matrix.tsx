@@ -1,18 +1,63 @@
-import { DecisionCards, type DecisionCardModel } from "@/components/risk-heatmap/DecisionCards";
-import { ExpiryPanel, ScenarioStrip } from "@/components/risk-heatmap/ExpiryScenario";
-import { HeatmapGrid, type CellLabelMode, type HeatmapCellModel, type HoverDataPreset } from "@/components/risk-heatmap/HeatmapGrid";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  DecisionCards,
+  type DecisionCardModel,
+} from "@/components/risk-heatmap/DecisionCards";
+import {
+  ExpiryPanel,
+  ScenarioStrip,
+} from "@/components/risk-heatmap/ExpiryScenario";
+import {
+  HeatmapGrid,
+  type CellLabelMode,
+  type HeatmapCellModel,
+  type HoverDataPreset,
+} from "@/components/risk-heatmap/HeatmapGrid";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { trpc } from "@/lib/trpc";
-import { DEFAULT_HEATMAP_VIEW, DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT, getPositionMarketData, type HeatmapUnderlyingSelection, type MarketSnapshot, type PortfolioPosition, type PortfolioSettings } from "@/lib/portfolio";
-import { buildChainRiskPositions, buildGldChainRiskPositions, buildLiveRiskPositions } from "@/lib/riskHeatmapAdapter";
+import {
+  DEFAULT_HEATMAP_VIEW,
+  DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT,
+  getPositionMarketData,
+  type HeatmapUnderlyingSelection,
+  type MarketSnapshot,
+  type PortfolioPosition,
+  type PortfolioSettings,
+} from "@/lib/portfolio";
+import {
+  buildChainRiskPositions,
+  buildGldChainRiskPositions,
+  buildLiveRiskPositions,
+} from "@/lib/riskHeatmapAdapter";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
-import { parseStoredTargetOptions, TARGET_OPTION_STORAGE_KEY, targetCellKeysForScope, targetOptionScope, targetOptionStorageKey, type TargetOptionMode } from "@/lib/heatmapTargets";
+import {
+  parseStoredTargetOptions,
+  TARGET_OPTION_STORAGE_KEY,
+  targetCellKeysForScope,
+  targetOptionScope,
+  targetOptionStorageKey,
+  type TargetOptionMode,
+} from "@/lib/heatmapTargets";
 import { MARKET_QUERY_OPTIONS } from "@/lib/marketPolling";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { resolveHeatmapSpots } from "@/lib/spotSelection";
-import { resolveGldContractMultiplier, resolveGldXauMultiplier, resolveXautContractMultiplier, resolveXautXauMultiplier } from "@shared/formulaEngine";
+import {
+  resolveGldContractMultiplier,
+  resolveGldXauMultiplier,
+  resolveXautContractMultiplier,
+  resolveXautXauMultiplier,
+} from "@shared/formulaEngine";
 import {
   CENTERED_METRICS,
   HELD_ONLY_HEATMAP_METRICS,
@@ -44,7 +89,20 @@ import {
   type MoneynessFilter,
   type RiskUnderlying,
 } from "@shared/riskHeatmap";
-import { ArrowLeftRight, ArrowUpDown, Eye, EyeOff, Info, Loader2, LocateFixed, Maximize2, Minimize2, Minus, Plus, ScanLine } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ArrowUpDown,
+  Eye,
+  EyeOff,
+  Info,
+  Loader2,
+  LocateFixed,
+  Maximize2,
+  Minimize2,
+  Minus,
+  Plus,
+  ScanLine,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 type DatasetMode = "chain" | "live" | "mock100" | "mock200";
@@ -63,13 +121,33 @@ const MARKET_LABELS: Record<HeatmapUnderlyingSelection, string> = {
   ETH_DERIBIT: "ETH/USD - Deribit",
   all: "ALL MARKETS",
 };
-const percentageMetrics = new Set<HeatmapMetric>(["markIV", "bidIV", "askIV", "ivSpread", "distanceToStrike"]);
+const percentageMetrics = new Set<HeatmapMetric>([
+  "markIV",
+  "bidIV",
+  "askIV",
+  "ivSpread",
+  "modelMarkIV",
+  "modelBidIV",
+  "modelAskIV",
+  "modelIVSpread",
+  "distanceToStrike",
+]);
 
-const statusSeverity: Record<DataStatus, number> = { LIVE: 0, WARN: 1, STALE: 2, MISSING: 3, FAIL: 4 };
+const statusSeverity: Record<DataStatus, number> = {
+  LIVE: 0,
+  WARN: 1,
+  STALE: 2,
+  MISSING: 3,
+  FAIL: 4,
+};
 
 function initialDataset(): DatasetMode {
   const requested = new URLSearchParams(window.location.search).get("mock");
-  return requested === "200" ? "mock200" : requested === "100" ? "mock100" : "chain";
+  return requested === "200"
+    ? "mock200"
+    : requested === "100"
+      ? "mock100"
+      : "chain";
 }
 
 function formatHongKongAsOf(value: Date | string | number) {
@@ -78,11 +156,20 @@ function formatHongKongAsOf(value: Date | string | number) {
   return `${date.toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Hong_Kong" })} HKT (UTC+8)`;
 }
 
-function ivWithSource(value: number | null, metric: "bidIV" | "askIV", derived?: boolean) {
-  return `${formatCompact(value, metric)}${derived && value !== null ? " CALC" : ""}`;
+function modelIvLabel(
+  value: number | null,
+  metric: "modelMarkIV" | "modelBidIV" | "modelAskIV" | "modelIVSpread"
+) {
+  return `${formatCompact(value, metric)}${value !== null ? " MODEL" : ""}`;
 }
 
-function NativeSelect({ label, value, options, onChange, className = "" }: {
+function NativeSelect({
+  label,
+  value,
+  options,
+  onChange,
+  className = "",
+}: {
   label: string;
   value: string;
   options: SelectOption[];
@@ -90,7 +177,9 @@ function NativeSelect({ label, value, options, onChange, className = "" }: {
   className?: string;
 }) {
   return (
-    <label className={`grid min-w-0 grid-cols-[auto_1fr] items-center gap-1 text-[9px] text-muted-foreground ${className}`}>
+    <label
+      className={`grid min-w-0 grid-cols-[auto_1fr] items-center gap-1 text-[9px] text-muted-foreground ${className}`}
+    >
       <span className="whitespace-nowrap">{label}</span>
       <select
         aria-label={label}
@@ -98,7 +187,11 @@ function NativeSelect({ label, value, options, onChange, className = "" }: {
         onChange={event => onChange(event.target.value)}
         className="h-6 min-w-0 border border-border/70 bg-background px-1 font-mono text-[9px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
       >
-        {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+        {options.map(option => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
       </select>
     </label>
   );
@@ -110,180 +203,707 @@ function cellKey(position: Pick<EnrichedRiskPosition, "expiry" | "strike">) {
 
 function normalizedVenue(venue: string): "OPRA" | "Bybit" | "Deribit" {
   if (venue.toLowerCase().includes("deribit")) return "Deribit";
-  if (venue.toLowerCase().includes("bybit") || venue.toLowerCase().includes("signalplus")) return "Bybit";
+  if (
+    venue.toLowerCase().includes("bybit") ||
+    venue.toLowerCase().includes("signalplus")
+  )
+    return "Bybit";
   return "OPRA";
 }
 
-function contractKey(position: Pick<EnrichedRiskPosition, "underlying" | "expiry" | "strike" | "callPut" | "venue">) {
+function contractKey(
+  position: Pick<
+    EnrichedRiskPosition,
+    "underlying" | "expiry" | "strike" | "callPut" | "venue"
+  >
+) {
   return `${position.underlying}|${normalizedVenue(position.venue)}|${position.expiry}|${canonicalStrike(position.strike)}|${position.callPut}`;
 }
 
-function selectedRiskUnderlying(selection: HeatmapUnderlyingSelection): RiskUnderlying | "all" {
+function selectedRiskUnderlying(
+  selection: HeatmapUnderlyingSelection
+): RiskUnderlying | "all" {
   if (selection === "BTC_DERIBIT") return "BTC";
   if (selection === "ETH_BYBIT" || selection === "ETH_DERIBIT") return "ETH";
   return selection;
 }
 
-function marketMatchesSelection(position: Pick<EnrichedRiskPosition, "underlying" | "venue">, selection: HeatmapUnderlyingSelection): boolean {
+function marketMatchesSelection(
+  position: Pick<EnrichedRiskPosition, "underlying" | "venue">,
+  selection: HeatmapUnderlyingSelection
+): boolean {
   if (selection === "all") return true;
   const riskUnderlying = selectedRiskUnderlying(selection);
   if (position.underlying !== riskUnderlying) return false;
-  if (selection === "BTC_DERIBIT" || selection === "ETH_DERIBIT") return normalizedVenue(position.venue) === "Deribit";
-  if (selection === "BTC" || selection === "ETH_BYBIT" || selection === "XAUT") return normalizedVenue(position.venue) === "Bybit";
+  if (selection === "BTC_DERIBIT" || selection === "ETH_DERIBIT")
+    return normalizedVenue(position.venue) === "Deribit";
+  if (selection === "BTC" || selection === "ETH_BYBIT" || selection === "XAUT")
+    return normalizedVenue(position.venue) === "Bybit";
   return normalizedVenue(position.venue) === "OPRA";
 }
 
-function bestBy(positions: EnrichedRiskPosition[], value: (position: EnrichedRiskPosition) => number | null, absolute = true) {
+function bestBy(
+  positions: EnrichedRiskPosition[],
+  value: (position: EnrichedRiskPosition) => number | null,
+  absolute = true
+) {
   return positions.reduce<EnrichedRiskPosition | null>((best, position) => {
     const candidate = value(position);
     if (candidate === null || !Number.isFinite(candidate)) return best;
     if (!best) return position;
     const current = value(best);
     if (current === null) return position;
-    return (absolute ? Math.abs(candidate) > Math.abs(current) : candidate > current) ? position : best;
+    return (
+      absolute ? Math.abs(candidate) > Math.abs(current) : candidate > current
+    )
+      ? position
+      : best;
   }, null);
 }
 
-function buildDecisionCards(positions: EnrichedRiskPosition[]): DecisionCardModel[] {
+function buildDecisionCards(
+  positions: EnrichedRiskPosition[]
+): DecisionCardModel[] {
   const maxUnit = bestBy(positions, position => position.unitDelta);
   const maxTotal = bestBy(positions, position => position.totalDeltaXAU);
-  const maxThetaBurn = positions.reduce<EnrichedRiskPosition | null>((best, position) => {
-    if (position.totalThetaUSD === null) return best;
-    if (!best || best.totalThetaUSD === null || position.totalThetaUSD < best.totalThetaUSD) return position;
-    return best;
-  }, null);
+  const maxThetaBurn = positions.reduce<EnrichedRiskPosition | null>(
+    (best, position) => {
+      if (position.totalThetaUSD === null) return best;
+      if (
+        !best ||
+        best.totalThetaUSD === null ||
+        position.totalThetaUSD < best.totalThetaUSD
+      )
+        return position;
+      return best;
+    },
+    null
+  );
   const maxVega = bestBy(positions, position => position.totalVegaUSD);
-  const nearest = positions.reduce<EnrichedRiskPosition | null>((best, position) => !best || position.dte < best.dte ? position : best, null);
-  const roll = bestBy(positions, position => position.rollPriority.total, false);
-  const dataError = positions.reduce<EnrichedRiskPosition | null>((worst, position) => {
-    if (!worst) return position;
-    const severityDiff = statusSeverity[position.dataStatus] - statusSeverity[worst.dataStatus];
-    if (severityDiff > 0) return position;
-    if (severityDiff === 0 && (position.quoteAgeSeconds ?? -1) > (worst.quoteAgeSeconds ?? -1)) return position;
-    return worst;
-  }, null);
-  const card = (key: string, label: string, position: EnrichedRiskPosition | null, value: string, detail?: string): DecisionCardModel => ({
+  const nearest = positions.reduce<EnrichedRiskPosition | null>(
+    (best, position) => (!best || position.dte < best.dte ? position : best),
+    null
+  );
+  const roll = bestBy(
+    positions,
+    position => position.rollPriority.total,
+    false
+  );
+  const dataError = positions.reduce<EnrichedRiskPosition | null>(
+    (worst, position) => {
+      if (!worst) return position;
+      const severityDiff =
+        statusSeverity[position.dataStatus] - statusSeverity[worst.dataStatus];
+      if (severityDiff > 0) return position;
+      if (
+        severityDiff === 0 &&
+        (position.quoteAgeSeconds ?? -1) > (worst.quoteAgeSeconds ?? -1)
+      )
+        return position;
+      return worst;
+    },
+    null
+  );
+  const card = (
+    key: string,
+    label: string,
+    position: EnrichedRiskPosition | null,
+    value: string,
+    detail?: string
+  ): DecisionCardModel => ({
     key,
     label,
     value,
-    detail: detail ?? (position ? positionLabel(position) : "No valid position"),
+    detail:
+      detail ?? (position ? positionLabel(position) : "No valid position"),
     status: position?.dataStatus ?? "MISSING",
     targetCellKey: position ? cellKey(position) : null,
   });
   return [
-    card("unit", "Max Unit Delta", maxUnit, formatCompact(maxUnit?.unitDelta ?? null, "unitDelta"), maxUnit ? positionLabel(maxUnit) : undefined),
-    card("total", "Max Total Delta", maxTotal, formatCompact(maxTotal?.totalDeltaXAU ?? null), maxTotal ? positionLabel(maxTotal) : undefined),
-    card("theta", "Max Theta Burn", maxThetaBurn, `$${formatCompact(maxThetaBurn?.totalThetaUSD ?? null)}/d`, maxThetaBurn ? positionLabel(maxThetaBurn) : undefined),
-    card("vega", "Max Vega", maxVega, `$${formatCompact(maxVega?.totalVegaUSD ?? null)}/v`, maxVega ? positionLabel(maxVega) : undefined),
-    card("expiry", "Nearest Expiry", nearest, nearest ? `${nearest.dte} DTE` : "MISSING", nearest ? positionLabel(nearest) : undefined),
-    card("roll", "Highest Roll Priority", roll, roll ? `${roll.rollPriority.total.toFixed(0)} / 100` : "MISSING", roll ? positionLabel(roll) : undefined),
-    card("data", "Largest Data Error", dataError, dataError ? `${dataError.dataStatus}${dataError.quoteAgeSeconds !== null ? ` ${Math.round(dataError.quoteAgeSeconds / 60)}m` : ""}` : "MISSING", dataError ? `${positionLabel(dataError)} · ${dataError.source ?? "NO SOURCE"}` : undefined),
+    card(
+      "unit",
+      "Max Unit Delta",
+      maxUnit,
+      formatCompact(maxUnit?.unitDelta ?? null, "unitDelta"),
+      maxUnit ? positionLabel(maxUnit) : undefined
+    ),
+    card(
+      "total",
+      "Max Total Delta",
+      maxTotal,
+      formatCompact(maxTotal?.totalDeltaXAU ?? null),
+      maxTotal ? positionLabel(maxTotal) : undefined
+    ),
+    card(
+      "theta",
+      "Max Theta Burn",
+      maxThetaBurn,
+      `$${formatCompact(maxThetaBurn?.totalThetaUSD ?? null)}/d`,
+      maxThetaBurn ? positionLabel(maxThetaBurn) : undefined
+    ),
+    card(
+      "vega",
+      "Max Vega",
+      maxVega,
+      `$${formatCompact(maxVega?.totalVegaUSD ?? null)}/v`,
+      maxVega ? positionLabel(maxVega) : undefined
+    ),
+    card(
+      "expiry",
+      "Nearest Expiry",
+      nearest,
+      nearest ? `${nearest.dte} DTE` : "MISSING",
+      nearest ? positionLabel(nearest) : undefined
+    ),
+    card(
+      "roll",
+      "Highest Roll Priority",
+      roll,
+      roll ? `${roll.rollPriority.total.toFixed(0)} / 100` : "MISSING",
+      roll ? positionLabel(roll) : undefined
+    ),
+    card(
+      "data",
+      "Largest Data Error",
+      dataError,
+      dataError
+        ? `${dataError.dataStatus}${dataError.quoteAgeSeconds !== null ? ` ${Math.round(dataError.quoteAgeSeconds / 60)}m` : ""}`
+        : "MISSING",
+      dataError
+        ? `${positionLabel(dataError)} · ${dataError.source ?? "NO SOURCE"}`
+        : undefined
+    ),
   ];
 }
 
-function PositionDetailDialog({ position, content, onClose }: { position: EnrichedRiskPosition | null; content: PortfolioSettings["heatmapDetailContent"]; onClose: () => void }) {
+function PositionDetailDialog({
+  position,
+  content,
+  onClose,
+}: {
+  position: EnrichedRiskPosition | null;
+  content: PortfolioSettings["heatmapDetailContent"];
+  onClose: () => void;
+}) {
   if (!position) return null;
   const candidates: Array<[keyof typeof content, string, unknown]> = [
-    ["instrument", "Instrument", position.instrument], ["underlyingCallPut", "Underlying / CallPut", `${position.underlying} / ${position.callPut.toUpperCase()}`],
-    ["expiryDte", "Expiry / DTE", `${position.expiry} / ${position.dte}d`], ["strike", "Strike", formatStrike(position.strike)],
-    ["venueBrokerAccount", "Venue / Broker / Account", `${position.venue} / ${position.broker} / ${position.account}`], ["netQty", "Net Qty", position.netQty],
-    ["contractMultiplier", "Contract Multiplier", position.contractMultiplier], ["xauPerUnit", "XAU per unit", position.underlying === "GLD" ? position.gldOzPerShare : position.underlyingOzPerUnit],
-    ["markBidAsk", "Mark / Bid / Ask · Size · $ Notional", `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)} ${position.premiumCurrency ?? ""} · ${formatCompact(position.bidSize)} / ${formatCompact(position.askSize)} · $${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`], ["markIv", "Mark IV", formatCompact(position.markIV, "markIV")],
-    ["bidAskIv", "Bid IV / Ask IV / Spread", `${ivWithSource(position.bidIV, "bidIV", position.bidIvDerived)} / ${ivWithSource(position.askIV, "askIV", position.askIvDerived)} / ${formatCompact(position.ivSpread, "ivSpread")}`],
-    ["qtyNotional", "Qty / Notional USD", `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`],
-    ["unitDelta", "Unit Delta", formatCompact(position.unitDelta, "unitDelta")], ["totalDelta", "Total Delta XAU", position.totalDeltaXAU],
-    ["unitGamma", "Unit Gamma", position.unitGamma], ["totalGamma", "Total Gamma XAU", position.totalGammaXAU],
-    ["unitTheta", "Unit Theta", position.unitTheta], ["totalTheta", "Total Theta USD/day", position.totalThetaUSD],
-    ["unitVega", "Unit Vega", position.unitVega], ["totalVega", "Total Vega USD/vol", position.totalVegaUSD],
-    ["marketValue", "Market Value", position.MV], ["entryPrice", "Entry Price", position.entryPrice], ["entryCost", "Entry Cost", position.entryCost], ["upl", "UPL", position.UPL],
-    ["source", "Source", position.source], ["quoteAsOf", "Quote As-of", position.quoteTime], ["dataStatus", "Data Status", position.dataStatus],
-    ["deliverableSource", "Deliverable Source", position.deliverableSource], ["adjustedContract", "Adjusted Contract", position.contractAdjusted ? "YES" : "NO"],
+    ["instrument", "Instrument", position.instrument],
+    [
+      "underlyingCallPut",
+      "Underlying / CallPut",
+      `${position.underlying} / ${position.callPut.toUpperCase()}`,
+    ],
+    ["expiryDte", "Expiry / DTE", `${position.expiry} / ${position.dte}d`],
+    ["strike", "Strike", formatStrike(position.strike)],
+    [
+      "venueBrokerAccount",
+      "Venue / Broker / Account",
+      `${position.venue} / ${position.broker} / ${position.account}`,
+    ],
+    ["netQty", "Net Qty", position.netQty],
+    ["contractMultiplier", "Contract Multiplier", position.contractMultiplier],
+    [
+      "xauPerUnit",
+      "XAU per unit",
+      position.underlying === "GLD"
+        ? position.gldOzPerShare
+        : position.underlyingOzPerUnit,
+    ],
+    [
+      "markBidAsk",
+      "Mark / Bid / Ask · Size · $ Notional",
+      `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)} ${position.premiumCurrency ?? ""} · ${formatCompact(position.bidSize)} / ${formatCompact(position.askSize)} · $${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`,
+    ],
+    ["markIv", "Market Mark IV", formatCompact(position.markIV, "markIV")],
+    [
+      "bidAskIv",
+      "Market Bid / Ask / Spread",
+      `${formatCompact(position.bidIV, "bidIV")} / ${formatCompact(position.askIV, "askIV")} / ${formatCompact(position.ivSpread, "ivSpread")}`,
+    ],
+    [
+      "bidAskIv",
+      "Model Mark / Bid / Ask / Spread",
+      `${modelIvLabel(position.modelMarkIV, "modelMarkIV")} / ${modelIvLabel(position.modelBidIV, "modelBidIV")} / ${modelIvLabel(position.modelAskIV, "modelAskIV")} / ${modelIvLabel(position.modelIVSpread, "modelIVSpread")}`,
+    ],
+    [
+      "bidAskIv",
+      "IV Reference Spot / As-of",
+      `${formatPrice(position.ivReferenceSpot)} / ${position.ivReferenceTime ?? "MISSING"}`,
+    ],
+    [
+      "bidAskIv",
+      "IV Reference Source",
+      position.ivReferenceSource ?? "MISSING",
+    ],
+    [
+      "qtyNotional",
+      "Qty / Notional USD",
+      `${formatCompact(position.netQty)} / $${formatCompact(position.notionalSizeUSD)}`,
+    ],
+    ["unitDelta", "Unit Delta", formatCompact(position.unitDelta, "unitDelta")],
+    ["totalDelta", "Total Delta XAU", position.totalDeltaXAU],
+    ["unitGamma", "Unit Gamma", position.unitGamma],
+    ["totalGamma", "Total Gamma XAU", position.totalGammaXAU],
+    ["unitTheta", "Unit Theta", position.unitTheta],
+    ["totalTheta", "Total Theta USD/day", position.totalThetaUSD],
+    ["unitVega", "Unit Vega", position.unitVega],
+    ["totalVega", "Total Vega USD/vol", position.totalVegaUSD],
+    ["marketValue", "Market Value", position.MV],
+    ["entryPrice", "Entry Price", position.entryPrice],
+    ["entryCost", "Entry Cost", position.entryCost],
+    ["upl", "UPL", position.UPL],
+    ["source", "Source", position.source],
+    ["quoteAsOf", "Quote As-of", position.quoteTime],
+    ["dataStatus", "Data Status", position.dataStatus],
+    ["deliverableSource", "Deliverable Source", position.deliverableSource],
+    [
+      "adjustedContract",
+      "Adjusted Contract",
+      position.contractAdjusted ? "YES" : "NO",
+    ],
   ];
   const fields = candidates.filter(([key]) => content[key]);
-  return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>{positionLabel(position)} · 完整仓位详情</DialogTitle><DialogDescription>按“设置”页面选择的合约、风险、估值与数据质量字段展示。</DialogDescription></DialogHeader><div className="grid grid-cols-2 gap-px border border-border/60 bg-border/60 md:grid-cols-4">{fields.map(([, label, value]) => <div key={label} className="min-w-0 bg-background p-2"><p className="text-[9px] uppercase text-muted-foreground">{label}</p><p className="mt-1 break-words font-mono text-xs">{value === null || value === undefined ? "MISSING" : String(value)}</p></div>)}</div>{content.rollPriority && <div className="border border-border/60 p-3"><div className="flex items-center justify-between"><strong className="text-sm">Roll Priority</strong><span className="font-mono text-lg">{position.rollPriority.total.toFixed(0)} / 100</span></div>{position.rollPriority.factors.map(factor => <div key={factor.key} className="mt-2 grid grid-cols-[90px_1fr_auto] gap-2 text-xs"><span>{factor.label}</span><span className="text-muted-foreground">{factor.reason}</span><span className="font-mono">{factor.contribution.toFixed(1)} / {(factor.weight * 100).toFixed(0)}</span></div>)}</div>}</DialogContent></Dialog>;
+  return (
+    <Dialog
+      open
+      onOpenChange={open => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{positionLabel(position)} · 完整仓位详情</DialogTitle>
+          <DialogDescription>
+            按“设置”页面选择的合约、风险、估值与数据质量字段展示。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-px border border-border/60 bg-border/60 md:grid-cols-4">
+          {fields.map(([, label, value]) => (
+            <div key={label} className="min-w-0 bg-background p-2">
+              <p className="text-[9px] uppercase text-muted-foreground">
+                {label}
+              </p>
+              <p className="mt-1 break-words font-mono text-xs">
+                {value === null || value === undefined
+                  ? "MISSING"
+                  : String(value)}
+              </p>
+            </div>
+          ))}
+        </div>
+        {content.rollPriority && (
+          <div className="border border-border/60 p-3">
+            <div className="flex items-center justify-between">
+              <strong className="text-sm">Roll Priority</strong>
+              <span className="font-mono text-lg">
+                {position.rollPriority.total.toFixed(0)} / 100
+              </span>
+            </div>
+            {position.rollPriority.factors.map(factor => (
+              <div
+                key={factor.key}
+                className="mt-2 grid grid-cols-[90px_1fr_auto] gap-2 text-xs"
+              >
+                <span>{factor.label}</span>
+                <span className="text-muted-foreground">{factor.reason}</span>
+                <span className="font-mono">
+                  {factor.contribution.toFixed(1)} /{" "}
+                  {(factor.weight * 100).toFixed(0)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }
 
-function ExpiryDetailDialog({ selection, metric, content, onClose }: { selection: ExpirySelection | null; metric: HeatmapMetric; content: PortfolioSettings["heatmapExpiryHoverContent"]; onClose: () => void }) {
+function ExpiryDetailDialog({
+  selection,
+  metric,
+  content,
+  onClose,
+}: {
+  selection: ExpirySelection | null;
+  metric: HeatmapMetric;
+  content: PortfolioSettings["heatmapExpiryHoverContent"];
+  onClose: () => void;
+}) {
   if (!selection) return null;
   const { expiry, positions } = selection;
   const held = positions.filter(position => position.positionKind !== "listed");
-  const valid = (values: Array<number | null>) => values.filter((value): value is number => value !== null && Number.isFinite(value));
+  const valid = (values: Array<number | null>) =>
+    values.filter(
+      (value): value is number => value !== null && Number.isFinite(value)
+    );
   const sum = (values: Array<number | null>) => {
     const numbers = valid(values);
-    return numbers.length ? numbers.reduce((total, value) => total + value, 0) : null;
+    return numbers.length
+      ? numbers.reduce((total, value) => total + value, 0)
+      : null;
   };
   const average = (values: Array<number | null>) => {
     const numbers = valid(values);
-    return numbers.length ? numbers.reduce((total, value) => total + value, 0) / numbers.length : null;
+    return numbers.length
+      ? numbers.reduce((total, value) => total + value, 0) / numbers.length
+      : null;
   };
   const selectedMetric = metricDistribution(positions, metric);
   const unitDelta = metricDistribution(positions, "unitDelta");
-  const latestQuote = positions.map(position => position.quoteTime).filter((value): value is string => Boolean(value)).sort().at(-1)?.slice(0, 19).replace("T", " ") ?? "MISSING";
+  const latestQuote =
+    positions
+      .map(position => position.quoteTime)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1)
+      ?.slice(0, 19)
+      .replace("T", " ") ?? "MISSING";
   const summaryRows: Array<[string, string]> = [];
-  summaryRows.push([`${METRIC_LABELS[metric]} · Average`, formatCompact(selectedMetric.average, metric)]);
-  if (content.heldListed) summaryRows.push(["Held / Listed", `${held.length} / ${positions.length - held.length}`]);
+  summaryRows.push([
+    `${METRIC_LABELS[metric]} · Average`,
+    formatCompact(selectedMetric.average, metric),
+  ]);
+  if (content.heldListed)
+    summaryRows.push([
+      "Held / Listed",
+      `${held.length} / ${positions.length - held.length}`,
+    ]);
   summaryRows.push(["DTE", `${positions[0]?.dte ?? "MISSING"}d`]);
-  if (content.worstStatus) summaryRows.push(["Worst Status", worstStatus(positions)]);
+  if (content.worstStatus)
+    summaryRows.push(["Worst Status", worstStatus(positions)]);
   if (content.latestQuote) summaryRows.push(["Latest Quote", latestQuote]);
-  if (content.staleMissing) summaryRows.push(["Stale / Missing", `${positions.filter(position => position.dataStatus === "STALE").length} / ${positions.filter(position => position.dataStatus === "MISSING" || position.dataStatus === "FAIL").length}`]);
-  if (content.averageIv) summaryRows.push(["Avg Mark / Bid / Ask IV", `${formatCompact(average(positions.map(position => position.markIV)), "markIV")} / ${formatCompact(average(positions.map(position => position.bidIV)), "bidIV")} / ${formatCompact(average(positions.map(position => position.askIV)), "askIV")}`]);
-  if (content.openInterestVolume) summaryRows.push(["OI / Volume", `${formatCompact(sum(positions.map(position => position.openInterest ?? null)))} / ${formatCompact(sum(positions.map(position => position.volume ?? null)))}`]);
-  if (content.netGrossQty) summaryRows.push(["Net / Gross Qty", `${formatCompact(sum(held.map(position => position.netQty)))} / ${formatCompact(sum(held.map(position => Math.abs(position.netQty))))}`]);
-  if (content.grossNotional) summaryRows.push(["Gross Notional", `$${formatCompact(sum(held.map(position => position.notionalSizeUSD === null ? null : Math.abs(position.notionalSizeUSD))))}`]);
-  if (content.mvEntry) summaryRows.push(["MV / Entry", `$${formatCompact(sum(held.map(position => position.MV)))} / $${formatCompact(sum(held.map(position => position.entryCost)))}`]);
-  if (content.upl) summaryRows.push(["UPL", `$${formatCompact(sum(held.map(position => position.UPL)))}`]);
-  if (content.maxRoll) summaryRows.push(["Max Roll Priority", formatCompact(held.length ? Math.max(...held.map(position => position.rollPriority.total)) : null, "rollPriority")]);
+  if (content.staleMissing)
+    summaryRows.push([
+      "Stale / Missing",
+      `${positions.filter(position => position.dataStatus === "STALE").length} / ${positions.filter(position => position.dataStatus === "MISSING" || position.dataStatus === "FAIL").length}`,
+    ]);
+  if (content.averageIv)
+    summaryRows.push(
+      [
+        "Avg Market Mark / Bid / Ask IV",
+        `${formatCompact(average(positions.map(position => position.markIV)), "markIV")} / ${formatCompact(average(positions.map(position => position.bidIV)), "bidIV")} / ${formatCompact(average(positions.map(position => position.askIV)), "askIV")}`,
+      ],
+      [
+        "Avg Model Mark / Bid / Ask IV",
+        `${modelIvLabel(average(positions.map(position => position.modelMarkIV)), "modelMarkIV")} / ${modelIvLabel(average(positions.map(position => position.modelBidIV)), "modelBidIV")} / ${modelIvLabel(average(positions.map(position => position.modelAskIV)), "modelAskIV")}`,
+      ]
+    );
+  if (content.openInterestVolume)
+    summaryRows.push([
+      "OI / Volume",
+      `${formatCompact(sum(positions.map(position => position.openInterest ?? null)))} / ${formatCompact(sum(positions.map(position => position.volume ?? null)))}`,
+    ]);
+  if (content.netGrossQty)
+    summaryRows.push([
+      "Net / Gross Qty",
+      `${formatCompact(sum(held.map(position => position.netQty)))} / ${formatCompact(sum(held.map(position => Math.abs(position.netQty))))}`,
+    ]);
+  if (content.grossNotional)
+    summaryRows.push([
+      "Gross Notional",
+      `$${formatCompact(sum(held.map(position => (position.notionalSizeUSD === null ? null : Math.abs(position.notionalSizeUSD)))))}`,
+    ]);
+  if (content.mvEntry)
+    summaryRows.push([
+      "MV / Entry",
+      `$${formatCompact(sum(held.map(position => position.MV)))} / $${formatCompact(sum(held.map(position => position.entryCost)))}`,
+    ]);
+  if (content.upl)
+    summaryRows.push([
+      "UPL",
+      `$${formatCompact(sum(held.map(position => position.UPL)))}`,
+    ]);
+  if (content.maxRoll)
+    summaryRows.push([
+      "Max Roll Priority",
+      formatCompact(
+        held.length
+          ? Math.max(...held.map(position => position.rollPriority.total))
+          : null,
+        "rollPriority"
+      ),
+    ]);
   const greekRows: Array<[string, string]> = [];
   if (content.totalDelta) {
-    greekRows.push(["Unit Delta · Min / Median / Max", `${formatCompact(unitDelta.min, "unitDelta")} / ${formatCompact(unitDelta.median, "unitDelta")} / ${formatCompact(unitDelta.max, "unitDelta")}`]);
-    greekRows.push(["Total Delta XAU · Sum", formatCompact(sum(held.map(position => position.totalDeltaXAU)))]);
+    greekRows.push([
+      "Unit Delta · Min / Median / Max",
+      `${formatCompact(unitDelta.min, "unitDelta")} / ${formatCompact(unitDelta.median, "unitDelta")} / ${formatCompact(unitDelta.max, "unitDelta")}`,
+    ]);
+    greekRows.push([
+      "Total Delta XAU · Sum",
+      formatCompact(sum(held.map(position => position.totalDeltaXAU))),
+    ]);
   }
-  if (content.totalGamma) greekRows.push(["Total Gamma XAU · Sum", formatCompact(sum(held.map(position => position.totalGammaXAU)))]);
-  if (content.totalTheta) greekRows.push(["Total Theta USD/day · Sum", `$${formatCompact(sum(held.map(position => position.totalThetaUSD)))}`]);
-  if (content.totalVega) greekRows.push(["Total Vega USD/vol · Sum", `$${formatCompact(sum(held.map(position => position.totalVegaUSD)))}`]);
+  if (content.totalGamma)
+    greekRows.push([
+      "Total Gamma XAU · Sum",
+      formatCompact(sum(held.map(position => position.totalGammaXAU))),
+    ]);
+  if (content.totalTheta)
+    greekRows.push([
+      "Total Theta USD/day · Sum",
+      `$${formatCompact(sum(held.map(position => position.totalThetaUSD)))}`,
+    ]);
+  if (content.totalVega)
+    greekRows.push([
+      "Total Vega USD/vol · Sum",
+      `$${formatCompact(sum(held.map(position => position.totalVegaUSD)))}`,
+    ]);
 
-  return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-6xl"><DialogHeader><DialogTitle>EXPIRY {expiry} · 全面数据</DialogTitle><DialogDescription>基于当前热力图筛选与 Metric；Greeks 默认只展示 Delta，可在“设置”中开启 Gamma、Theta、Vega。</DialogDescription></DialogHeader><div className="grid grid-cols-3 gap-px bg-border/60 text-center"><div className="bg-background p-2"><p className="text-[9px] text-muted-foreground">{METRIC_LABELS[metric]} · MIN</p><strong className="font-mono text-sm">{formatCompact(selectedMetric.min, metric)}</strong></div><div className="bg-background p-2"><p className="text-[9px] text-muted-foreground">MEDIAN</p><strong className="font-mono text-sm">{formatCompact(selectedMetric.median, metric)}</strong></div><div className="bg-background p-2"><p className="text-[9px] text-muted-foreground">MAX</p><strong className="font-mono text-sm">{formatCompact(selectedMetric.max, metric)}</strong></div></div><div className="grid shrink-0 gap-2 md:grid-cols-2"><section className="border border-border/60 p-2"><h3 className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">Expiry / Market / Position</h3><div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[10px]">{summaryRows.map(([label, value]) => <div key={label} className="contents"><span className="text-muted-foreground">{label}</span><span className="text-right font-mono">{value}</span></div>)}</div></section><section className="border border-border/60 p-2"><h3 className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">Greeks / Risk</h3>{greekRows.length ? <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[10px]">{greekRows.map(([label, value]) => <div key={label} className="contents"><span className="text-muted-foreground">{label}</span><span className="text-right font-mono">{value}</span></div>)}</div> : <p className="text-[10px] text-muted-foreground">Greeks 已在设置中隐藏。</p>}</section></div><div className="min-h-0 flex-1 overflow-auto border border-border/60"><table className="w-full border-collapse text-[9px]"><thead className="sticky top-0 z-10 bg-background text-muted-foreground"><tr><th className="p-1 text-left">Instrument</th><th className="p-1 text-right">Strike</th><th className="p-1">C/P</th><th className="p-1">Position</th><th className="p-1 text-right">{METRIC_LABELS[metric]}</th><th className="p-1 text-right">Mark</th><th className="p-1 text-right">Bid / Ask</th><th className="p-1 text-right">Mark IV</th>{content.totalDelta && <><th className="p-1 text-right">Unit Δ</th><th className="p-1 text-right">Total Δ</th></>}{content.totalGamma && <th className="p-1 text-right">Total Γ</th>}{content.totalTheta && <th className="p-1 text-right">Total Θ</th>}{content.totalVega && <th className="p-1 text-right">Total Vega</th>}<th className="p-1">Status</th></tr></thead><tbody>{[...positions].sort((left, right) => left.strike - right.strike || left.callPut.localeCompare(right.callPut)).map(position => <tr key={position.id} className="border-t border-border/40 font-mono"><td className="max-w-44 truncate p-1" title={position.instrument}>{position.instrument}</td><td className="p-1 text-right">{formatPrice(position.strike)}</td><td className="p-1 text-center">{position.callPut === "call" ? "C" : "P"}</td><td className="p-1 text-center">{position.positionKind === "listed" ? "LISTED" : formatCompact(position.netQty)}</td><td className="p-1 text-right font-semibold text-primary">{formatCompact(metric === "DTE" ? position.dte : metric === "rollPriority" ? position.rollPriority.total : metric === "unitDelta" ? position.unitDelta : metric === "totalDelta" ? position.totalDeltaXAU : metric === "gamma" ? position.totalGammaXAU : metric === "theta" ? position.totalThetaUSD : metric === "vega" ? position.totalVegaUSD : metric === "markIV" ? position.markIV : metric === "bidIV" ? position.bidIV : metric === "askIV" ? position.askIV : metric === "ivSpread" ? position.ivSpread : metric === "qty" ? position.netQty : metric === "notionalSize" ? position.notionalSizeUSD : metric === "bidDollarNotional" ? position.bidDollarNotional : metric === "askDollarNotional" ? position.askDollarNotional : metric === "bidAskDollarNotional" ? position.bidAskDollarNotional : metric === "MV" ? position.MV : metric === "UPL" ? position.UPL : position.distanceToStrike, metric)}</td><td className="p-1 text-right">{formatPrice(position.markPrice)}</td><td className="p-1 text-right">{formatPrice(position.bid)} / {formatPrice(position.ask)}</td><td className="p-1 text-right">{formatCompact(position.markIV, "markIV")}</td>{content.totalDelta && <><td className="p-1 text-right">{formatCompact(position.unitDelta)}</td><td className="p-1 text-right">{formatCompact(position.totalDeltaXAU)}</td></>}{content.totalGamma && <td className="p-1 text-right">{formatCompact(position.totalGammaXAU)}</td>}{content.totalTheta && <td className="p-1 text-right">{formatCompact(position.totalThetaUSD)}</td>}{content.totalVega && <td className="p-1 text-right">{formatCompact(position.totalVegaUSD)}</td>}<td className="p-1 text-center">{position.dataStatus}</td></tr>)}</tbody></table></div><p className="text-[9px] text-muted-foreground">Selected Metric: {selectedMetric.validCount} valid · {selectedMetric.missingCount} missing。MISSING 不会静默按 0 处理。</p></DialogContent></Dialog>;
+  return (
+    <Dialog
+      open
+      onOpenChange={open => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-6xl">
+        <DialogHeader>
+          <DialogTitle>EXPIRY {expiry} · 全面数据</DialogTitle>
+          <DialogDescription>
+            基于当前热力图筛选与 Metric；Greeks 默认只展示
+            Delta，可在“设置”中开启 Gamma、Theta、Vega。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-3 gap-px bg-border/60 text-center">
+          <div className="bg-background p-2">
+            <p className="text-[9px] text-muted-foreground">
+              {METRIC_LABELS[metric]} · MIN
+            </p>
+            <strong className="font-mono text-sm">
+              {formatCompact(selectedMetric.min, metric)}
+            </strong>
+          </div>
+          <div className="bg-background p-2">
+            <p className="text-[9px] text-muted-foreground">MEDIAN</p>
+            <strong className="font-mono text-sm">
+              {formatCompact(selectedMetric.median, metric)}
+            </strong>
+          </div>
+          <div className="bg-background p-2">
+            <p className="text-[9px] text-muted-foreground">MAX</p>
+            <strong className="font-mono text-sm">
+              {formatCompact(selectedMetric.max, metric)}
+            </strong>
+          </div>
+        </div>
+        <div className="grid shrink-0 gap-2 md:grid-cols-2">
+          <section className="border border-border/60 p-2">
+            <h3 className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">
+              Expiry / Market / Position
+            </h3>
+            <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[10px]">
+              {summaryRows.map(([label, value]) => (
+                <div key={label} className="contents">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className="text-right font-mono">{value}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section className="border border-border/60 p-2">
+            <h3 className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">
+              Greeks / Risk
+            </h3>
+            {greekRows.length ? (
+              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[10px]">
+                {greekRows.map(([label, value]) => (
+                  <div key={label} className="contents">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="text-right font-mono">{value}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground">
+                Greeks 已在设置中隐藏。
+              </p>
+            )}
+          </section>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto border border-border/60">
+          <table className="w-full border-collapse text-[9px]">
+            <thead className="sticky top-0 z-10 bg-background text-muted-foreground">
+              <tr>
+                <th className="p-1 text-left">Instrument</th>
+                <th className="p-1 text-right">Strike</th>
+                <th className="p-1">C/P</th>
+                <th className="p-1">Position</th>
+                <th className="p-1 text-right">{METRIC_LABELS[metric]}</th>
+                <th className="p-1 text-right">Mark</th>
+                <th className="p-1 text-right">Bid / Ask</th>
+                <th className="p-1 text-right">Mark IV</th>
+                {content.totalDelta && (
+                  <>
+                    <th className="p-1 text-right">Unit Δ</th>
+                    <th className="p-1 text-right">Total Δ</th>
+                  </>
+                )}
+                {content.totalGamma && (
+                  <th className="p-1 text-right">Total Γ</th>
+                )}
+                {content.totalTheta && (
+                  <th className="p-1 text-right">Total Θ</th>
+                )}
+                {content.totalVega && (
+                  <th className="p-1 text-right">Total Vega</th>
+                )}
+                <th className="p-1">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...positions]
+                .sort(
+                  (left, right) =>
+                    left.strike - right.strike ||
+                    left.callPut.localeCompare(right.callPut)
+                )
+                .map(position => (
+                  <tr
+                    key={position.id}
+                    className="border-t border-border/40 font-mono"
+                  >
+                    <td
+                      className="max-w-44 truncate p-1"
+                      title={position.instrument}
+                    >
+                      {position.instrument}
+                    </td>
+                    <td className="p-1 text-right">
+                      {formatPrice(position.strike)}
+                    </td>
+                    <td className="p-1 text-center">
+                      {position.callPut === "call" ? "C" : "P"}
+                    </td>
+                    <td className="p-1 text-center">
+                      {position.positionKind === "listed"
+                        ? "LISTED"
+                        : formatCompact(position.netQty)}
+                    </td>
+                    <td className="p-1 text-right font-semibold text-primary">
+                      {formatCompact(metricValue(position, metric), metric)}
+                    </td>
+                    <td className="p-1 text-right">
+                      {formatPrice(position.markPrice)}
+                    </td>
+                    <td className="p-1 text-right">
+                      {formatPrice(position.bid)} / {formatPrice(position.ask)}
+                    </td>
+                    <td className="p-1 text-right">
+                      {formatCompact(position.markIV, "markIV")}
+                    </td>
+                    {content.totalDelta && (
+                      <>
+                        <td className="p-1 text-right">
+                          {formatCompact(position.unitDelta)}
+                        </td>
+                        <td className="p-1 text-right">
+                          {formatCompact(position.totalDeltaXAU)}
+                        </td>
+                      </>
+                    )}
+                    {content.totalGamma && (
+                      <td className="p-1 text-right">
+                        {formatCompact(position.totalGammaXAU)}
+                      </td>
+                    )}
+                    {content.totalTheta && (
+                      <td className="p-1 text-right">
+                        {formatCompact(position.totalThetaUSD)}
+                      </td>
+                    )}
+                    {content.totalVega && (
+                      <td className="p-1 text-right">
+                        {formatCompact(position.totalVegaUSD)}
+                      </td>
+                    )}
+                    <td className="p-1 text-center">{position.dataStatus}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[9px] text-muted-foreground">
+          Selected Metric: {selectedMetric.validCount} valid ·{" "}
+          {selectedMetric.missingCount} missing。MISSING 不会静默按 0 处理。
+        </p>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export default function Matrix() {
   const { user } = useAuth();
   const { data: positions, isLoading } = trpc.positions.list.useQuery();
   const { data: formulas } = trpc.formulas.list.useQuery();
-  const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
-  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
-  const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, MARKET_QUERY_OPTIONS);
+  const { data: xautTickers } = trpc.market.xautTickers.useQuery(
+    undefined,
+    MARKET_QUERY_OPTIONS
+  );
+  const { data: btcTickers } = trpc.market.btcTickers.useQuery(
+    undefined,
+    MARKET_QUERY_OPTIONS
+  );
+  const { data: spotPrices } = trpc.market.spotPrices.useQuery(
+    undefined,
+    MARKET_QUERY_OPTIONS
+  );
   const { settings } = usePortfolioSettings();
   const visibleFilters = settings.heatmapVisibleFilters;
   const visibleSections = settings.heatmapVisibleSections;
 
   const [dataset, setDataset] = useState<DatasetMode>(initialDataset);
-  const [underlying, setUnderlying] = useState<HeatmapUnderlyingSelection>(DEFAULT_HEATMAP_VIEW.underlying);
+  const [underlying, setUnderlying] = useState<HeatmapUnderlyingSelection>(
+    DEFAULT_HEATMAP_VIEW.underlying
+  );
   const [venue, setVenue] = useState("all");
   const [broker, setBroker] = useState("all");
   const [account, setAccount] = useState("all");
-  const [callPut, setCallPut] = useState<"combined" | CallPut>(DEFAULT_HEATMAP_VIEW.callPut);
-  const [moneyness, setMoneyness] = useState<MoneynessFilter>(DEFAULT_HEATMAP_VIEW.moneyness);
+  const [callPut, setCallPut] = useState<"combined" | CallPut>(
+    DEFAULT_HEATMAP_VIEW.callPut
+  );
+  const [moneyness, setMoneyness] = useState<MoneynessFilter>(
+    DEFAULT_HEATMAP_VIEW.moneyness
+  );
   const [expiryBucket, setExpiryBucket] = useState<ExpiryBucket>("all");
   const [status, setStatus] = useState<"all" | DataStatus>("all");
-  const [metric, setMetric] = useState<HeatmapMetric>(DEFAULT_HEATMAP_VIEW.metric);
+  const [metric, setMetric] = useState<HeatmapMetric>(
+    DEFAULT_HEATMAP_VIEW.metric
+  );
   const [scaleMode, setScaleMode] = useState<ColorScaleMode>("quantile");
   const [transpose, setTranspose] = useState(false);
   const [reverseStrikes, setReverseStrikes] = useState(false);
   const [cellSize, setCellSize] = useState(13);
   const [fitAll, setFitAll] = useState(false);
-  const [labelMode, setLabelMode] = useState<CellLabelMode>(DEFAULT_HEATMAP_VIEW.labelMode);
-  const [hoverPreset, setHoverPreset] = useState<HoverDataPreset>(DEFAULT_HEATMAP_VIEW.hoverPreset);
-  const [spotUnderlying, setSpotUnderlying] = useState<RiskUnderlying | "XAU">("GLD");
+  const [labelMode, setLabelMode] = useState<CellLabelMode>(
+    DEFAULT_HEATMAP_VIEW.labelMode
+  );
+  const [hoverPreset, setHoverPreset] = useState<HoverDataPreset>(
+    DEFAULT_HEATMAP_VIEW.hoverPreset
+  );
+  const [spotUnderlying, setSpotUnderlying] = useState<RiskUnderlying | "XAU">(
+    "GLD"
+  );
   const [highlightCellKey, setHighlightCellKey] = useState<string | null>(null);
-  const [selectedPosition, setSelectedPosition] = useState<EnrichedRiskPosition | null>(null);
-  const [selectedExpiry, setSelectedExpiry] = useState<ExpirySelection | null>(null);
+  const [selectedPosition, setSelectedPosition] =
+    useState<EnrichedRiskPosition | null>(null);
+  const [selectedExpiry, setSelectedExpiry] = useState<ExpirySelection | null>(
+    null
+  );
   const [targetMode, setTargetMode] = useState<TargetOptionMode>("idle");
-  const [targetOptionKeys, setTargetOptionKeys] = useState<Set<string>>(() => parseStoredTargetOptions(localStorage.getItem(TARGET_OPTION_STORAGE_KEY)));
+  const [targetOptionKeys, setTargetOptionKeys] = useState<Set<string>>(() =>
+    parseStoredTargetOptions(localStorage.getItem(TARGET_OPTION_STORAGE_KEY))
+  );
   const [cardsVisible, setCardsVisible] = useState(false);
   const [dataErrorHelp, setDataErrorHelp] = useState(false);
-  const [customRanges, setCustomRanges] = useState<Partial<Record<HeatmapMetric, MetricRange>>>(() => {
+  const [customRanges, setCustomRanges] = useState<
+    Partial<Record<HeatmapMetric, MetricRange>>
+  >(() => {
     try {
-      return JSON.parse(localStorage.getItem(RANGE_STORAGE_KEY) ?? "{}") as Partial<Record<HeatmapMetric, MetricRange>>;
+      return JSON.parse(
+        localStorage.getItem(RANGE_STORAGE_KEY) ?? "{}"
+      ) as Partial<Record<HeatmapMetric, MetricRange>>;
     } catch {
       return {};
     }
@@ -295,147 +915,397 @@ export default function Matrix() {
   const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
   const isFullscreen = nativeFullscreen || pseudoFullscreen;
 
-  const { data: gldChain, isFetching: chainFetching } = trpc.market.gldOptionChain.useQuery(undefined, {
-    enabled: dataset === "chain" && (underlying === "GLD" || underlying === "all"),
-    staleTime: 25_000,
-    refetchOnWindowFocus: false,
-  });
-  const { data: xautChain, isFetching: xautChainFetching } = trpc.market.xautOptionChain.useQuery(undefined, {
-    enabled: dataset === "chain" && (underlying === "XAUT" || underlying === "all"),
-    staleTime: 8_000,
-    refetchOnWindowFocus: false,
-  });
-  const { data: btcChain, isFetching: btcChainFetching } = trpc.market.btcOptionChain.useQuery(undefined, {
-    enabled: dataset === "chain" && (underlying === "BTC" || underlying === "all"),
-    staleTime: 8_000,
-    refetchOnWindowFocus: false,
-  });
-  const { data: ethChain, isFetching: ethChainFetching } = trpc.market.ethOptionChain.useQuery(undefined, {
-    enabled: dataset === "chain" && (underlying === "ETH_BYBIT" || underlying === "all"),
-    staleTime: 8_000,
-    refetchOnWindowFocus: false,
-  });
-  const { data: deribitBtcChain, isFetching: deribitBtcChainFetching } = trpc.market.deribitBtcOptionChain.useQuery(undefined, {
-    enabled: dataset === "chain" && (underlying === "BTC_DERIBIT" || underlying === "all"),
-    staleTime: 8_000,
-    refetchOnWindowFocus: false,
-  });
-  const { data: deribitEthChain, isFetching: deribitEthChainFetching } = trpc.market.deribitEthOptionChain.useQuery(undefined, {
-    enabled: dataset === "chain" && (underlying === "ETH_DERIBIT" || underlying === "all"),
-    staleTime: 8_000,
-    refetchOnWindowFocus: false,
-  });
+  const { data: gldChain, isFetching: chainFetching } =
+    trpc.market.gldOptionChain.useQuery(undefined, {
+      enabled:
+        dataset === "chain" && (underlying === "GLD" || underlying === "all"),
+      staleTime: 25_000,
+      refetchOnWindowFocus: false,
+    });
+  const { data: xautChain, isFetching: xautChainFetching } =
+    trpc.market.xautOptionChain.useQuery(undefined, {
+      enabled:
+        dataset === "chain" && (underlying === "XAUT" || underlying === "all"),
+      staleTime: 8_000,
+      refetchOnWindowFocus: false,
+    });
+  const { data: btcChain, isFetching: btcChainFetching } =
+    trpc.market.btcOptionChain.useQuery(undefined, {
+      enabled:
+        dataset === "chain" && (underlying === "BTC" || underlying === "all"),
+      staleTime: 8_000,
+      refetchOnWindowFocus: false,
+    });
+  const { data: ethChain, isFetching: ethChainFetching } =
+    trpc.market.ethOptionChain.useQuery(undefined, {
+      enabled:
+        dataset === "chain" &&
+        (underlying === "ETH_BYBIT" || underlying === "all"),
+      staleTime: 8_000,
+      refetchOnWindowFocus: false,
+    });
+  const { data: deribitBtcChain, isFetching: deribitBtcChainFetching } =
+    trpc.market.deribitBtcOptionChain.useQuery(undefined, {
+      enabled:
+        dataset === "chain" &&
+        (underlying === "BTC_DERIBIT" || underlying === "all"),
+      staleTime: 8_000,
+      refetchOnWindowFocus: false,
+    });
+  const { data: deribitEthChain, isFetching: deribitEthChainFetching } =
+    trpc.market.deribitEthOptionChain.useQuery(undefined, {
+      enabled:
+        dataset === "chain" &&
+        (underlying === "ETH_DERIBIT" || underlying === "all"),
+      staleTime: 8_000,
+      refetchOnWindowFocus: false,
+    });
 
-  const gldExpiries = useMemo(() => [...new Set((positions || []).filter(position => position.underlying === "GLD").map(position => position.expiry))], [positions]);
-  const gldContracts = useMemo(() => (positions || [])
-    .filter(position => position.underlying === "GLD")
-    .slice(0, 100)
-    .map(position => ({ expiry: position.expiry, strike: Number(position.strike), optionType: position.optionType })), [positions]);
+  const gldExpiries = useMemo(
+    () => [
+      ...new Set(
+        (positions || [])
+          .filter(position => position.underlying === "GLD")
+          .map(position => position.expiry)
+      ),
+    ],
+    [positions]
+  );
+  const gldContracts = useMemo(
+    () =>
+      (positions || [])
+        .filter(position => position.underlying === "GLD")
+        .slice(0, 100)
+        .map(position => ({
+          expiry: position.expiry,
+          strike: Number(position.strike),
+          optionType: position.optionType,
+        })),
+    [positions]
+  );
   const { data: gldQuotes } = trpc.market.gldOptionQuotes.useQuery(
     { expiries: gldExpiries.slice(0, 24), contracts: gldContracts },
-    { ...MARKET_QUERY_OPTIONS, enabled: dataset === "live" && gldExpiries.length > 0 },
+    {
+      ...MARKET_QUERY_OPTIONS,
+      enabled: dataset === "live" && gldExpiries.length > 0,
+    }
   );
   const activeGldQuotes = dataset === "chain" ? gldChain?.quotes : gldQuotes;
 
-  const liveViews = useMemo(() => (positions || []).map(position => ({
-    position: position as PortfolioPosition,
-    market: getPositionMarketData({
-      position: position as PortfolioPosition,
-      xautTickers,
+  const liveViews = useMemo(
+    () =>
+      (positions || []).map(position => ({
+        position: position as PortfolioPosition,
+        market: getPositionMarketData({
+          position: position as PortfolioPosition,
+          xautTickers,
+          btcTickers,
+          gldQuotes: activeGldQuotes,
+          gldSpot: spotPrices?.gld?.price ?? 0,
+          formulas,
+          settings,
+        }) as MarketSnapshot,
+      })),
+    [
+      activeGldQuotes,
       btcTickers,
-      gldQuotes: activeGldQuotes,
-      gldSpot: spotPrices?.gld?.price ?? 0,
       formulas,
+      positions,
       settings,
-    }) as MarketSnapshot,
-  })), [activeGldQuotes, btcTickers, formulas, positions, settings, spotPrices?.gld?.price, xautTickers]);
+      spotPrices?.gld?.price,
+      xautTickers,
+    ]
+  );
 
-  const canonicalSpots = useMemo(() => resolveHeatmapSpots(spotPrices, {
-    xaut: dataset === "chain" ? xautChain?.spot : null,
-    gld: dataset === "chain" ? gldChain?.spot : null,
-    btc: dataset === "chain" ? btcChain?.spot : null,
-    eth: dataset === "chain" ? ethChain?.spot : null,
-  }), [btcChain?.spot, dataset, ethChain?.spot, gldChain?.spot, spotPrices, xautChain?.spot]);
-  const liveSpots = useMemo(() => ({
-    ...canonicalSpots,
-    btc: underlying === "BTC_DERIBIT" && deribitBtcChain?.spot ? deribitBtcChain.spot : canonicalSpots.btc,
-    eth: underlying === "ETH_DERIBIT" && deribitEthChain?.spot ? deribitEthChain.spot : canonicalSpots.eth,
-  }), [canonicalSpots, deribitBtcChain?.spot, deribitEthChain?.spot, underlying]);
-  const displaySpots = useMemo(() => dataset === "live" || dataset === "chain"
-    ? { GLD: liveSpots.gld, XAUT: liveSpots.xaut, BTC: liveSpots.btc, ETH: liveSpots.eth, XAU: liveSpots.xau }
-    : { GLD: 247.3, XAUT: 3358, BTC: 95_000, ETH: 3_300, XAU: 3358 }, [dataset, liveSpots]);
-  const asOf = useMemo(() => new Date(), [btcTickers, dataset, deribitBtcChain?.timestamp, deribitEthChain?.timestamp, ethChain?.timestamp, gldQuotes, positions, spotPrices, xautTickers]);
+  const canonicalSpots = useMemo(
+    () =>
+      resolveHeatmapSpots(spotPrices, {
+        xaut: dataset === "chain" ? xautChain?.spot : null,
+        gld: dataset === "chain" ? gldChain?.spot : null,
+        btc: dataset === "chain" ? btcChain?.spot : null,
+        eth: dataset === "chain" ? ethChain?.spot : null,
+      }),
+    [
+      btcChain?.spot,
+      dataset,
+      ethChain?.spot,
+      gldChain?.spot,
+      spotPrices,
+      xautChain?.spot,
+    ]
+  );
+  const liveSpots = useMemo(
+    () => ({
+      ...canonicalSpots,
+      btc:
+        underlying === "BTC_DERIBIT" && deribitBtcChain?.spot
+          ? deribitBtcChain.spot
+          : canonicalSpots.btc,
+      eth:
+        underlying === "ETH_DERIBIT" && deribitEthChain?.spot
+          ? deribitEthChain.spot
+          : canonicalSpots.eth,
+    }),
+    [canonicalSpots, deribitBtcChain?.spot, deribitEthChain?.spot, underlying]
+  );
+  const displaySpots = useMemo(
+    () =>
+      dataset === "live" || dataset === "chain"
+        ? {
+            GLD: liveSpots.gld,
+            XAUT: liveSpots.xaut,
+            BTC: liveSpots.btc,
+            ETH: liveSpots.eth,
+            XAU: liveSpots.xau,
+          }
+        : { GLD: 247.3, XAUT: 3358, BTC: 95_000, ETH: 3_300, XAU: 3358 },
+    [dataset, liveSpots]
+  );
+  const asOf = useMemo(
+    () => new Date(),
+    [
+      btcTickers,
+      dataset,
+      deribitBtcChain?.timestamp,
+      deribitEthChain?.timestamp,
+      ethChain?.timestamp,
+      gldQuotes,
+      positions,
+      spotPrices,
+      xautTickers,
+    ]
+  );
   const riskPositions = useMemo(() => {
-    if (dataset === "mock100") return generateMockPositions(100, 20260811, asOf);
-    if (dataset === "mock200") return generateMockPositions(200, 20260811, asOf);
-    const held = buildLiveRiskPositions({ views: liveViews, spots: liveSpots, settings, formulas });
+    if (dataset === "mock100")
+      return generateMockPositions(100, 20260811, asOf);
+    if (dataset === "mock200")
+      return generateMockPositions(200, 20260811, asOf);
+    const held = buildLiveRiskPositions({
+      views: liveViews,
+      spots: liveSpots,
+      settings,
+      formulas,
+    });
     if (dataset !== "chain") return held;
     const heldKeys = new Set(held.map(contractKey));
-    const gldOzPerShare = resolveGldXauMultiplier(formulas?.length ? formulas : [], settings.gldSpotScaleOverride ?? 0.092);
-    const xautPerUnit = resolveXautXauMultiplier(formulas?.length ? formulas : [], settings.xautSpotScaleOverride ?? 1);
-    const btcPerUnit = liveSpots.xau > 0 && liveSpots.btc > 0 ? liveSpots.btc / liveSpots.xau : null;
-    const ethPerUnit = liveSpots.xau > 0 && liveSpots.eth > 0 ? liveSpots.eth / liveSpots.xau : null;
-    const gldContractMultiplier = resolveGldContractMultiplier(formulas?.length ? formulas : [], settings.gldContractMultiplier);
-    const xautContractMultiplier = resolveXautContractMultiplier(formulas?.length ? formulas : [], settings.xautContractMultiplier);
+    const gldOzPerShare = resolveGldXauMultiplier(
+      formulas?.length ? formulas : [],
+      settings.gldSpotScaleOverride ?? 0.092
+    );
+    const xautPerUnit = resolveXautXauMultiplier(
+      formulas?.length ? formulas : [],
+      settings.xautSpotScaleOverride ?? 1
+    );
+    const btcPerUnit =
+      liveSpots.xau > 0 && liveSpots.btc > 0
+        ? liveSpots.btc / liveSpots.xau
+        : null;
+    const ethPerUnit =
+      liveSpots.xau > 0 && liveSpots.eth > 0
+        ? liveSpots.eth / liveSpots.xau
+        : null;
+    const gldContractMultiplier = resolveGldContractMultiplier(
+      formulas?.length ? formulas : [],
+      settings.gldContractMultiplier
+    );
+    const xautContractMultiplier = resolveXautContractMultiplier(
+      formulas?.length ? formulas : [],
+      settings.xautContractMultiplier
+    );
     const listed = [
-      ...buildGldChainRiskPositions(gldChain?.quotes ?? [], gldOzPerShare, gldContractMultiplier),
-      ...buildChainRiskPositions(xautChain?.quotes ?? [], "XAUT", xautPerUnit, xautContractMultiplier, { venue: "Bybit", deliverableSource: "Bybit V5 live instrument specification" }),
-      ...buildChainRiskPositions(btcChain?.quotes ?? [], "BTC", btcPerUnit, 1, { venue: "Bybit", deliverableSource: "Bybit V5 live instrument specification" }),
-      ...buildChainRiskPositions(ethChain?.quotes ?? [], "ETH", ethPerUnit, 1, { venue: "Bybit", deliverableSource: "Bybit V5 live instrument specification" }),
-      ...buildChainRiskPositions(deribitBtcChain?.quotes ?? [], "BTC", btcPerUnit, 1, { venue: "Deribit", deliverableSource: "Deribit public/get_instruments live contract_size" }),
-      ...buildChainRiskPositions(deribitEthChain?.quotes ?? [], "ETH", ethPerUnit, 1, { venue: "Deribit", deliverableSource: "Deribit public/get_instruments live contract_size" }),
+      ...buildGldChainRiskPositions(
+        gldChain?.quotes ?? [],
+        gldOzPerShare,
+        gldContractMultiplier
+      ),
+      ...buildChainRiskPositions(
+        xautChain?.quotes ?? [],
+        "XAUT",
+        xautPerUnit,
+        xautContractMultiplier,
+        {
+          venue: "Bybit",
+          deliverableSource: "Bybit V5 live instrument specification",
+        }
+      ),
+      ...buildChainRiskPositions(btcChain?.quotes ?? [], "BTC", btcPerUnit, 1, {
+        venue: "Bybit",
+        deliverableSource: "Bybit V5 live instrument specification",
+      }),
+      ...buildChainRiskPositions(ethChain?.quotes ?? [], "ETH", ethPerUnit, 1, {
+        venue: "Bybit",
+        deliverableSource: "Bybit V5 live instrument specification",
+      }),
+      ...buildChainRiskPositions(
+        deribitBtcChain?.quotes ?? [],
+        "BTC",
+        btcPerUnit,
+        1,
+        {
+          venue: "Deribit",
+          deliverableSource:
+            "Deribit public/get_instruments live contract_size",
+        }
+      ),
+      ...buildChainRiskPositions(
+        deribitEthChain?.quotes ?? [],
+        "ETH",
+        ethPerUnit,
+        1,
+        {
+          venue: "Deribit",
+          deliverableSource:
+            "Deribit public/get_instruments live contract_size",
+        }
+      ),
     ].filter(position => !heldKeys.has(contractKey(position)));
     return [...held, ...listed];
-  }, [asOf, btcChain?.quotes, dataset, deribitBtcChain?.quotes, deribitEthChain?.quotes, ethChain?.quotes, formulas, gldChain?.quotes, liveSpots, liveViews, settings, xautChain?.quotes]);
-  const enriched = useMemo(() => enrichRiskPositions(riskPositions, displaySpots, asOf, formulas, { riskFreeRate: settings.riskFreeRate }), [asOf, displaySpots, formulas, riskPositions, settings.riskFreeRate]);
+  }, [
+    asOf,
+    btcChain?.quotes,
+    dataset,
+    deribitBtcChain?.quotes,
+    deribitEthChain?.quotes,
+    ethChain?.quotes,
+    formulas,
+    gldChain?.quotes,
+    liveSpots,
+    liveViews,
+    settings,
+    xautChain?.quotes,
+  ]);
+  const enriched = useMemo(
+    () =>
+      enrichRiskPositions(riskPositions, displaySpots, asOf, formulas, {
+        riskFreeRate: settings.riskFreeRate,
+      }),
+    [asOf, displaySpots, formulas, riskPositions, settings.riskFreeRate]
+  );
 
-  const filterOptions = useMemo(() => ({
-    venue: [...new Set(enriched.map(position => position.venue))].sort().filter(value => !settings.heatmapHiddenDynamicOptions.venue.includes(value)),
-    broker: [...new Set(enriched.map(position => position.broker))].sort().filter(value => !settings.heatmapHiddenDynamicOptions.broker.includes(value)),
-    account: [...new Set(enriched.map(position => position.account))].sort().filter(value => !settings.heatmapHiddenDynamicOptions.account.includes(value)),
-  }), [enriched, settings.heatmapHiddenDynamicOptions]);
+  const filterOptions = useMemo(
+    () => ({
+      venue: [...new Set(enriched.map(position => position.venue))]
+        .sort()
+        .filter(
+          value => !settings.heatmapHiddenDynamicOptions.venue.includes(value)
+        ),
+      broker: [...new Set(enriched.map(position => position.broker))]
+        .sort()
+        .filter(
+          value => !settings.heatmapHiddenDynamicOptions.broker.includes(value)
+        ),
+      account: [...new Set(enriched.map(position => position.account))]
+        .sort()
+        .filter(
+          value => !settings.heatmapHiddenDynamicOptions.account.includes(value)
+        ),
+    }),
+    [enriched, settings.heatmapHiddenDynamicOptions]
+  );
   const enabledOptions = settings.heatmapFilterOptions;
-  const metricOptions = (Object.entries(METRIC_LABELS) as Array<[HeatmapMetric, string]>).filter(([key]) => enabledOptions.metric[key]);
+  const metricOptions = (
+    Object.entries(METRIC_LABELS) as Array<[HeatmapMetric, string]>
+  ).filter(([key]) => enabledOptions.metric[key]);
   useEffect(() => {
     const riskUnderlying = selectedRiskUnderlying(underlying);
     if (riskUnderlying !== "all") setSpotUnderlying(riskUnderlying);
   }, [underlying]);
   useEffect(() => {
-    const fallback = <T extends string>(current: T, enabled: Record<string, boolean>, setValue: (value: T) => void) => {
-      if (!enabled[current]) setValue(Object.keys(enabled).find(key => enabled[key]) as T);
+    const fallback = <T extends string>(
+      current: T,
+      enabled: Record<string, boolean>,
+      setValue: (value: T) => void
+    ) => {
+      if (!enabled[current])
+        setValue(Object.keys(enabled).find(key => enabled[key]) as T);
     };
-    if (visibleFilters.dataset) fallback(dataset, enabledOptions.dataset, setDataset);
-    if (visibleFilters.underlying) fallback(underlying, enabledOptions.underlying, setUnderlying);
-    if (visibleFilters.callPut) fallback(callPut, enabledOptions.callPut, setCallPut);
-    if (visibleFilters.moneyness) fallback(moneyness, enabledOptions.moneyness, setMoneyness);
-    if (visibleFilters.expiryBucket) fallback(expiryBucket, enabledOptions.expiryBucket, setExpiryBucket);
-    if (visibleFilters.status) fallback(status, enabledOptions.status, setStatus);
-    if (visibleFilters.metric) fallback(metric, enabledOptions.metric, setMetric);
-    if (visibleFilters.scale) fallback(scaleMode, enabledOptions.scale, setScaleMode);
-    if (visibleFilters.spot) fallback(spotUnderlying, enabledOptions.spot, setSpotUnderlying);
-    if (visibleFilters.label) fallback(labelMode, enabledOptions.label, setLabelMode);
-    if (visibleFilters.hover) fallback(hoverPreset, enabledOptions.hover, setHoverPreset);
-    if (venue !== "all" && !filterOptions.venue.includes(venue)) setVenue("all");
-    if (broker !== "all" && !filterOptions.broker.includes(broker)) setBroker("all");
-    if (account !== "all" && !filterOptions.account.includes(account)) setAccount("all");
-  }, [account, broker, callPut, dataset, enabledOptions, expiryBucket, filterOptions, hoverPreset, labelMode, metric, moneyness, scaleMode, spotUnderlying, status, underlying, venue, visibleFilters]);
+    if (visibleFilters.dataset)
+      fallback(dataset, enabledOptions.dataset, setDataset);
+    if (visibleFilters.underlying)
+      fallback(underlying, enabledOptions.underlying, setUnderlying);
+    if (visibleFilters.callPut)
+      fallback(callPut, enabledOptions.callPut, setCallPut);
+    if (visibleFilters.moneyness)
+      fallback(moneyness, enabledOptions.moneyness, setMoneyness);
+    if (visibleFilters.expiryBucket)
+      fallback(expiryBucket, enabledOptions.expiryBucket, setExpiryBucket);
+    if (visibleFilters.status)
+      fallback(status, enabledOptions.status, setStatus);
+    if (visibleFilters.metric)
+      fallback(metric, enabledOptions.metric, setMetric);
+    if (visibleFilters.scale)
+      fallback(scaleMode, enabledOptions.scale, setScaleMode);
+    if (visibleFilters.spot)
+      fallback(spotUnderlying, enabledOptions.spot, setSpotUnderlying);
+    if (visibleFilters.label)
+      fallback(labelMode, enabledOptions.label, setLabelMode);
+    if (visibleFilters.hover)
+      fallback(hoverPreset, enabledOptions.hover, setHoverPreset);
+    if (venue !== "all" && !filterOptions.venue.includes(venue))
+      setVenue("all");
+    if (broker !== "all" && !filterOptions.broker.includes(broker))
+      setBroker("all");
+    if (account !== "all" && !filterOptions.account.includes(account))
+      setAccount("all");
+  }, [
+    account,
+    broker,
+    callPut,
+    dataset,
+    enabledOptions,
+    expiryBucket,
+    filterOptions,
+    hoverPreset,
+    labelMode,
+    metric,
+    moneyness,
+    scaleMode,
+    spotUnderlying,
+    status,
+    underlying,
+    venue,
+    visibleFilters,
+  ]);
   useEffect(() => {
-    if (!visibleFilters.dataset && dataset !== "chain" && !new URLSearchParams(window.location.search).has("mock")) setDataset("chain");
-    if (!visibleFilters.underlying && underlying !== "all") setUnderlying("all");
+    if (
+      !visibleFilters.dataset &&
+      dataset !== "chain" &&
+      !new URLSearchParams(window.location.search).has("mock")
+    )
+      setDataset("chain");
+    if (!visibleFilters.underlying && underlying !== "all")
+      setUnderlying("all");
     if (!visibleFilters.venue && venue !== "all") setVenue("all");
     if (!visibleFilters.broker && broker !== "all") setBroker("all");
     if (!visibleFilters.account && account !== "all") setAccount("all");
-    if (!visibleFilters.callPut && callPut !== "combined") setCallPut("combined");
+    if (!visibleFilters.callPut && callPut !== "combined")
+      setCallPut("combined");
     if (!visibleFilters.moneyness && moneyness !== "all") setMoneyness("all");
-    if (!visibleFilters.expiryBucket && expiryBucket !== "all") setExpiryBucket("all");
+    if (!visibleFilters.expiryBucket && expiryBucket !== "all")
+      setExpiryBucket("all");
     if (!visibleFilters.status && status !== "all") setStatus("all");
-  }, [account, broker, callPut, dataset, expiryBucket, moneyness, status, underlying, venue, visibleFilters]);
+  }, [
+    account,
+    broker,
+    callPut,
+    dataset,
+    expiryBucket,
+    moneyness,
+    status,
+    underlying,
+    venue,
+    visibleFilters,
+  ]);
   useEffect(() => {
     if (!visibleSections.decisionCards) setCardsVisible(false);
     if (!visibleSections.dataError) setDataErrorHelp(false);
   }, [visibleSections.dataError, visibleSections.decisionCards]);
   useEffect(() => {
-    if (visibleFilters.callPut && callPut === "combined" && moneyness !== "otm") {
+    if (
+      visibleFilters.callPut &&
+      callPut === "combined" &&
+      moneyness !== "otm"
+    ) {
       setCallPut(enabledOptions.callPut.call ? "call" : "put");
     }
   }, [callPut, enabledOptions.callPut.call, moneyness, visibleFilters.callPut]);
@@ -443,7 +1313,10 @@ export default function Matrix() {
     localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify(customRanges));
   }, [customRanges]);
   useEffect(() => {
-    localStorage.setItem(TARGET_OPTION_STORAGE_KEY, JSON.stringify([...targetOptionKeys].sort()));
+    localStorage.setItem(
+      TARGET_OPTION_STORAGE_KEY,
+      JSON.stringify([...targetOptionKeys].sort())
+    );
   }, [targetOptionKeys]);
   useEffect(() => {
     const saved = customRanges[metric];
@@ -459,7 +1332,8 @@ export default function Matrix() {
       if (!active) setPseudoFullscreen(false);
     };
     document.addEventListener("fullscreenchange", syncFullscreen);
-    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+    return () =>
+      document.removeEventListener("fullscreenchange", syncFullscreen);
   }, []);
   useEffect(() => {
     if (!pseudoFullscreen) return;
@@ -490,29 +1364,62 @@ export default function Matrix() {
     }
   };
 
-  const baseFiltered = useMemo(() => enriched.filter(position =>
-    marketMatchesSelection(position, underlying)
-    && (venue === "all" || position.venue === venue)
-    && (broker === "all" || position.broker === broker)
-    && (account === "all" || position.account === account)
-    && (callPut === "combined" || position.callPut === callPut)
-    && expiryBucketMatchesDte(position.dte, expiryBucket)
-    && (status === "all" || position.dataStatus === status),
-  ), [account, broker, callPut, enriched, expiryBucket, status, underlying, venue]);
-  const atmStrikeByUnderlying = useMemo(() => Object.fromEntries(RISK_UNDERLYINGS.map(riskUnderlying => {
-    const availableStrikes = baseFiltered
-      .filter(position => position.underlying === riskUnderlying)
-      .map(position => position.strike);
-    return [riskUnderlying, nearestStrikeLevels(availableStrikes, displaySpots[riskUnderlying])[0] ?? null];
-  })) as Record<RiskUnderlying, number | null>, [baseFiltered, displaySpots]);
-  const filtered = useMemo(() => moneyness === "all" ? baseFiltered : baseFiltered.filter(position =>
-    classifyOptionMoneyness(
-      position.strike,
-      displaySpots[position.underlying],
-      position.callPut,
-      atmStrikeByUnderlying[position.underlying],
-    ) === moneyness.toUpperCase(),
-  ), [atmStrikeByUnderlying, baseFiltered, displaySpots, moneyness]);
+  const baseFiltered = useMemo(
+    () =>
+      enriched.filter(
+        position =>
+          marketMatchesSelection(position, underlying) &&
+          (venue === "all" || position.venue === venue) &&
+          (broker === "all" || position.broker === broker) &&
+          (account === "all" || position.account === account) &&
+          (callPut === "combined" || position.callPut === callPut) &&
+          expiryBucketMatchesDte(position.dte, expiryBucket) &&
+          (status === "all" || position.dataStatus === status)
+      ),
+    [
+      account,
+      broker,
+      callPut,
+      enriched,
+      expiryBucket,
+      status,
+      underlying,
+      venue,
+    ]
+  );
+  const atmStrikeByUnderlying = useMemo(
+    () =>
+      Object.fromEntries(
+        RISK_UNDERLYINGS.map(riskUnderlying => {
+          const availableStrikes = baseFiltered
+            .filter(position => position.underlying === riskUnderlying)
+            .map(position => position.strike);
+          return [
+            riskUnderlying,
+            nearestStrikeLevels(
+              availableStrikes,
+              displaySpots[riskUnderlying]
+            )[0] ?? null,
+          ];
+        })
+      ) as Record<RiskUnderlying, number | null>,
+    [baseFiltered, displaySpots]
+  );
+  const filtered = useMemo(
+    () =>
+      moneyness === "all"
+        ? baseFiltered
+        : baseFiltered.filter(
+            position =>
+              classifyOptionMoneyness(
+                position.strike,
+                displaySpots[position.underlying],
+                position.callPut,
+                atmStrikeByUnderlying[position.underlying]
+              ) === moneyness.toUpperCase()
+          ),
+    [atmStrikeByUnderlying, baseFiltered, displaySpots, moneyness]
+  );
 
   const applyCustomRange = () => {
     const factor = percentageMetrics.has(metric) ? 100 : 1;
@@ -541,63 +1448,144 @@ export default function Matrix() {
       list.push(position);
       grouped.set(key, list);
     }
-    const cellModels: HeatmapCellModel[] = [...grouped.entries()].map(([key, cellPositions]) => {
-      const value = aggregateHeatmapCellMetric(cellPositions, metric);
-      const metricInputs = cellPositions.map(position => metricValue(position, metric));
-      const hasMissingMetric = metricInputs.some(input => input === null || !Number.isFinite(input));
-      return {
-        key,
-        expiry: cellPositions[0].expiry,
-        strike: canonicalStrike(cellPositions[0].strike),
-        positions: cellPositions,
-        value,
-        ungradedReason: value !== null
-          ? null
-          : hasMissingMetric
-            ? "missing"
-            : metric === "unitDelta" && metricInputs.some(input => input === 0)
-              ? "zero"
-              : "missing",
-        listed: cellPositions.some(position => position.positionKind === "listed"),
-        held: cellPositions.some(position => position.positionKind !== "listed"),
-      };
-    });
+    const cellModels: HeatmapCellModel[] = [...grouped.entries()].map(
+      ([key, cellPositions]) => {
+        const value = aggregateHeatmapCellMetric(cellPositions, metric);
+        const metricInputs = cellPositions.map(position =>
+          metricValue(position, metric)
+        );
+        const hasMissingMetric = metricInputs.some(
+          input => input === null || !Number.isFinite(input)
+        );
+        return {
+          key,
+          expiry: cellPositions[0].expiry,
+          strike: canonicalStrike(cellPositions[0].strike),
+          positions: cellPositions,
+          value,
+          ungradedReason:
+            value !== null
+              ? null
+              : hasMissingMetric
+                ? "missing"
+                : metric === "unitDelta" &&
+                    metricInputs.some(input => input === 0)
+                  ? "zero"
+                  : "missing",
+          listed: cellPositions.some(
+            position => position.positionKind === "listed"
+          ),
+          held: cellPositions.some(
+            position => position.positionKind !== "listed"
+          ),
+        };
+      }
+    );
     return {
       cells: cellModels,
       expiries: [...new Set(filtered.map(position => position.expiry))].sort(),
-      strikes: [...new Set(filtered.map(position => canonicalStrike(position.strike)))].sort((a, b) => a - b),
+      strikes: [
+        ...new Set(filtered.map(position => canonicalStrike(position.strike))),
+      ].sort((a, b) => a - b),
     };
   }, [filtered, metric]);
-  const sequentialMagnitude = metric === "unitDelta" || metric === "totalDelta"
-    || metric === "markIV" || metric === "bidIV" || metric === "askIV" || metric === "ivSpread"
-    || metric === "qty" || metric === "notionalSize" || metric === "bidDollarNotional"
-    || metric === "askDollarNotional" || metric === "bidAskDollarNotional";
+  const sequentialMagnitude =
+    metric === "unitDelta" ||
+    metric === "totalDelta" ||
+    metric === "markIV" ||
+    metric === "bidIV" ||
+    metric === "askIV" ||
+    metric === "ivSpread" ||
+    metric === "modelMarkIV" ||
+    metric === "modelBidIV" ||
+    metric === "modelAskIV" ||
+    metric === "modelIVSpread" ||
+    metric === "qty" ||
+    metric === "notionalSize" ||
+    metric === "bidDollarNotional" ||
+    metric === "askDollarNotional" ||
+    metric === "bidAskDollarNotional";
   const activeCustomRange = customRanges[metric] ?? null;
   const heldOnlyAutoRange = useMemo(() => {
-    if (!HELD_ONLY_HEATMAP_METRICS.has(metric) || activeCustomRange) return null;
+    if (!HELD_ONLY_HEATMAP_METRICS.has(metric) || activeCustomRange)
+      return null;
     const values = cells
-      .filter(cell => cell.held && cell.value !== null && Number.isFinite(cell.value))
+      .filter(
+        cell => cell.held && cell.value !== null && Number.isFinite(cell.value)
+      )
       .map(cell => Math.abs(cell.value!));
     if (!values.length) return null;
-    return { min: Math.min(...values), max: Math.max(...values), basis: "held" as const };
+    return {
+      min: Math.min(...values),
+      max: Math.max(...values),
+      basis: "held" as const,
+    };
   }, [activeCustomRange, cells, metric]);
-  const scale = useMemo(() => buildHeatScale(
-    cells.map(cell => cell.value === null ? null : sequentialMagnitude ? Math.abs(cell.value) : cell.value),
-    scaleMode,
-    !sequentialMagnitude && CENTERED_METRICS.has(metric),
-    activeCustomRange ? { ...activeCustomRange, basis: "custom" } : heldOnlyAutoRange,
-  ), [activeCustomRange, cells, heldOnlyAutoRange, metric, scaleMode, sequentialMagnitude]);
-  const importanceCutoff = useMemo(() => percentile(cells.map(cell => Math.abs(cell.value ?? 0)).filter(value => value > 0), 0.85), [cells]);
-  const lowImportanceCutoff = useMemo(() => percentile(cells.flatMap(cell => cell.value === null || !Number.isFinite(cell.value) ? [] : [Math.abs(cell.value)]), 0.15), [cells]);
-  const heldFiltered = useMemo(() => filtered.filter(position => position.positionKind !== "listed"), [filtered]);
+  const scale = useMemo(
+    () =>
+      buildHeatScale(
+        cells.map(cell =>
+          cell.value === null
+            ? null
+            : sequentialMagnitude
+              ? Math.abs(cell.value)
+              : cell.value
+        ),
+        scaleMode,
+        !sequentialMagnitude && CENTERED_METRICS.has(metric),
+        activeCustomRange
+          ? { ...activeCustomRange, basis: "custom" }
+          : heldOnlyAutoRange
+      ),
+    [
+      activeCustomRange,
+      cells,
+      heldOnlyAutoRange,
+      metric,
+      scaleMode,
+      sequentialMagnitude,
+    ]
+  );
+  const importanceCutoff = useMemo(
+    () =>
+      percentile(
+        cells.map(cell => Math.abs(cell.value ?? 0)).filter(value => value > 0),
+        0.85
+      ),
+    [cells]
+  );
+  const lowImportanceCutoff = useMemo(
+    () =>
+      percentile(
+        cells.flatMap(cell =>
+          cell.value === null || !Number.isFinite(cell.value)
+            ? []
+            : [Math.abs(cell.value)]
+        ),
+        0.15
+      ),
+    [cells]
+  );
+  const heldFiltered = useMemo(
+    () => filtered.filter(position => position.positionKind !== "listed"),
+    [filtered]
+  );
   const maxDte = useMemo(() => {
-    const validDtes = filtered.map(position => position.dte).filter(Number.isFinite);
+    const validDtes = filtered
+      .map(position => position.dte)
+      .filter(Number.isFinite);
     return validDtes.length ? Math.max(...validDtes) : null;
   }, [filtered]);
   const cards = useMemo(() => buildDecisionCards(heldFiltered), [heldFiltered]);
   const spot = displaySpots[spotUnderlying];
-  const currentTargetScope = targetOptionScope(`${dataset}:${underlying}`, callPut);
-  const activeTargetCellKeys = useMemo(() => targetCellKeysForScope(targetOptionKeys, currentTargetScope), [currentTargetScope, targetOptionKeys]);
+  const currentTargetScope = targetOptionScope(
+    `${dataset}:${underlying}`,
+    callPut
+  );
+  const activeTargetCellKeys = useMemo(
+    () => targetCellKeysForScope(targetOptionKeys, currentTargetScope),
+    [currentTargetScope, targetOptionKeys]
+  );
   const updateTargetCell = (key: string, selected: boolean) => {
     const storedKey = targetOptionStorageKey(currentTargetScope, key);
     setTargetOptionKeys(current => {
@@ -617,116 +1605,750 @@ export default function Matrix() {
   const locateCell = (key: string) => {
     setHighlightCellKey(key);
     requestAnimationFrame(() => {
-      const target = [...document.querySelectorAll<HTMLElement>("[data-cell-key]")].find(element => element.dataset.cellKey === key);
-      target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      const target = [
+        ...document.querySelectorAll<HTMLElement>("[data-cell-key]"),
+      ].find(element => element.dataset.cellKey === key);
+      target?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "center",
+      });
     });
   };
 
-  const waitingForChain = dataset === "chain" && (
-    ((underlying === "GLD" || underlying === "all") && chainFetching && !gldChain)
-    || ((underlying === "XAUT" || underlying === "all") && xautChainFetching && !xautChain)
-    || ((underlying === "BTC" || underlying === "all") && btcChainFetching && !btcChain)
-    || ((underlying === "ETH_BYBIT" || underlying === "all") && ethChainFetching && !ethChain)
-    || ((underlying === "BTC_DERIBIT" || underlying === "all") && deribitBtcChainFetching && !deribitBtcChain)
-    || ((underlying === "ETH_DERIBIT" || underlying === "all") && deribitEthChainFetching && !deribitEthChain)
-  );
-  const selectedChainCount = dataset !== "chain" ? null
-    : underlying === "GLD" ? gldChain?.contractCount ?? null
-    : underlying === "XAUT" ? xautChain?.contractCount ?? null
-    : underlying === "BTC" ? btcChain?.contractCount ?? null
-    : underlying === "ETH_BYBIT" ? ethChain?.contractCount ?? null
-    : underlying === "BTC_DERIBIT" ? deribitBtcChain?.contractCount ?? null
-    : underlying === "ETH_DERIBIT" ? deribitEthChain?.contractCount ?? null
-    : (gldChain?.contractCount ?? 0) + (xautChain?.contractCount ?? 0) + (btcChain?.contractCount ?? 0) + (ethChain?.contractCount ?? 0) + (deribitBtcChain?.contractCount ?? 0) + (deribitEthChain?.contractCount ?? 0);
-  const selectedChainTimestamp = dataset !== "chain" ? asOf
-    : underlying === "GLD" ? gldChain?.timestamp ?? asOf
-    : underlying === "XAUT" ? xautChain?.timestamp ?? asOf
-    : underlying === "BTC" ? btcChain?.timestamp ?? asOf
-    : underlying === "ETH_BYBIT" ? ethChain?.timestamp ?? asOf
-    : underlying === "BTC_DERIBIT" ? deribitBtcChain?.timestamp ?? asOf
-    : underlying === "ETH_DERIBIT" ? deribitEthChain?.timestamp ?? asOf
-    : [gldChain?.timestamp, xautChain?.timestamp, btcChain?.timestamp, ethChain?.timestamp, deribitBtcChain?.timestamp, deribitEthChain?.timestamp]
-      .map(value => value === undefined ? Number.NaN : new Date(value).getTime())
-      .filter(Number.isFinite)
-      .reduce((latest, value) => Math.max(latest, value), 0) || asOf.getTime();
-  const chainCountLabel = settings.heatmapChainContractCountLabel.trim() || "完整期权链合约数（Call + Put，筛选前）";
-  const heatmapLoading = (isLoading && (dataset === "live" || dataset === "chain")) || waitingForChain;
+  const waitingForChain =
+    dataset === "chain" &&
+    (((underlying === "GLD" || underlying === "all") &&
+      chainFetching &&
+      !gldChain) ||
+      ((underlying === "XAUT" || underlying === "all") &&
+        xautChainFetching &&
+        !xautChain) ||
+      ((underlying === "BTC" || underlying === "all") &&
+        btcChainFetching &&
+        !btcChain) ||
+      ((underlying === "ETH_BYBIT" || underlying === "all") &&
+        ethChainFetching &&
+        !ethChain) ||
+      ((underlying === "BTC_DERIBIT" || underlying === "all") &&
+        deribitBtcChainFetching &&
+        !deribitBtcChain) ||
+      ((underlying === "ETH_DERIBIT" || underlying === "all") &&
+        deribitEthChainFetching &&
+        !deribitEthChain));
+  const selectedChainCount =
+    dataset !== "chain"
+      ? null
+      : underlying === "GLD"
+        ? (gldChain?.contractCount ?? null)
+        : underlying === "XAUT"
+          ? (xautChain?.contractCount ?? null)
+          : underlying === "BTC"
+            ? (btcChain?.contractCount ?? null)
+            : underlying === "ETH_BYBIT"
+              ? (ethChain?.contractCount ?? null)
+              : underlying === "BTC_DERIBIT"
+                ? (deribitBtcChain?.contractCount ?? null)
+                : underlying === "ETH_DERIBIT"
+                  ? (deribitEthChain?.contractCount ?? null)
+                  : (gldChain?.contractCount ?? 0) +
+                    (xautChain?.contractCount ?? 0) +
+                    (btcChain?.contractCount ?? 0) +
+                    (ethChain?.contractCount ?? 0) +
+                    (deribitBtcChain?.contractCount ?? 0) +
+                    (deribitEthChain?.contractCount ?? 0);
+  const selectedChainTimestamp =
+    dataset !== "chain"
+      ? asOf
+      : underlying === "GLD"
+        ? (gldChain?.timestamp ?? asOf)
+        : underlying === "XAUT"
+          ? (xautChain?.timestamp ?? asOf)
+          : underlying === "BTC"
+            ? (btcChain?.timestamp ?? asOf)
+            : underlying === "ETH_BYBIT"
+              ? (ethChain?.timestamp ?? asOf)
+              : underlying === "BTC_DERIBIT"
+                ? (deribitBtcChain?.timestamp ?? asOf)
+                : underlying === "ETH_DERIBIT"
+                  ? (deribitEthChain?.timestamp ?? asOf)
+                  : [
+                      gldChain?.timestamp,
+                      xautChain?.timestamp,
+                      btcChain?.timestamp,
+                      ethChain?.timestamp,
+                      deribitBtcChain?.timestamp,
+                      deribitEthChain?.timestamp,
+                    ]
+                      .map(value =>
+                        value === undefined
+                          ? Number.NaN
+                          : new Date(value).getTime()
+                      )
+                      .filter(Number.isFinite)
+                      .reduce((latest, value) => Math.max(latest, value), 0) ||
+                    asOf.getTime();
+  const chainCountLabel =
+    settings.heatmapChainContractCountLabel.trim() ||
+    "完整期权链合约数（Call + Put，筛选前）";
+  const heatmapLoading =
+    (isLoading && (dataset === "live" || dataset === "chain")) ||
+    waitingForChain;
 
   return (
-    <div className={`matrix-fullscreen-shell flex h-[calc(100vh-5.5rem)] min-h-[560px] flex-col gap-1 overflow-hidden ${isFullscreen ? "matrix-pseudo-fullscreen" : ""}`} data-testid="institutional-risk-heatmap" data-fullscreen={isFullscreen ? "true" : "false"}>
+    <div
+      className={`matrix-fullscreen-shell flex h-[calc(100vh-5.5rem)] min-h-[560px] flex-col gap-1 overflow-hidden ${isFullscreen ? "matrix-pseudo-fullscreen" : ""}`}
+      data-testid="institutional-risk-heatmap"
+      data-fullscreen={isFullscreen ? "true" : "false"}
+    >
       <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-1">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">市场热力图</h1>
-          <span data-testid="heatmap-scope-stats" className="truncate font-mono text-[9px] text-muted-foreground">{heldFiltered.length} held positions · {filtered.length} option instruments · {cells.length} grid cells · {expiries.length} expiries · {strikes.length} strikes · max DTE {maxDte === null ? "MISSING" : `${maxDte}d`}{visibleSections.chainContractCount && selectedChainCount !== null ? ` · ${MARKET_LABELS[underlying]} ${chainCountLabel}: ${selectedChainCount.toLocaleString("en-US")}` : ""}</span>
+          <h1 className="truncate text-xs font-semibold tracking-wide text-foreground">
+            市场热力图
+          </h1>
+          <span
+            data-testid="heatmap-scope-stats"
+            className="truncate font-mono text-[9px] text-muted-foreground"
+          >
+            {heldFiltered.length} held positions · {filtered.length} option
+            instruments · {cells.length} grid cells · {expiries.length} expiries
+            · {strikes.length} strikes · max DTE{" "}
+            {maxDte === null ? "MISSING" : `${maxDte}d`}
+            {visibleSections.chainContractCount && selectedChainCount !== null
+              ? ` · ${MARKET_LABELS[underlying]} ${chainCountLabel}: ${selectedChainCount.toLocaleString("en-US")}`
+              : ""}
+          </span>
         </div>
         <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
-          <span data-testid="heatmap-as-of" className="whitespace-nowrap">As-of {formatHongKongAsOf(selectedChainTimestamp)}</span>
-          {visibleSections.dataError && <button type="button" onClick={() => setDataErrorHelp(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground"><Info className="h-3 w-3" />Largest Data Error</button>}
-          {visibleSections.decisionCards && <button type="button" onClick={() => setCardsVisible(value => !value)} className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground">{cardsVisible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{cardsVisible ? "Hide Cards" : "Show Cards"}</button>}
-          {settings.pageMarketRefreshButtons.matrix && <MarketRefreshButton compact />}
-          {selectedPosition && <span className="max-w-64 truncate text-foreground">Selected: {positionLabel(selectedPosition)} · Roll {selectedPosition.rollPriority.total.toFixed(0)}</span>}
+          <span data-testid="heatmap-as-of" className="whitespace-nowrap">
+            As-of {formatHongKongAsOf(selectedChainTimestamp)}
+          </span>
+          {visibleSections.dataError && (
+            <button
+              type="button"
+              onClick={() => setDataErrorHelp(value => !value)}
+              className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground"
+            >
+              <Info className="h-3 w-3" />
+              Largest Data Error
+            </button>
+          )}
+          {visibleSections.decisionCards && (
+            <button
+              type="button"
+              onClick={() => setCardsVisible(value => !value)}
+              className="flex items-center gap-1 border border-border px-1.5 py-0.5 hover:text-foreground"
+            >
+              {cardsVisible ? (
+                <EyeOff className="h-3 w-3" />
+              ) : (
+                <Eye className="h-3 w-3" />
+              )}
+              {cardsVisible ? "Hide Cards" : "Show Cards"}
+            </button>
+          )}
+          {settings.pageMarketRefreshButtons.matrix && (
+            <MarketRefreshButton compact />
+          )}
+          {selectedPosition && (
+            <span className="max-w-64 truncate text-foreground">
+              Selected: {positionLabel(selectedPosition)} · Roll{" "}
+              {selectedPosition.rollPriority.total.toFixed(0)}
+            </span>
+          )}
         </div>
       </div>
 
-      {visibleSections.dataError && dataErrorHelp && <div className="shrink-0 border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-[9px] leading-relaxed text-amber-100"><strong>Largest Data Error</strong> 只检查当前筛选中的真实持仓：先按严重度 FAIL &gt; MISSING &gt; STALE &gt; WARN &gt; LIVE 排序；严重度相同时选 Quote Age 最大的一条。它不是盈亏或风险值，而是最需要修复的数据质量问题。缺 Source、Mark、合约乘数或 Greeks 会触发 MISSING；报价超过 15 分钟触发 STALE。</div>}
-      {visibleSections.decisionCards && cardsVisible && <DecisionCards cards={cards} onLocate={locateCell} />}
+      {visibleSections.dataError && dataErrorHelp && (
+        <div className="shrink-0 border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-[9px] leading-relaxed text-amber-100">
+          <strong>Largest Data Error</strong>{" "}
+          只检查当前筛选中的真实持仓：先按严重度 FAIL &gt; MISSING &gt; STALE
+          &gt; WARN &gt; LIVE 排序；严重度相同时选 Quote Age
+          最大的一条。它不是盈亏或风险值，而是最需要修复的数据质量问题。缺
+          Source、Mark、合约乘数或 Greeks 会触发 MISSING；报价超过 15 分钟触发
+          STALE。
+        </div>
+      )}
+      {visibleSections.decisionCards && cardsVisible && (
+        <DecisionCards cards={cards} onLocate={locateCell} />
+      )}
 
-      {Object.values(visibleFilters).some(Boolean) && <div className="flex min-h-7 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1 py-0.5">
-        {visibleFilters.dataset && <NativeSelect className="min-w-[130px] flex-1" label="DATA" value={dataset} onChange={value => setDataset(value as DatasetMode)} options={[
-          { value: "live", label: "LIVE / IMPORTED" },
-          { value: "chain", label: "FULL OPTION CHAIN" },
-          { value: "mock100", label: "MOCK 100" },
-          { value: "mock200", label: "MOCK 200" },
-        ].filter(option => enabledOptions.dataset[option.value as DatasetMode])} />}
-        {visibleFilters.underlying && <NativeSelect className="w-[230px] flex-none" label="UNDERLYING" value={underlying} onChange={value => setUnderlying(value as HeatmapUnderlyingSelection)} options={(Object.entries(MARKET_LABELS) as Array<[HeatmapUnderlyingSelection, string]>).map(([value, label]) => ({ value, label })).filter(option => enabledOptions.underlying[option.value])} />}
-        {visibleFilters.venue && <NativeSelect className="min-w-[100px] flex-1" label="VENUE" value={venue} onChange={setVenue} options={[{ value: "all", label: "ALL" }, ...filterOptions.venue.map(value => ({ value, label: value }))]} />}
-        {visibleFilters.broker && <NativeSelect className="min-w-[100px] flex-1" label="BROKER" value={broker} onChange={setBroker} options={[{ value: "all", label: "ALL" }, ...filterOptions.broker.map(value => ({ value, label: value }))]} />}
-        {visibleFilters.account && <NativeSelect className="min-w-[110px] flex-1" label="ACCOUNT" value={account} onChange={setAccount} options={[{ value: "all", label: "ALL" }, ...filterOptions.account.map(value => ({ value, label: value }))]} />}
-        {visibleFilters.callPut && <NativeSelect className="w-[112px] flex-none" label="C/P" value={callPut} onChange={value => setCallPut(value as typeof callPut)} options={[{ value: "call", label: "CALL" }, { value: "put", label: "PUT" }, { value: "combined", label: "CALL + PUT" }].filter(option => enabledOptions.callPut[option.value as keyof typeof enabledOptions.callPut] && (option.value !== "combined" || moneyness === "otm"))} />}
-        {visibleFilters.expiryBucket && <NativeSelect className="min-w-[90px] flex-1" label="DTE" value={expiryBucket} onChange={value => setExpiryBucket(value as ExpiryBucket)} options={[{ value: "all", label: "ALL" }, { value: "expired", label: "EXP" }, { value: "0-2", label: "0–2" }, { value: "3-7", label: "3–7" }, { value: "8-30", label: "8–30" }, { value: "31+", label: "31+" }].filter(option => enabledOptions.expiryBucket[option.value as ExpiryBucket])} />}
-        {visibleFilters.status && <NativeSelect className="min-w-[100px] flex-1" label="STATUS" value={status} onChange={value => setStatus(value as typeof status)} options={[{ value: "all", label: "ALL" }, ...(["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]).map(value => ({ value, label: value }))].filter(option => enabledOptions.status[option.value as keyof typeof enabledOptions.status])} />}
-        {visibleFilters.metric && <NativeSelect label="METRIC" value={metric} onChange={value => setMetric(value as HeatmapMetric)} options={metricOptions.map(([value, label]) => ({ value, label }))} />}
-        {visibleFilters.moneyness && <NativeSelect className="w-[105px] flex-none" label="ITM/OTM" value={moneyness} onChange={value => setMoneyness(value as MoneynessFilter)} options={[{ value: "all", label: "ALL" }, { value: "itm", label: "ITM" }, { value: "otm", label: "OTM" }].filter(option => enabledOptions.moneyness[option.value as MoneynessFilter])} />}
-        {visibleFilters.label && <NativeSelect label="LABEL" value={labelMode} onChange={value => setLabelMode(value as CellLabelMode)} options={[{ value: "none", label: "NONE" }, { value: "held", label: "POSITION METRIC" }, { value: "top", label: "TOP 15%" }, { value: "bottom", label: "BOTTOM 15%" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.label[option.value as keyof typeof enabledOptions.label])} />}
-        {visibleFilters.hover && <NativeSelect label="HOVER" value={hoverPreset} onChange={value => setHoverPreset(value as HoverDataPreset)} options={[{ value: "risk", label: "RISK" }, { value: "market", label: "MARKET" }, { value: "pnl", label: "PNL" }, { value: "all", label: "ALL" }].filter(option => enabledOptions.hover[option.value as keyof typeof enabledOptions.hover])} />}
-        {visibleFilters.targetOption && <div className="flex h-6 items-center border border-border/70 text-[8px] text-muted-foreground" aria-label="Target Option selection controls"><span className="px-1 whitespace-nowrap">TARGET OPTION</span><button type="button" aria-label="Select Target Options" aria-pressed={targetMode === "add"} title="点击 + 后，再点击热力图方格以选中；再次点击 + 退出" onClick={() => setTargetMode(current => current === "add" ? "idle" : "add")} className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "add" ? "bg-sky-400/20 text-sky-300" : "hover:text-foreground"}`}><Plus className="h-3 w-3" /></button><span className={`min-w-7 px-1 text-center font-mono ${activeTargetCellKeys.size ? "text-sky-300" : ""}`} title={`${targetOptionKeys.size} saved targets across all views`}>{activeTargetCellKeys.size}</span><button type="button" aria-label="Unselect Target Options" aria-pressed={targetMode === "remove"} title="点击 − 后，再点击天蓝色方格以取消选中；再次点击 − 退出" onClick={() => setTargetMode(current => current === "remove" ? "idle" : "remove")} className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "remove" ? "bg-rose-400/20 text-rose-300" : "hover:text-foreground"}`}><Minus className="h-3 w-3" /></button></div>}
-      </div>}
+      {Object.values(visibleFilters).some(Boolean) && (
+        <div className="flex min-h-7 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1 py-0.5">
+          {visibleFilters.dataset && (
+            <NativeSelect
+              className="min-w-[130px] flex-1"
+              label="DATA"
+              value={dataset}
+              onChange={value => setDataset(value as DatasetMode)}
+              options={[
+                { value: "live", label: "LIVE / IMPORTED" },
+                { value: "chain", label: "FULL OPTION CHAIN" },
+                { value: "mock100", label: "MOCK 100" },
+                { value: "mock200", label: "MOCK 200" },
+              ].filter(
+                option => enabledOptions.dataset[option.value as DatasetMode]
+              )}
+            />
+          )}
+          {visibleFilters.underlying && (
+            <NativeSelect
+              className="w-[230px] flex-none"
+              label="UNDERLYING"
+              value={underlying}
+              onChange={value =>
+                setUnderlying(value as HeatmapUnderlyingSelection)
+              }
+              options={(
+                Object.entries(MARKET_LABELS) as Array<
+                  [HeatmapUnderlyingSelection, string]
+                >
+              )
+                .map(([value, label]) => ({ value, label }))
+                .filter(option => enabledOptions.underlying[option.value])}
+            />
+          )}
+          {visibleFilters.venue && (
+            <NativeSelect
+              className="min-w-[100px] flex-1"
+              label="VENUE"
+              value={venue}
+              onChange={setVenue}
+              options={[
+                { value: "all", label: "ALL" },
+                ...filterOptions.venue.map(value => ({ value, label: value })),
+              ]}
+            />
+          )}
+          {visibleFilters.broker && (
+            <NativeSelect
+              className="min-w-[100px] flex-1"
+              label="BROKER"
+              value={broker}
+              onChange={setBroker}
+              options={[
+                { value: "all", label: "ALL" },
+                ...filterOptions.broker.map(value => ({ value, label: value })),
+              ]}
+            />
+          )}
+          {visibleFilters.account && (
+            <NativeSelect
+              className="min-w-[110px] flex-1"
+              label="ACCOUNT"
+              value={account}
+              onChange={setAccount}
+              options={[
+                { value: "all", label: "ALL" },
+                ...filterOptions.account.map(value => ({
+                  value,
+                  label: value,
+                })),
+              ]}
+            />
+          )}
+          {visibleFilters.callPut && (
+            <NativeSelect
+              className="w-[112px] flex-none"
+              label="C/P"
+              value={callPut}
+              onChange={value => setCallPut(value as typeof callPut)}
+              options={[
+                { value: "call", label: "CALL" },
+                { value: "put", label: "PUT" },
+                { value: "combined", label: "CALL + PUT" },
+              ].filter(
+                option =>
+                  enabledOptions.callPut[
+                    option.value as keyof typeof enabledOptions.callPut
+                  ] &&
+                  (option.value !== "combined" || moneyness === "otm")
+              )}
+            />
+          )}
+          {visibleFilters.expiryBucket && (
+            <NativeSelect
+              className="min-w-[90px] flex-1"
+              label="DTE"
+              value={expiryBucket}
+              onChange={value => setExpiryBucket(value as ExpiryBucket)}
+              options={[
+                { value: "all", label: "ALL" },
+                { value: "expired", label: "EXP" },
+                { value: "0-2", label: "0–2" },
+                { value: "3-7", label: "3–7" },
+                { value: "8-30", label: "8–30" },
+                { value: "31+", label: "31+" },
+              ].filter(
+                option =>
+                  enabledOptions.expiryBucket[option.value as ExpiryBucket]
+              )}
+            />
+          )}
+          {visibleFilters.status && (
+            <NativeSelect
+              className="min-w-[100px] flex-1"
+              label="STATUS"
+              value={status}
+              onChange={value => setStatus(value as typeof status)}
+              options={[
+                { value: "all", label: "ALL" },
+                ...(
+                  ["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]
+                ).map(value => ({ value, label: value })),
+              ].filter(
+                option =>
+                  enabledOptions.status[
+                    option.value as keyof typeof enabledOptions.status
+                  ]
+              )}
+            />
+          )}
+          {visibleFilters.metric && (
+            <NativeSelect
+              label="METRIC"
+              value={metric}
+              onChange={value => setMetric(value as HeatmapMetric)}
+              options={metricOptions.map(([value, label]) => ({
+                value,
+                label,
+              }))}
+            />
+          )}
+          {visibleFilters.moneyness && (
+            <NativeSelect
+              className="w-[105px] flex-none"
+              label="ITM/OTM"
+              value={moneyness}
+              onChange={value => setMoneyness(value as MoneynessFilter)}
+              options={[
+                { value: "all", label: "ALL" },
+                { value: "itm", label: "ITM" },
+                { value: "otm", label: "OTM" },
+              ].filter(
+                option =>
+                  enabledOptions.moneyness[option.value as MoneynessFilter]
+              )}
+            />
+          )}
+          {visibleFilters.label && (
+            <NativeSelect
+              label="LABEL"
+              value={labelMode}
+              onChange={value => setLabelMode(value as CellLabelMode)}
+              options={[
+                { value: "none", label: "NONE" },
+                { value: "held", label: "POSITION METRIC" },
+                { value: "top", label: "TOP 15%" },
+                { value: "bottom", label: "BOTTOM 15%" },
+                { value: "all", label: "ALL" },
+              ].filter(
+                option =>
+                  enabledOptions.label[
+                    option.value as keyof typeof enabledOptions.label
+                  ]
+              )}
+            />
+          )}
+          {visibleFilters.hover && (
+            <NativeSelect
+              label="HOVER"
+              value={hoverPreset}
+              onChange={value => setHoverPreset(value as HoverDataPreset)}
+              options={[
+                { value: "risk", label: "RISK" },
+                { value: "market", label: "MARKET" },
+                { value: "pnl", label: "PNL" },
+                { value: "all", label: "ALL" },
+              ].filter(
+                option =>
+                  enabledOptions.hover[
+                    option.value as keyof typeof enabledOptions.hover
+                  ]
+              )}
+            />
+          )}
+          {visibleFilters.targetOption && (
+            <div
+              className="flex h-6 items-center border border-border/70 text-[8px] text-muted-foreground"
+              aria-label="Target Option selection controls"
+            >
+              <span className="px-1 whitespace-nowrap">TARGET OPTION</span>
+              <button
+                type="button"
+                aria-label="Select Target Options"
+                aria-pressed={targetMode === "add"}
+                title="点击 + 后，再点击热力图方格以选中；再次点击 + 退出"
+                onClick={() =>
+                  setTargetMode(current => (current === "add" ? "idle" : "add"))
+                }
+                className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "add" ? "bg-sky-400/20 text-sky-300" : "hover:text-foreground"}`}
+              >
+                <Plus className="h-3 w-3" />
+              </button>
+              <span
+                className={`min-w-7 px-1 text-center font-mono ${activeTargetCellKeys.size ? "text-sky-300" : ""}`}
+                title={`${targetOptionKeys.size} saved targets across all views`}
+              >
+                {activeTargetCellKeys.size}
+              </span>
+              <button
+                type="button"
+                aria-label="Unselect Target Options"
+                aria-pressed={targetMode === "remove"}
+                title="点击 − 后，再点击天蓝色方格以取消选中；再次点击 − 退出"
+                onClick={() =>
+                  setTargetMode(current =>
+                    current === "remove" ? "idle" : "remove"
+                  )
+                }
+                className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "remove" ? "bg-rose-400/20 text-rose-300" : "hover:text-foreground"}`}
+              >
+                <Minus className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-      {Object.entries(visibleFilters).some(([key, visible]) => visible && !["dataset", "underlying", "venue", "broker", "account", "callPut", "moneyness", "expiryBucket", "status", "metric", "label", "hover", "targetOption"].includes(key)) && <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1">
-        {visibleFilters.scale && <NativeSelect label="SCALE" value={scaleMode} onChange={value => setScaleMode(value as ColorScaleMode)} options={[{ value: "quantile", label: "QUANTILE" }, { value: "log", label: "LOG" }, { value: "symmetric", label: "ZERO-CENTER" }].filter(option => enabledOptions.scale[option.value as keyof typeof enabledOptions.scale])} />}
-        {visibleFilters.spot && <NativeSelect label="SPOT" value={spotUnderlying} onChange={value => setSpotUnderlying(value as typeof spotUnderlying)} options={[{ value: "GLD", label: "GLD" }, { value: "XAUT", label: "XAUT" }, { value: "BTC", label: "BTC" }, { value: "ETH", label: "ETH" }, { value: "XAU", label: "XAU" }].filter(option => enabledOptions.spot[option.value as keyof typeof enabledOptions.spot])} />}
-        {visibleFilters.range && <>
-        <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MIN{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale minimum" inputMode="decimal" value={rangeMinDraft} onChange={event => setRangeMinDraft(event.target.value)} placeholder={heldOnlyAutoRange ? formatCompact(heldOnlyAutoRange.min, metric) : "AUTO"} className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
-        <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground"><span>MAX{percentageMetrics.has(metric) ? "%" : ""}</span><input aria-label="Color scale maximum" inputMode="decimal" value={rangeMaxDraft} onChange={event => setRangeMaxDraft(event.target.value)} placeholder={heldOnlyAutoRange ? formatCompact(heldOnlyAutoRange.max, metric) : "AUTO"} className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none" /></label>
-        <button type="button" onClick={applyCustomRange} className="h-6 border border-border px-1.5 text-[8px] text-muted-foreground hover:text-foreground">Apply Range</button>
-        {activeCustomRange && <button type="button" onClick={resetCustomRange} className="h-6 border border-emerald-400/60 px-1.5 text-[8px] text-emerald-300">Custom ✓ / Reset</button>}
-        {rangeError && <span role="alert" className="text-[8px] text-red-300">{rangeError}</span>}
-        </>}
-        {visibleFilters.transpose && <button type="button" onClick={() => setTranspose(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${transpose ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowLeftRight className="h-3 w-3" />Transpose</button>}
-        {visibleFilters.reverseStrikes && <button type="button" onClick={() => setReverseStrikes(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${reverseStrikes ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ArrowUpDown className="h-3 w-3" />Strike {reverseStrikes ? "↓" : "↑"}</button>}
-        {visibleFilters.cellSize && <div className="flex h-6 items-center border border-border text-[9px] text-muted-foreground"><button aria-label="Smaller cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.max(3, value - 1)); }}><Minus className="h-3 w-3" /></button><span className="w-8 text-center font-mono">{cellSize}px</span><button aria-label="Larger cells" className="h-full px-1 hover:text-foreground" onClick={() => { setFitAll(false); setCellSize(value => Math.min(28, value + 1)); }}><Plus className="h-3 w-3" /></button></div>}
-        {visibleFilters.fitAll && <button type="button" onClick={() => setFitAll(value => !value)} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${fitAll ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}><ScanLine className="h-3 w-3" />Fit All</button>}
-        {visibleFilters.fullscreen && <button type="button" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit heatmap fullscreen" : "Enter heatmap fullscreen"} className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${isFullscreen ? "border-amber-300 bg-amber-300/15 text-amber-200" : "border-border text-muted-foreground"}`}>{isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</button>}
-        <Tooltip delayDuration={80}><TooltipTrigger asChild><span data-testid="spot-atm-marker" className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"><LocateFixed className="h-3 w-3" />ATM</span></TooltipTrigger><TooltipContent side="bottom" sideOffset={4} className="border border-amber-300/40 bg-popover px-2 py-1 text-[10px] text-popover-foreground shadow-xl"><span className="text-muted-foreground">{spotUnderlying} Spot price </span><strong className="font-mono text-amber-300">{formatSpotPrice(spot)}</strong><span className="ml-2 text-muted-foreground">Nearest Strike </span><strong className="font-mono">{formatStrike(spotRangeState(strikes, spot).nearestStrike)}</strong></TooltipContent></Tooltip>
-      </div>}
+      {Object.entries(visibleFilters).some(
+        ([key, visible]) =>
+          visible &&
+          ![
+            "dataset",
+            "underlying",
+            "venue",
+            "broker",
+            "account",
+            "callPut",
+            "moneyness",
+            "expiryBucket",
+            "status",
+            "metric",
+            "label",
+            "hover",
+            "targetOption",
+          ].includes(key)
+      ) && (
+        <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1">
+          {visibleFilters.scale && (
+            <NativeSelect
+              label="SCALE"
+              value={scaleMode}
+              onChange={value => setScaleMode(value as ColorScaleMode)}
+              options={[
+                { value: "quantile", label: "QUANTILE" },
+                { value: "log", label: "LOG" },
+                { value: "symmetric", label: "ZERO-CENTER" },
+              ].filter(
+                option =>
+                  enabledOptions.scale[
+                    option.value as keyof typeof enabledOptions.scale
+                  ]
+              )}
+            />
+          )}
+          {visibleFilters.spot && (
+            <NativeSelect
+              label="SPOT"
+              value={spotUnderlying}
+              onChange={value =>
+                setSpotUnderlying(value as typeof spotUnderlying)
+              }
+              options={[
+                { value: "GLD", label: "GLD" },
+                { value: "XAUT", label: "XAUT" },
+                { value: "BTC", label: "BTC" },
+                { value: "ETH", label: "ETH" },
+                { value: "XAU", label: "XAU" },
+              ].filter(
+                option =>
+                  enabledOptions.spot[
+                    option.value as keyof typeof enabledOptions.spot
+                  ]
+              )}
+            />
+          )}
+          {visibleFilters.range && (
+            <>
+              <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground">
+                <span>MIN{percentageMetrics.has(metric) ? "%" : ""}</span>
+                <input
+                  aria-label="Color scale minimum"
+                  inputMode="decimal"
+                  value={rangeMinDraft}
+                  onChange={event => setRangeMinDraft(event.target.value)}
+                  placeholder={
+                    heldOnlyAutoRange
+                      ? formatCompact(heldOnlyAutoRange.min, metric)
+                      : "AUTO"
+                  }
+                  className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none"
+                />
+              </label>
+              <label className="flex h-6 items-center gap-1 border border-border/70 px-1 text-[8px] text-muted-foreground">
+                <span>MAX{percentageMetrics.has(metric) ? "%" : ""}</span>
+                <input
+                  aria-label="Color scale maximum"
+                  inputMode="decimal"
+                  value={rangeMaxDraft}
+                  onChange={event => setRangeMaxDraft(event.target.value)}
+                  placeholder={
+                    heldOnlyAutoRange
+                      ? formatCompact(heldOnlyAutoRange.max, metric)
+                      : "AUTO"
+                  }
+                  className="h-4 w-14 bg-transparent text-right font-mono text-foreground outline-none"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={applyCustomRange}
+                className="h-6 border border-border px-1.5 text-[8px] text-muted-foreground hover:text-foreground"
+              >
+                Apply Range
+              </button>
+              {activeCustomRange && (
+                <button
+                  type="button"
+                  onClick={resetCustomRange}
+                  className="h-6 border border-emerald-400/60 px-1.5 text-[8px] text-emerald-300"
+                >
+                  Custom ✓ / Reset
+                </button>
+              )}
+              {rangeError && (
+                <span role="alert" className="text-[8px] text-red-300">
+                  {rangeError}
+                </span>
+              )}
+            </>
+          )}
+          {visibleFilters.transpose && (
+            <button
+              type="button"
+              onClick={() => setTranspose(value => !value)}
+              className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${transpose ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}
+            >
+              <ArrowLeftRight className="h-3 w-3" />
+              Transpose
+            </button>
+          )}
+          {visibleFilters.reverseStrikes && (
+            <button
+              type="button"
+              onClick={() => setReverseStrikes(value => !value)}
+              className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${reverseStrikes ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}
+            >
+              <ArrowUpDown className="h-3 w-3" />
+              Strike {reverseStrikes ? "↓" : "↑"}
+            </button>
+          )}
+          {visibleFilters.cellSize && (
+            <div className="flex h-6 items-center border border-border text-[9px] text-muted-foreground">
+              <button
+                aria-label="Smaller cells"
+                className="h-full px-1 hover:text-foreground"
+                onClick={() => {
+                  setFitAll(false);
+                  setCellSize(value => Math.max(3, value - 1));
+                }}
+              >
+                <Minus className="h-3 w-3" />
+              </button>
+              <span className="w-8 text-center font-mono">{cellSize}px</span>
+              <button
+                aria-label="Larger cells"
+                className="h-full px-1 hover:text-foreground"
+                onClick={() => {
+                  setFitAll(false);
+                  setCellSize(value => Math.min(28, value + 1));
+                }}
+              >
+                <Plus className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+          {visibleFilters.fitAll && (
+            <button
+              type="button"
+              onClick={() => setFitAll(value => !value)}
+              className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${fitAll ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}
+            >
+              <ScanLine className="h-3 w-3" />
+              Fit All
+            </button>
+          )}
+          {visibleFilters.fullscreen && (
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              aria-label={
+                isFullscreen
+                  ? "Exit heatmap fullscreen"
+                  : "Enter heatmap fullscreen"
+              }
+              className={`flex h-6 items-center gap-1 border px-2 text-[9px] ${isFullscreen ? "border-amber-300 bg-amber-300/15 text-amber-200" : "border-border text-muted-foreground"}`}
+            >
+              {isFullscreen ? (
+                <Minimize2 className="h-3 w-3" />
+              ) : (
+                <Maximize2 className="h-3 w-3" />
+              )}
+              {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            </button>
+          )}
+          <Tooltip delayDuration={80}>
+            <TooltipTrigger asChild>
+              <span
+                data-testid="spot-atm-marker"
+                className="ml-auto flex min-w-0 items-center justify-end gap-1 truncate font-mono text-[8px] text-amber-300"
+              >
+                <LocateFixed className="h-3 w-3" />
+                ATM
+              </span>
+            </TooltipTrigger>
+            <TooltipContent
+              side="bottom"
+              sideOffset={4}
+              className="border border-amber-300/40 bg-popover px-2 py-1 text-[10px] text-popover-foreground shadow-xl"
+            >
+              <span className="text-muted-foreground">
+                {spotUnderlying} Spot price{" "}
+              </span>
+              <strong className="font-mono text-amber-300">
+                {formatSpotPrice(spot)}
+              </strong>
+              <span className="ml-2 text-muted-foreground">
+                Nearest Strike{" "}
+              </span>
+              <strong className="font-mono">
+                {formatStrike(spotRangeState(strikes, spot).nearestStrike)}
+              </strong>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      )}
 
-      {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "GLD" || underlying === "all") && gldChain && <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">GLD FULL CHAIN · {gldChain.contractCount} contracts · {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes · {gldChain.source} · updated {new Date(gldChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed (actual lag varies) · cyan listed / white held</div>}
-      {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "XAUT" || underlying === "all") && xautChain && <div className="shrink-0 border border-violet-400/30 bg-violet-500/5 px-2 py-0.5 font-mono text-[8px] text-violet-100">XAUT FULL CHAIN · {xautChain.contractCount} tradable contracts · {xautChain.expiryCount} expiries · {xautChain.strikeCount} strikes · {xautChain.source} · updated {new Date(xautChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(xautChain.delaySeconds)}s</div>}
-      {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "BTC" || underlying === "all") && btcChain && <div className="shrink-0 border border-orange-400/30 bg-orange-500/5 px-2 py-0.5 font-mono text-[8px] text-orange-100">BTC FULL CHAIN · {btcChain.contractCount} tradable contracts · {btcChain.expiryCount} expiries · {btcChain.strikeCount} strikes · {btcChain.source} · updated {new Date(btcChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(btcChain.delaySeconds)}s</div>}
-      {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "ETH_BYBIT" || underlying === "all") && ethChain && <div className="shrink-0 border border-emerald-400/30 bg-emerald-500/5 px-2 py-0.5 font-mono text-[8px] text-emerald-100">ETH BYBIT FULL CHAIN · {ethChain.contractCount} tradable contracts · {ethChain.expiryCount} expiries · {ethChain.strikeCount} strikes · {ethChain.source} · updated {new Date(ethChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(ethChain.delaySeconds)}s</div>}
-      {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "BTC_DERIBIT" || underlying === "all") && deribitBtcChain && <div className="shrink-0 border border-blue-400/30 bg-blue-500/5 px-2 py-0.5 font-mono text-[8px] text-blue-100">BTC DERIBIT FULL CHAIN · {deribitBtcChain.contractCount} tradable contracts · {deribitBtcChain.expiryCount} expiries · {deribitBtcChain.strikeCount} strikes · {deribitBtcChain.source} · updated {new Date(deribitBtcChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(deribitBtcChain.delaySeconds)}s</div>}
-      {visibleSections.chainStatusBanner && dataset === "chain" && (underlying === "ETH_DERIBIT" || underlying === "all") && deribitEthChain && <div className="shrink-0 border border-fuchsia-400/30 bg-fuchsia-500/5 px-2 py-0.5 font-mono text-[8px] text-fuchsia-100">ETH DERIBIT FULL CHAIN · {deribitEthChain.contractCount} tradable contracts · {deribitEthChain.expiryCount} expiries · {deribitEthChain.strikeCount} strikes · {deribitEthChain.source} · updated {new Date(deribitEthChain.timestamp).toLocaleString("zh-CN", { hour12: false })} · observed age {Math.round(deribitEthChain.delaySeconds)}s</div>}
-      {visibleSections.positionOnlyMetricBanner && HELD_ONLY_HEATMAP_METRICS.has(metric) && <div className="shrink-0 border border-amber-300/25 bg-amber-300/5 px-2 py-0.5 font-mono text-[8px] text-amber-100">POSITION-ONLY METRIC · only held cells are colored and included in the default min/max · listed contracts remain hoverable but uncolored</div>}
+      {visibleSections.chainStatusBanner &&
+        dataset === "chain" &&
+        (underlying === "GLD" || underlying === "all") &&
+        gldChain && (
+          <div className="shrink-0 border border-cyan-400/30 bg-cyan-500/5 px-2 py-0.5 font-mono text-[8px] text-cyan-100">
+            GLD FULL CHAIN · {gldChain.contractCount} contracts ·{" "}
+            {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes ·{" "}
+            {gldChain.source} · updated{" "}
+            {new Date(gldChain.timestamp).toLocaleString("zh-CN", {
+              hour12: false,
+            })}{" "}
+            · Display Spot {formatSpotPrice(gldChain.spot)} · IV Reference Spot{" "}
+            {formatSpotPrice(gldChain.ivReferenceSpot)} · observed age{" "}
+            {Math.round(gldChain.delaySeconds / 60)}m · Cboe delayed feed
+            (actual lag varies) · cyan listed / white held
+          </div>
+        )}
+      {visibleSections.chainStatusBanner &&
+        dataset === "chain" &&
+        (underlying === "XAUT" || underlying === "all") &&
+        xautChain && (
+          <div className="shrink-0 border border-violet-400/30 bg-violet-500/5 px-2 py-0.5 font-mono text-[8px] text-violet-100">
+            XAUT FULL CHAIN · {xautChain.contractCount} tradable contracts ·{" "}
+            {xautChain.expiryCount} expiries · {xautChain.strikeCount} strikes ·{" "}
+            {xautChain.source} · updated{" "}
+            {new Date(xautChain.timestamp).toLocaleString("zh-CN", {
+              hour12: false,
+            })}{" "}
+            · observed age {Math.round(xautChain.delaySeconds)}s
+          </div>
+        )}
+      {visibleSections.chainStatusBanner &&
+        dataset === "chain" &&
+        (underlying === "BTC" || underlying === "all") &&
+        btcChain && (
+          <div className="shrink-0 border border-orange-400/30 bg-orange-500/5 px-2 py-0.5 font-mono text-[8px] text-orange-100">
+            BTC FULL CHAIN · {btcChain.contractCount} tradable contracts ·{" "}
+            {btcChain.expiryCount} expiries · {btcChain.strikeCount} strikes ·{" "}
+            {btcChain.source} · updated{" "}
+            {new Date(btcChain.timestamp).toLocaleString("zh-CN", {
+              hour12: false,
+            })}{" "}
+            · observed age {Math.round(btcChain.delaySeconds)}s
+          </div>
+        )}
+      {visibleSections.chainStatusBanner &&
+        dataset === "chain" &&
+        (underlying === "ETH_BYBIT" || underlying === "all") &&
+        ethChain && (
+          <div className="shrink-0 border border-emerald-400/30 bg-emerald-500/5 px-2 py-0.5 font-mono text-[8px] text-emerald-100">
+            ETH BYBIT FULL CHAIN · {ethChain.contractCount} tradable contracts ·{" "}
+            {ethChain.expiryCount} expiries · {ethChain.strikeCount} strikes ·{" "}
+            {ethChain.source} · updated{" "}
+            {new Date(ethChain.timestamp).toLocaleString("zh-CN", {
+              hour12: false,
+            })}{" "}
+            · observed age {Math.round(ethChain.delaySeconds)}s
+          </div>
+        )}
+      {visibleSections.chainStatusBanner &&
+        dataset === "chain" &&
+        (underlying === "BTC_DERIBIT" || underlying === "all") &&
+        deribitBtcChain && (
+          <div className="shrink-0 border border-blue-400/30 bg-blue-500/5 px-2 py-0.5 font-mono text-[8px] text-blue-100">
+            BTC DERIBIT FULL CHAIN · {deribitBtcChain.contractCount} tradable
+            contracts · {deribitBtcChain.expiryCount} expiries ·{" "}
+            {deribitBtcChain.strikeCount} strikes · {deribitBtcChain.source} ·
+            updated{" "}
+            {new Date(deribitBtcChain.timestamp).toLocaleString("zh-CN", {
+              hour12: false,
+            })}{" "}
+            · observed age {Math.round(deribitBtcChain.delaySeconds)}s
+          </div>
+        )}
+      {visibleSections.chainStatusBanner &&
+        dataset === "chain" &&
+        (underlying === "ETH_DERIBIT" || underlying === "all") &&
+        deribitEthChain && (
+          <div className="shrink-0 border border-fuchsia-400/30 bg-fuchsia-500/5 px-2 py-0.5 font-mono text-[8px] text-fuchsia-100">
+            ETH DERIBIT FULL CHAIN · {deribitEthChain.contractCount} tradable
+            contracts · {deribitEthChain.expiryCount} expiries ·{" "}
+            {deribitEthChain.strikeCount} strikes · {deribitEthChain.source} ·
+            updated{" "}
+            {new Date(deribitEthChain.timestamp).toLocaleString("zh-CN", {
+              hour12: false,
+            })}{" "}
+            · observed age {Math.round(deribitEthChain.delaySeconds)}s
+          </div>
+        )}
+      {visibleSections.positionOnlyMetricBanner &&
+        HELD_ONLY_HEATMAP_METRICS.has(metric) && (
+          <div className="shrink-0 border border-amber-300/25 bg-amber-300/5 px-2 py-0.5 font-mono text-[8px] text-amber-100">
+            POSITION-ONLY METRIC · only held cells are colored and included in
+            the default min/max · listed contracts remain hoverable but
+            uncolored
+          </div>
+        )}
       {heatmapLoading ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 border border-border/60 bg-background/70">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-xs text-muted-foreground">读取 {MARKET_LABELS[underlying]} 完整期权链…</p>
-          <p className="text-[9px] text-muted-foreground/75">筛选器已可使用；行情到达后将自动定位至 Spot / ATM 附近。</p>
+          <p className="text-xs text-muted-foreground">
+            读取 {MARKET_LABELS[underlying]} 完整期权链…
+          </p>
+          <p className="text-[9px] text-muted-foreground/75">
+            筛选器已可使用；行情到达后将自动定位至 Spot / ATM 附近。
+          </p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center border border-dashed border-border text-sm text-muted-foreground">
           <p>当前筛选没有有效 position。</p>
-          {dataset === "live" && <button type="button" className="mt-2 border border-primary/50 px-3 py-1 text-xs text-primary" onClick={() => setDataset("mock200")}>打开 MOCK 200 压力数据</button>}
+          {dataset === "live" && (
+            <button
+              type="button"
+              className="mt-2 border border-primary/50 px-3 py-1 text-xs text-primary"
+              onClick={() => setDataset("mock200")}
+            >
+              打开 MOCK 200 压力数据
+            </button>
+          )}
         </div>
       ) : (
         <HeatmapGrid
@@ -744,12 +2366,22 @@ export default function Matrix() {
           spot={spot}
           callPut={callPut}
           moneyness={moneyness}
-          atmStrike={selectedRiskUnderlying(underlying) === "all" ? undefined : atmStrikeByUnderlying[selectedRiskUnderlying(underlying) as RiskUnderlying]}
+          atmStrike={
+            selectedRiskUnderlying(underlying) === "all"
+              ? undefined
+              : atmStrikeByUnderlying[
+                  selectedRiskUnderlying(underlying) as RiskUnderlying
+                ]
+          }
           highlightCellKey={highlightCellKey}
           labelMode={labelMode}
           hoverPreset={hoverPreset}
           sequentialMagnitude={sequentialMagnitude}
-          heldCellContent={user?.role === "admin" ? settings.heatmapHeldCellContent : DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT}
+          heldCellContent={
+            user?.role === "admin"
+              ? settings.heatmapHeldCellContent
+              : DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT
+          }
           hoverContent={settings.heatmapHoverContent}
           cellDetailEnabled={settings.heatmapClickActions.cellDetail}
           expiryDetailEnabled={settings.heatmapClickActions.expiryDetail}
@@ -757,14 +2389,27 @@ export default function Matrix() {
           targetCellKeys={activeTargetCellKeys}
           onTargetCellChange={updateTargetCell}
           onSelectPosition={setSelectedPosition}
-          onSelectExpiry={(expiry, expiryPositions) => setSelectedExpiry({ expiry, positions: expiryPositions })}
+          onSelectExpiry={(expiry, expiryPositions) =>
+            setSelectedExpiry({ expiry, positions: expiryPositions })
+          }
         />
       )}
 
       <ExpiryPanel positions={heldFiltered} gldSpot={displaySpots.GLD} />
-      {visibleSections.scenario && <ScenarioStrip positions={heldFiltered} spots={displaySpots} />}
-      <PositionDetailDialog position={selectedPosition} content={settings.heatmapDetailContent} onClose={() => setSelectedPosition(null)} />
-      <ExpiryDetailDialog selection={selectedExpiry} metric={metric} content={settings.heatmapExpiryHoverContent} onClose={() => setSelectedExpiry(null)} />
+      {visibleSections.scenario && (
+        <ScenarioStrip positions={heldFiltered} spots={displaySpots} />
+      )}
+      <PositionDetailDialog
+        position={selectedPosition}
+        content={settings.heatmapDetailContent}
+        onClose={() => setSelectedPosition(null)}
+      />
+      <ExpiryDetailDialog
+        selection={selectedExpiry}
+        metric={metric}
+        content={settings.heatmapExpiryHoverContent}
+        onClose={() => setSelectedExpiry(null)}
+      />
     </div>
   );
 }

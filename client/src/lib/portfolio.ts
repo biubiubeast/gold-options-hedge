@@ -11,11 +11,30 @@ import {
 import { DEFAULT_FORMULAS, type FormulaLike } from "@shared/marketTypes";
 import type { DataStatus } from "@shared/riskHeatmap";
 import type { HeatmapMetric } from "@shared/riskHeatmap";
+import type { ModelIvStatus } from "@shared/impliedVolatility";
+import { modelImpliedVolatilityFromPrice } from "@shared/impliedVolatility";
 
 export type HeatmapControlKey =
-  | "dataset" | "underlying" | "venue" | "broker" | "account" | "callPut" | "moneyness" | "expiryBucket" | "status"
-  | "metric" | "scale" | "spot" | "label" | "hover" | "range" | "transpose" | "reverseStrikes"
-  | "cellSize" | "fitAll" | "fullscreen";
+  | "dataset"
+  | "underlying"
+  | "venue"
+  | "broker"
+  | "account"
+  | "callPut"
+  | "moneyness"
+  | "expiryBucket"
+  | "status"
+  | "metric"
+  | "scale"
+  | "spot"
+  | "label"
+  | "hover"
+  | "range"
+  | "transpose"
+  | "reverseStrikes"
+  | "cellSize"
+  | "fitAll"
+  | "fullscreen";
 
 export type HeatmapUnderlyingSelection =
   | "GLD"
@@ -27,29 +46,90 @@ export type HeatmapUnderlyingSelection =
   | "all";
 
 export type HeatmapHoverField =
-  | "selectedMetric" | "unitDelta" | "totalDelta" | "unitGamma" | "totalGamma" | "unitTheta" | "totalTheta"
-  | "unitVega" | "totalVega" | "dteRoll" | "qtyNotional" | "markIv" | "bidAsk" | "bidAskIv"
-  | "ivSpread" | "sourceQuote" | "mvEntry" | "upl";
+  | "selectedMetric"
+  | "unitDelta"
+  | "totalDelta"
+  | "unitGamma"
+  | "totalGamma"
+  | "unitTheta"
+  | "totalTheta"
+  | "unitVega"
+  | "totalVega"
+  | "dteRoll"
+  | "qtyNotional"
+  | "markIv"
+  | "bidAsk"
+  | "bidAskIv"
+  | "ivSpread"
+  | "sourceQuote"
+  | "mvEntry"
+  | "upl";
 
 export type HeatmapDetailField =
-  | "instrument" | "underlyingCallPut" | "expiryDte" | "strike" | "venueBrokerAccount" | "netQty"
-  | "contractMultiplier" | "xauPerUnit" | "markBidAsk" | "markIv" | "bidAskIv" | "qtyNotional"
-  | "unitDelta" | "totalDelta" | "unitGamma" | "totalGamma" | "unitTheta" | "totalTheta"
-  | "unitVega" | "totalVega" | "marketValue" | "entryPrice" | "entryCost" | "upl" | "source" | "quoteAsOf"
-  | "dataStatus" | "deliverableSource" | "adjustedContract" | "rollPriority";
+  | "instrument"
+  | "underlyingCallPut"
+  | "expiryDte"
+  | "strike"
+  | "venueBrokerAccount"
+  | "netQty"
+  | "contractMultiplier"
+  | "xauPerUnit"
+  | "markBidAsk"
+  | "markIv"
+  | "bidAskIv"
+  | "qtyNotional"
+  | "unitDelta"
+  | "totalDelta"
+  | "unitGamma"
+  | "totalGamma"
+  | "unitTheta"
+  | "totalTheta"
+  | "unitVega"
+  | "totalVega"
+  | "marketValue"
+  | "entryPrice"
+  | "entryCost"
+  | "upl"
+  | "source"
+  | "quoteAsOf"
+  | "dataStatus"
+  | "deliverableSource"
+  | "adjustedContract"
+  | "rollPriority";
 
 export type HeatmapExpiryHoverField =
-  | "heldListed" | "totalDelta" | "totalGamma" | "totalTheta" | "totalVega" | "maxRoll" | "worstStatus"
-  | "averageIv" | "openInterestVolume" | "staleMissing" | "latestQuote"
-  | "netGrossQty" | "grossNotional" | "mvEntry" | "upl";
+  | "heldListed"
+  | "totalDelta"
+  | "totalGamma"
+  | "totalTheta"
+  | "totalVega"
+  | "maxRoll"
+  | "worstStatus"
+  | "averageIv"
+  | "openInterestVolume"
+  | "staleMissing"
+  | "latestQuote"
+  | "netGrossQty"
+  | "grossNotional"
+  | "mvEntry"
+  | "upl";
 
-export type AdminPasswordPage = "dashboard" | "positions" | "matrix" | "tradingView" | "formulas" | "dataSources" | "settings" | "optionDetail" | "notFound";
+export type AdminPasswordPage =
+  | "dashboard"
+  | "positions"
+  | "matrix"
+  | "tradingView"
+  | "formulas"
+  | "dataSources"
+  | "settings"
+  | "optionDetail"
+  | "notFound";
 
 export const DEFAULT_HEATMAP_VIEW = {
   underlying: "GLD",
   moneyness: "otm",
   callPut: "combined",
-  metric: "ivSpread",
+  metric: "modelIVSpread",
   labelMode: "held",
   hoverPreset: "all",
 } as const;
@@ -162,7 +242,10 @@ export type PortfolioSettings = {
     underlying: Record<HeatmapUnderlyingSelection, boolean>;
     callPut: Record<"call" | "put" | "combined", boolean>;
     moneyness: Record<"all" | "itm" | "otm", boolean>;
-    expiryBucket: Record<"all" | "expired" | "0-2" | "3-7" | "8-30" | "31+", boolean>;
+    expiryBucket: Record<
+      "all" | "expired" | "0-2" | "3-7" | "8-30" | "31+",
+      boolean
+    >;
     status: Record<DataStatus | "all", boolean>;
     metric: Record<HeatmapMetric, boolean>;
     scale: Record<"quantile" | "log" | "symmetric", boolean>;
@@ -264,11 +347,33 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   },
   heatmapFilterOptions: {
     dataset: { chain: true, live: true, mock100: true, mock200: true },
-    underlying: { GLD: true, XAUT: true, BTC: true, BTC_DERIBIT: true, ETH_BYBIT: true, ETH_DERIBIT: true, all: false },
+    underlying: {
+      GLD: true,
+      XAUT: true,
+      BTC: true,
+      BTC_DERIBIT: true,
+      ETH_BYBIT: true,
+      ETH_DERIBIT: true,
+      all: false,
+    },
     callPut: { call: true, put: true, combined: true },
     moneyness: { all: true, itm: true, otm: true },
-    expiryBucket: { all: true, expired: true, "0-2": true, "3-7": true, "8-30": true, "31+": true },
-    status: { all: true, LIVE: true, STALE: true, WARN: true, MISSING: true, FAIL: true },
+    expiryBucket: {
+      all: true,
+      expired: true,
+      "0-2": true,
+      "3-7": true,
+      "8-30": true,
+      "31+": true,
+    },
+    status: {
+      all: true,
+      LIVE: true,
+      STALE: true,
+      WARN: true,
+      MISSING: true,
+      FAIL: true,
+    },
     metric: {
       unitDelta: true,
       totalDelta: true,
@@ -279,6 +384,10 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
       bidIV: true,
       askIV: true,
       ivSpread: true,
+      modelMarkIV: true,
+      modelBidIV: true,
+      modelAskIV: true,
+      modelIVSpread: true,
       qty: true,
       notionalSize: true,
       bidDollarNotional: true,
@@ -389,11 +498,12 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   riskFreeRate: 0.045,
 };
 
-export const DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT: PortfolioSettings["heatmapHeldCellContent"] = {
-  underlying: false,
-  callPut: false,
-  dataStatus: false,
-};
+export const DEFAULT_VIEWER_HEATMAP_HELD_CELL_CONTENT: PortfolioSettings["heatmapHeldCellContent"] =
+  {
+    underlying: false,
+    callPut: false,
+    dataStatus: false,
+  };
 
 export type MarketSnapshot = {
   markPrice: number;
@@ -404,8 +514,16 @@ export type MarketSnapshot = {
   askSize: number | null;
   bidIv?: number | null;
   askIv?: number | null;
-  bidIvDerived?: boolean;
-  askIvDerived?: boolean;
+  modelMarkIv?: number | null;
+  modelBidIv?: number | null;
+  modelAskIv?: number | null;
+  modelIvSpread?: number | null;
+  modelMarkIvStatus?: ModelIvStatus;
+  modelBidIvStatus?: ModelIvStatus;
+  modelAskIvStatus?: ModelIvStatus;
+  ivReferenceSpot?: number | null;
+  ivReferenceTime?: string | null;
+  ivReferenceSource?: string | null;
   delta: number;
   gamma: number;
   theta: number;
@@ -427,6 +545,8 @@ type XautTicker = {
   ask1Size?: string;
   bid1Iv?: string;
   ask1Iv?: string;
+  underlyingPrice?: string;
+  indexPrice?: string;
   delta: string;
   gamma: string;
   theta: string;
@@ -445,8 +565,16 @@ type GldQuote = {
   ask1Size?: number | null;
   bidIv?: number | null;
   askIv?: number | null;
-  bidIvDerived?: boolean;
-  askIvDerived?: boolean;
+  modelMarkIv?: number | null;
+  modelBidIv?: number | null;
+  modelAskIv?: number | null;
+  modelIvSpread?: number | null;
+  modelMarkIvStatus?: ModelIvStatus;
+  modelBidIvStatus?: ModelIvStatus;
+  modelAskIvStatus?: ModelIvStatus;
+  ivReferenceSpot?: number | null;
+  ivReferenceTimestamp?: number | null;
+  ivReferenceSource?: string | null;
   delta: number;
   gamma: number;
   theta: number;
@@ -458,7 +586,9 @@ type GldQuote = {
 const quoteIso = (value: unknown): string | null => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return new Date(parsed > 10_000_000_000 ? parsed : parsed * 1000).toISOString();
+  return new Date(
+    parsed > 10_000_000_000 ? parsed : parsed * 1000
+  ).toISOString();
 };
 
 const quoteStatus = (value: unknown): DataStatus => {
@@ -478,15 +608,63 @@ const finiteImported = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+function modelIvSnapshot(args: {
+  markPrice: number;
+  bidPrice: number;
+  askPrice: number;
+  referenceSpot: number;
+  referenceTime: string | null;
+  referenceSource: string | null;
+  expiry: string;
+  strike: number;
+  optionType: "call" | "put";
+  rate: number;
+  formulas: readonly FormulaLike[];
+}) {
+  const asOf = args.referenceTime ? Date.parse(args.referenceTime) : Number.NaN;
+  const solve = (price: number) =>
+    modelImpliedVolatilityFromPrice({
+      price,
+      spot: args.referenceSpot,
+      strike: args.strike,
+      expiry: args.expiry,
+      optionType: args.optionType,
+      asOf,
+      rate: args.rate,
+      formulas: args.formulas,
+    });
+  const mark = solve(args.markPrice);
+  const bid = solve(args.bidPrice);
+  const ask = solve(args.askPrice);
+  return {
+    modelMarkIv: mark.value,
+    modelBidIv: bid.value,
+    modelAskIv: ask.value,
+    modelIvSpread:
+      bid.value !== null && ask.value !== null ? ask.value - bid.value : null,
+    modelMarkIvStatus: mark.status,
+    modelBidIvStatus: bid.status,
+    modelAskIvStatus: ask.status,
+    ivReferenceSpot: args.referenceSpot > 0 ? args.referenceSpot : null,
+    ivReferenceTime: args.referenceTime,
+    ivReferenceSource: args.referenceSpot > 0 ? args.referenceSource : null,
+  };
+}
+
 function importedSnapshot(position: PortfolioPosition): MarketSnapshot | null {
   const markPrice = finiteImported(position.importedMarkPrice);
   const delta = finiteImported(position.entryDelta);
   const gamma = finiteImported(position.unitGamma);
   const theta = finiteImported(position.unitTheta);
   const vega = finiteImported(position.unitVega);
-  if ([markPrice, delta, gamma, theta, vega].some(value => value === null)) return null;
-  const quoteTime = position.marketQuoteTime ?? (position.referenceDate ? `${position.referenceDate}T23:59:59.000Z` : null);
-  const age = quoteTime ? Date.now() - Date.parse(quoteTime) : Number.POSITIVE_INFINITY;
+  if ([markPrice, delta, gamma, theta, vega].some(value => value === null))
+    return null;
+  const quoteTime =
+    position.marketQuoteTime ??
+    (position.referenceDate ? `${position.referenceDate}T23:59:59.000Z` : null);
+  const age = quoteTime
+    ? Date.now() - Date.parse(quoteTime)
+    : Number.POSITIVE_INFINITY;
   return {
     markPrice: markPrice!,
     markIv: finiteImported(position.markIv) ?? 0,
@@ -498,30 +676,56 @@ function importedSnapshot(position: PortfolioPosition): MarketSnapshot | null {
     gamma: gamma!,
     theta: theta!,
     vega: vega!,
-    source: position.marketSource ?? `Excel · ${position.importSource ?? "position snapshot"}${position.importRow ? ` · row ${position.importRow}` : ""}`,
+    source:
+      position.marketSource ??
+      `Excel · ${position.importSource ?? "position snapshot"}${position.importRow ? ` · row ${position.importRow}` : ""}`,
     estimated: false,
     available: true,
     quoteTime,
-    dataStatus: position.dataStatus ?? (!quoteTime ? "WARN" : age > 15 * 60_000 ? "STALE" : "LIVE"),
+    dataStatus:
+      position.dataStatus ??
+      (!quoteTime ? "WARN" : age > 15 * 60_000 ? "STALE" : "LIVE"),
   };
 }
 
 export function bybitExpiry(expiry: string): string {
   const [year, month, day] = expiry.split("-").map(Number);
-  const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+  const months = [
+    "JAN",
+    "FEB",
+    "MAR",
+    "APR",
+    "MAY",
+    "JUN",
+    "JUL",
+    "AUG",
+    "SEP",
+    "OCT",
+    "NOV",
+    "DEC",
+  ];
   return `${day}${months[month - 1]}${String(year).slice(2)}`;
 }
 
-export function findXautTicker(position: PortfolioPosition, tickers?: XautTicker[]) {
+export function findXautTicker(
+  position: PortfolioPosition,
+  tickers?: XautTicker[]
+) {
   if (!tickers) return undefined;
   const expiryToken = bybitExpiry(position.expiry);
   const strike = numberOf(position.strike);
   const typeToken = position.optionType === "call" ? "C" : "P";
   return tickers.find(ticker => {
     const tokens = ticker.symbol.toUpperCase().split("-");
-    const strikeMatches = tokens.some(token => numberOf(token) === strike && token !== "0");
+    const strikeMatches = tokens.some(
+      token => numberOf(token) === strike && token !== "0"
+    );
     const typeMatches = tokens.includes(typeToken);
-    return ticker.symbol.toUpperCase().includes(expiryToken) && strikeMatches && typeMatches;
+    return (
+      ticker.symbol.toUpperCase().includes(expiryToken) &&
+      strikeMatches &&
+      typeMatches
+    );
   });
 }
 
@@ -534,12 +738,32 @@ export function getPositionMarketData(args: {
   formulas?: readonly FormulaLike[];
   settings: PortfolioSettings;
 }): MarketSnapshot {
-  const { position, xautTickers, btcTickers, gldQuotes, gldSpot, settings } = args;
+  const { position, xautTickers, btcTickers, gldQuotes, gldSpot, settings } =
+    args;
   const formulas = args.formulas?.length ? args.formulas : DEFAULT_FORMULAS;
 
   if (position.underlying === "XAUT" || position.underlying === "BTC") {
-    const ticker = findXautTicker(position, position.underlying === "BTC" ? btcTickers : xautTickers);
+    const ticker = findXautTicker(
+      position,
+      position.underlying === "BTC" ? btcTickers : xautTickers
+    );
     if (ticker) {
+      const quoteTime = quoteIso(ticker.timestamp);
+      const ivReferenceSpot =
+        numberOf(ticker.underlyingPrice) || numberOf(ticker.indexPrice);
+      const modelIv = modelIvSnapshot({
+        markPrice: numberOf(ticker.markPrice),
+        bidPrice: numberOf(ticker.bid1Price),
+        askPrice: numberOf(ticker.ask1Price),
+        referenceSpot: ivReferenceSpot,
+        referenceTime: quoteTime,
+        referenceSource: `Bybit ticker underlyingPrice · ${position.underlying}`,
+        expiry: position.expiry,
+        strike: numberOf(position.strike),
+        optionType: position.optionType,
+        rate: settings.riskFreeRate,
+        formulas,
+      });
       return {
         markPrice: numberOf(ticker.markPrice),
         markIv: numberOf(ticker.markIv),
@@ -547,8 +771,11 @@ export function getPositionMarketData(args: {
         ask1: numberOf(ticker.ask1Price),
         bidSize: finiteImported(ticker.bid1Size),
         askSize: finiteImported(ticker.ask1Size),
-        bidIv: finiteImported(ticker.bid1Iv),
-        askIv: finiteImported(ticker.ask1Iv),
+        bidIv:
+          numberOf(ticker.bid1Iv) > 0 ? numberOf(ticker.bid1Iv) : null,
+        askIv:
+          numberOf(ticker.ask1Iv) > 0 ? numberOf(ticker.ask1Iv) : null,
+        ...modelIv,
         delta: numberOf(ticker.delta),
         gamma: numberOf(ticker.gamma),
         theta: numberOf(ticker.theta),
@@ -556,7 +783,7 @@ export function getPositionMarketData(args: {
         source: `Bybit V5 · ${position.underlying}`,
         estimated: false,
         available: true,
-        quoteTime: quoteIso(ticker.timestamp),
+        quoteTime,
         dataStatus: quoteStatus(ticker.timestamp),
       };
     }
@@ -565,12 +792,28 @@ export function getPositionMarketData(args: {
   }
 
   if (position.underlying === "GLD") {
-    const quote = gldQuotes?.find(item =>
-      item.expiry === position.expiry &&
-      item.optionType === position.optionType &&
-      Math.abs(item.strike - numberOf(position.strike)) < 0.001,
+    const quote = gldQuotes?.find(
+      item =>
+        item.expiry === position.expiry &&
+        item.optionType === position.optionType &&
+        Math.abs(item.strike - numberOf(position.strike)) < 0.001
     );
     if (quote) {
+      const quoteTime = quoteIso(quote.timestamp);
+      const referenceTime = quoteIso(quote.ivReferenceTimestamp) ?? quoteTime;
+      const modelIv = modelIvSnapshot({
+        markPrice: numberOf(quote.markPrice),
+        bidPrice: numberOf(quote.bid1Price),
+        askPrice: numberOf(quote.ask1Price),
+        referenceSpot: numberOf(quote.ivReferenceSpot),
+        referenceTime,
+        referenceSource: quote.ivReferenceSource ?? null,
+        expiry: position.expiry,
+        strike: numberOf(position.strike),
+        optionType: position.optionType,
+        rate: settings.riskFreeRate,
+        formulas,
+      });
       return {
         markPrice: numberOf(quote.markPrice),
         markIv: numberOf(quote.markIv),
@@ -580,8 +823,7 @@ export function getPositionMarketData(args: {
         askSize: finiteImported(quote.ask1Size),
         bidIv: finiteImported(quote.bidIv),
         askIv: finiteImported(quote.askIv),
-        bidIvDerived: quote.bidIvDerived,
-        askIvDerived: quote.askIvDerived,
+        ...modelIv,
         delta: numberOf(quote.delta),
         gamma: numberOf(quote.gamma),
         theta: numberOf(quote.theta),
@@ -589,28 +831,46 @@ export function getPositionMarketData(args: {
         source: quote.source,
         estimated: false,
         available: true,
-        quoteTime: quoteIso(quote.timestamp),
+        quoteTime,
         dataStatus: quoteStatus(quote.timestamp),
       };
     }
     const imported = importedSnapshot(position);
     if (imported) return imported;
     if (gldSpot > 0) {
-      const result = blackScholes({
-        S: gldSpot,
-        K: numberOf(position.strike),
-        T: timeToExpiry(position.expiry),
-        r: settings.riskFreeRate,
-        sigma: settings.gldFallbackIv,
-        type: position.optionType,
-      }, formulas);
+      const referenceTime = new Date().toISOString();
+      const result = blackScholes(
+        {
+          S: gldSpot,
+          K: numberOf(position.strike),
+          T: timeToExpiry(position.expiry),
+          r: settings.riskFreeRate,
+          sigma: settings.gldFallbackIv,
+          type: position.optionType,
+        },
+        formulas
+      );
+      const modelIv = modelIvSnapshot({
+        markPrice: result.price,
+        bidPrice: 0,
+        askPrice: 0,
+        referenceSpot: gldSpot,
+        referenceTime,
+        referenceSource: "Black-Scholes fallback input spot",
+        expiry: position.expiry,
+        strike: numberOf(position.strike),
+        optionType: position.optionType,
+        rate: settings.riskFreeRate,
+        formulas,
+      });
       return {
         markPrice: result.price,
-        markIv: settings.gldFallbackIv,
+        markIv: 0,
         bid1: 0,
         ask1: 0,
         bidSize: null,
         askSize: null,
+        ...modelIv,
         delta: result.delta,
         gamma: result.gamma,
         theta: result.theta,
@@ -647,7 +907,7 @@ function calculate(
   name: string,
   variables: Record<string, number>,
   formulas: readonly FormulaLike[],
-  fallback: number,
+  fallback: number
 ): number {
   try {
     return evaluateNamedFormula(name, variables, formulas, new Set());
@@ -671,42 +931,77 @@ export function calculatePosition(args: {
   const quantity = numberOf(position.quantity);
   const entryPrice = numberOf(position.entryPrice);
   const fee = numberOf(position.fee);
-  const importedContractMultiplier = finiteImported(position.contractMultiplier);
-  const adjustedGldContract = position.underlying === "GLD"
-    && importedContractMultiplier !== null
-    && Math.abs(importedContractMultiplier - DEFAULT_GLD_CONTRACT_MULTIPLIER) > 1e-9;
-  const adjustedXautContract = position.underlying === "XAUT"
-    && importedContractMultiplier !== null
-    && Math.abs(importedContractMultiplier - DEFAULT_XAUT_CONTRACT_MULTIPLIER) > 1e-9;
-  const contractMultiplier = position.underlying === "GLD"
-    ? adjustedGldContract
-      ? importedContractMultiplier
-      : resolveGldContractMultiplier(formulas, settings.gldContractMultiplier)
-    : position.underlying === "XAUT"
-      ? adjustedXautContract
+  const importedContractMultiplier = finiteImported(
+    position.contractMultiplier
+  );
+  const adjustedGldContract =
+    position.underlying === "GLD" &&
+    importedContractMultiplier !== null &&
+    Math.abs(importedContractMultiplier - DEFAULT_GLD_CONTRACT_MULTIPLIER) >
+      1e-9;
+  const adjustedXautContract =
+    position.underlying === "XAUT" &&
+    importedContractMultiplier !== null &&
+    Math.abs(importedContractMultiplier - DEFAULT_XAUT_CONTRACT_MULTIPLIER) >
+      1e-9;
+  const contractMultiplier =
+    position.underlying === "GLD"
+      ? adjustedGldContract
         ? importedContractMultiplier
-        : resolveXautContractMultiplier(formulas, settings.xautContractMultiplier)
-      : importedContractMultiplier && importedContractMultiplier > 0
-        ? importedContractMultiplier
-        : settings.btcContractMultiplier;
-  const underlyingPrice = position.underlying === "GLD" ? args.gldSpot : position.underlying === "BTC" ? args.btcSpot : args.xautSpot;
-  const automaticScale = args.xauSpot > 0 && underlyingPrice > 0 ? underlyingPrice / args.xauSpot : 1;
-  const override = position.underlying === "GLD"
-    ? settings.gldSpotScaleOverride
-    : position.underlying === "BTC" ? settings.btcSpotScaleOverride : settings.xautSpotScaleOverride;
+        : resolveGldContractMultiplier(formulas, settings.gldContractMultiplier)
+      : position.underlying === "XAUT"
+        ? adjustedXautContract
+          ? importedContractMultiplier
+          : resolveXautContractMultiplier(
+              formulas,
+              settings.xautContractMultiplier
+            )
+        : importedContractMultiplier && importedContractMultiplier > 0
+          ? importedContractMultiplier
+          : settings.btcContractMultiplier;
+  const underlyingPrice =
+    position.underlying === "GLD"
+      ? args.gldSpot
+      : position.underlying === "BTC"
+        ? args.btcSpot
+        : args.xautSpot;
+  const automaticScale =
+    args.xauSpot > 0 && underlyingPrice > 0
+      ? underlyingPrice / args.xauSpot
+      : 1;
+  const override =
+    position.underlying === "GLD"
+      ? settings.gldSpotScaleOverride
+      : position.underlying === "BTC"
+        ? settings.btcSpotScaleOverride
+        : settings.xautSpotScaleOverride;
   const importedSpotScale = finiteImported(position.multiplierXau);
-  const spotScale = position.underlying === "GLD"
-    ? adjustedGldContract && importedSpotScale !== null
-      ? importedSpotScale
-      : resolveGldXauMultiplier(formulas, settings.gldSpotScaleOverride ?? 0.092)
-    : position.underlying === "XAUT"
-      ? adjustedXautContract && importedSpotScale !== null
+  const spotScale =
+    position.underlying === "GLD"
+      ? adjustedGldContract && importedSpotScale !== null
         ? importedSpotScale
-        : resolveXautXauMultiplier(formulas, settings.xautSpotScaleOverride ?? 1)
-      : importedSpotScale ?? override ?? calculate("spot_scale", {
-        underlyingPrice,
-        xauUsdPrice: args.xauSpot || underlyingPrice || 1,
-      }, formulas, automaticScale);
+        : resolveGldXauMultiplier(
+            formulas,
+            settings.gldSpotScaleOverride ?? 0.092
+          )
+      : position.underlying === "XAUT"
+        ? adjustedXautContract && importedSpotScale !== null
+          ? importedSpotScale
+          : resolveXautXauMultiplier(
+              formulas,
+              settings.xautSpotScaleOverride ?? 1
+            )
+        : (importedSpotScale ??
+          override ??
+          calculate(
+            "spot_scale",
+            {
+              underlyingPrice,
+              xauUsdPrice: args.xauSpot || underlyingPrice || 1,
+            },
+            formulas,
+            automaticScale
+          ));
 
   const baseVariables = {
     entryPrice,
@@ -726,21 +1021,26 @@ export function calculatePosition(args: {
     "entry_cost",
     baseVariables,
     formulas,
-    entryPrice * quantity * contractMultiplier + fee,
+    entryPrice * quantity * contractMultiplier + fee
   );
   const currentValue = calculate(
     "current_value",
     baseVariables,
     formulas,
-    market.markPrice * quantity * contractMultiplier,
+    market.markPrice * quantity * contractMultiplier
   );
   const notionalSize = calculate(
     "notional_size",
     baseVariables,
     formulas,
-    quantity * contractMultiplier * underlyingPrice,
+    quantity * contractMultiplier * underlyingPrice
   );
-  const pnl = calculate("pnl", { ...baseVariables, entryCost, currentValue }, formulas, currentValue - entryCost);
+  const pnl = calculate(
+    "pnl",
+    { ...baseVariables, entryCost, currentValue },
+    formulas,
+    currentValue - entryCost
+  );
 
   return {
     entryCost,
@@ -755,25 +1055,25 @@ export function calculatePosition(args: {
       "total_delta_xau",
       baseVariables,
       formulas,
-      market.delta * quantity * contractMultiplier * spotScale,
+      market.delta * quantity * contractMultiplier * spotScale
     ),
     totalGammaXau: calculate(
       "total_gamma_xau",
       baseVariables,
       formulas,
-      market.gamma * quantity * contractMultiplier * spotScale ** 2,
+      market.gamma * quantity * contractMultiplier * spotScale ** 2
     ),
     totalTheta: calculate(
       "total_theta",
       baseVariables,
       formulas,
-      market.theta * quantity * contractMultiplier,
+      market.theta * quantity * contractMultiplier
     ),
     totalVega: calculate(
       "total_vega",
       baseVariables,
       formulas,
-      market.vega * quantity * contractMultiplier,
+      market.vega * quantity * contractMultiplier
     ),
   };
 }

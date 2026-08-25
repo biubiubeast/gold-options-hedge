@@ -7,14 +7,14 @@
 ## 主要功能
 
 1. 仓位录入、编辑和删除；支持导入 DinoSignal 持仓快照，也支持上传 KGI / Bybit（SignalPlus）全量交易记录，自动配对开平仓、推导当前仓位与累计成本/已实现损益；导入前自动备份，并可导出 36 列审计表。
-2. Expiry × Strike 矩阵：支持 Unit/Total Delta、Gamma、Theta、Vega、Mark IV、MV、UPL 等指标；紧凑无文字模式可容纳 100–200 条仓位，右侧 P99 色标与实时 Spot marker 用于快速识别集中风险。
+2. Expiry × Strike 矩阵：支持 Unit/Total Delta、Gamma、Theta、Vega、Market IV、Model IV、MV、UPL 等指标；紧凑无文字模式可容纳 100–200 条仓位，右侧 P99 色标与 Display Spot marker 用于快速识别集中风险。
 3. 期权详情：单位 Greeks、持仓 Total Greeks、Entry Cost、Current Value、P&L、数据来源和“实时/估算”标识。
 4. 组合 Dashboard：按 Underlying / Expiry / Strike 筛选；显示 XAUT、GLD 和 XAU 代理现价；统一汇总估值与 XAU 风险量纲。
 5. 可执行公式：编辑会直接影响 Black-Scholes、估值和汇总；支持新增公式并在其他公式中按名称引用；可逐项或全部恢复默认。
 6. 数据来源页：列出 API、认证要求、当前启用状态与降级逻辑。
 7. 所有页面支持 20%–140% 缩放；矩阵另有 20%–150% 独立缩放、默认自动适配完整热力图和全屏查看。
 8. 本地 JSON 持久化与一键导出备份；生产模式带密码保护。
-9. 每个页面顶部固定显示 XAUT/USDT 与 GLD/USD 现价、实时/延迟状态，并每 10 秒自动刷新。
+9. 每个页面顶部固定显示 XAUT/USDT 与 GLD/USD 现价、实时/延迟状态；前端行情查询当前每 5 分钟轮询一次，手动刷新可立即绕过轮询等待。
 10. 机构版 Position Risk Heatmap：200 条仓位压力数据、P99 Quantile/Log/零中心颜色尺度、固定风险决策卡、Spot range marker、到期资金控制及 XAU/IV/Day 情景分析。
 
 ## 机构版 Position Risk Heatmap 使用教程
@@ -22,7 +22,7 @@
 进入“矩阵视图”即可使用。生产仓位选择 `LIVE`；验收或培训可选择 `MOCK 100` / `MOCK 200`，也可直接打开 `/matrix?mock=200`。Mock 使用固定 seed，每次刷新都可复现，不会写入真实仓位。
 
 1. 默认是 **Expiry 列 × Strike 行**；`Transpose` 可转置。先用 Underlying、Venue、Broker、Account、Call/Put、DTE bucket、Status 缩小决策范围。
-2. Metric 可切换 Unit Delta、Total Delta、Gamma、Theta、Vega、Mark IV、MV、UPL、DTE、Distance-to-Strike、Roll Priority。Unit 是单份合约敏感度，Total 已乘数量、实际 multiplier 和黄金量纲，两者不可混用。
+2. Metric 可切换 Unit Delta、Total Delta、Gamma、Theta、Vega、Market IV、Model IV、MV、UPL、DTE、Distance-to-Strike、Roll Priority。Market IV 是交易所/数据商直接发布值；Model IV 是网站使用同步 IV Reference Spot 反解的统一模型值，两者不可混用。Unit 是单份合约敏感度，Total 已乘数量、实际 multiplier 和黄金量纲。
 3. 默认 `Quantile + P99 clip` 适合快速找集中风险；`Log` 用于同时保留 50 和 1000 级别的差异；`Symmetric Zero` 把 0 固定为中性色，适合有正负方向的 Delta、Theta、UPL。
 4. 只有最高重要度 cell 常显数值，其余 hover 查看仓位、source、as-of、状态和 Roll Priority 分项，避免 100+ 仓位文字拥挤。点击顶部决策卡只会定位并高亮相应 cell。
 5. Spot 可选 GLD、XAUT 或 XAU。Spot 超出当前 Strike range 时页面明确显示 Above/Below Range；点击 `Center Spot` 把 spot marker 纳入矩阵。
@@ -103,9 +103,7 @@ docker compose -f docker-compose.public.yml down
 2. 在 Render 选择 **New → Blueprint**，连接仓库并确认识别到 `render.yaml`。
 3. 部署时填写私密环境变量 `APP_PASSWORD` 与 `VIEWER_PASSWORD`；公开用户名由 `render.yaml` 设置为 `xauadmin` 与 `xauwhales`。服务创建后可在 **Environment** 中添加 `MARKETDATA_TOKEN`，以启用 GLD 低延迟现价和 OPRA 实时期权 Greeks；`TRADIER_API_TOKEN` 是兼容备用源。
 
-市场数据一键刷新、GLD 完整链热力图、Largest Data Error 与双表 Excel 导出的详细教程见 [docs/live-market-chain-guide.md](docs/live-market-chain-guide.md)。
-4. 部署完成后使用 Render 分配的 `https://...onrender.com` 地址访问，也可绑定自己的域名。
-5. 免费实例会休眠、重启，且没有持久磁盘；仓位录入后请立即从网站导出 JSON 备份。
+市场数据一键刷新、GLD 完整链热力图、Largest Data Error 与双表 Excel 导出的详细教程见 [docs/live-market-chain-guide.md](docs/live-market-chain-guide.md)。4. 部署完成后使用 Render 分配的 `https://...onrender.com` 地址访问，也可绑定自己的域名。5. 免费实例会休眠、重启，且没有持久磁盘；仓位录入后请立即从网站导出 JSON 备份。
 
 免费 Render 适合当前先取得稳定公网地址并测试功能，但重启或重新部署后仓位 JSON 可能丢失。长期正式使用建议添加付款方式，把 `render.yaml` 的 `plan` 改为 `starter` 并恢复 1 GB 持久磁盘；或把数据层迁移到托管 PostgreSQL。单块 Render 磁盘限制为单实例运行，这与当前单用户 JSON 架构匹配。
 
@@ -180,15 +178,15 @@ XAUT 行情使用 Bybit 公共接口，无需密钥。GLD 数据按以下优先�
 
 ## API 清单与来源
 
-| 数据 | Provider / Endpoint | 密钥 | 用途 |
-|---|---|---:|---|
-| XAUT 期权 Ticker | Bybit V5 `GET /v5/market/tickers?category=option&baseCoin=XAUT` | 否 | Mark、IV、Bid/Ask、Greeks |
-| XAUT 期权合约 | Bybit V5 `GET /v5/market/instruments-info?category=option&baseCoin=XAUT` | 否 | 合约元数据（后续扩展） |
-| XAUT/USDT | Bybit V5 `GET /v5/market/tickers?category=spot&symbol=XAUTUSDT` | 否 | Spot 和 XAU 比例 |
-| GLD 实时 Spot | MarketData.app `GET /v1/stocks/prices/GLD/` | 是 | SmartMid 实时 GLD，含 extended hours |
-| GLD 逐合约期权 | MarketData.app `GET /v1/options/quotes/{OCC_SYMBOL}/?mode=live` | 是 + OPRA | 实时 Bid/Ask、Mark、IV、Greeks |
-| GLD 兼容期权链 | Tradier `GET /v1/markets/options/chains` | 是 | 实时报价；ORATS Greeks 约每小时 |
-| GLD / GC=F fallback | Yahoo Finance chart `GET /v8/finance/chart/{symbol}` | 否 | 最后备用 Spot 与 XAU/USD 代理 |
+| 数据                | Provider / Endpoint                                                      |      密钥 | 用途                                 |
+| ------------------- | ------------------------------------------------------------------------ | --------: | ------------------------------------ |
+| XAUT 期权 Ticker    | Bybit V5 `GET /v5/market/tickers?category=option&baseCoin=XAUT`          |        否 | Mark、IV、Bid/Ask、Greeks            |
+| XAUT 期权合约       | Bybit V5 `GET /v5/market/instruments-info?category=option&baseCoin=XAUT` |        否 | 合约元数据（后续扩展）               |
+| XAUT/USDT           | Bybit V5 `GET /v5/market/tickers?category=spot&symbol=XAUTUSDT`          |        否 | Spot 和 XAU 比例                     |
+| GLD 实时 Spot       | MarketData.app `GET /v1/stocks/prices/GLD/`                              |        是 | SmartMid 实时 GLD，含 extended hours |
+| GLD 逐合约期权      | MarketData.app `GET /v1/options/quotes/{OCC_SYMBOL}/?mode=live`          | 是 + OPRA | 实时 Bid/Ask、Mark、IV、Greeks       |
+| GLD 兼容期权链      | Tradier `GET /v1/markets/options/chains`                                 |        是 | 实时报价；ORATS Greeks 约每小时      |
+| GLD / GC=F fallback | Yahoo Finance chart `GET /v8/finance/chart/{symbol}`                     |        否 | 最后备用 Spot 与 XAU/USD 代理        |
 
 参考链接：
 
