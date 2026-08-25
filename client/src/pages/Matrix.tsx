@@ -9,6 +9,7 @@ import { buildChainRiskPositions, buildGldChainRiskPositions, buildLiveRiskPosit
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import { parseStoredTargetOptions, TARGET_OPTION_STORAGE_KEY, targetCellKeysForScope, targetOptionScope, targetOptionStorageKey, type TargetOptionMode } from "@/lib/heatmapTargets";
+import { MARKET_QUERY_OPTIONS } from "@/lib/marketPolling";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { resolveHeatmapSpots } from "@/lib/spotSelection";
 import { resolveGldContractMultiplier, resolveGldXauMultiplier, resolveXautContractMultiplier, resolveXautXauMultiplier } from "@shared/formulaEngine";
@@ -248,9 +249,9 @@ export default function Matrix() {
   const { user } = useAuth();
   const { data: positions, isLoading } = trpc.positions.list.useQuery();
   const { data: formulas } = trpc.formulas.list.useQuery();
-  const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
-  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, { refetchInterval: 10_000 });
-  const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
+  const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
+  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
+  const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, MARKET_QUERY_OPTIONS);
   const { settings } = usePortfolioSettings();
   const visibleFilters = settings.heatmapVisibleFilters;
   const visibleSections = settings.heatmapVisibleSections;
@@ -332,7 +333,7 @@ export default function Matrix() {
     .map(position => ({ expiry: position.expiry, strike: Number(position.strike), optionType: position.optionType })), [positions]);
   const { data: gldQuotes } = trpc.market.gldOptionQuotes.useQuery(
     { expiries: gldExpiries.slice(0, 24), contracts: gldContracts },
-    { enabled: dataset === "live" && gldExpiries.length > 0, refetchInterval: 10_000 },
+    { ...MARKET_QUERY_OPTIONS, enabled: dataset === "live" && gldExpiries.length > 0 },
   );
   const activeGldQuotes = dataset === "chain" ? gldChain?.quotes : gldQuotes;
 

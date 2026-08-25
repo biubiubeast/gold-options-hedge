@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 import { calculatePosition, getPositionMarketData } from "@/lib/portfolio";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
+import { MARKET_QUERY_OPTIONS } from "@/lib/marketPolling";
 import { resolveGldContractMultiplier, resolveGldXauMultiplier, resolveXautContractMultiplier, resolveXautXauMultiplier } from "@shared/formulaEngine";
 
 const money = (value: number) => new Intl.NumberFormat("zh-CN", {
@@ -23,13 +24,9 @@ const showPrice = (value: number) => value > 0 ? `$${value.toFixed(2)}` : "æš‚ä¸
 export default function Dashboard() {
   const { data: positions, isLoading: posLoading } = trpc.positions.list.useQuery();
   const { data: formulas } = trpc.formulas.list.useQuery();
-  const { data: spotPrices, isFetching: spotFetching } = trpc.market.spotPrices.useQuery(undefined, {
-    refetchInterval: 10_000,
-  });
-  const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, {
-    refetchInterval: 10_000,
-  });
-  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, { refetchInterval: 10_000 });
+  const { data: spotPrices, isFetching: spotFetching } = trpc.market.spotPrices.useQuery(undefined, MARKET_QUERY_OPTIONS);
+  const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
+  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
   const gldExpiries = useMemo(() => [...new Set(
     (positions || []).filter(position => position.underlying === "GLD").map(position => position.expiry),
   )], [positions]);
@@ -42,7 +39,7 @@ export default function Dashboard() {
     })), [positions]);
   const { data: gldQuotes } = trpc.market.gldOptionQuotes.useQuery(
     { expiries: gldExpiries, contracts: gldContracts },
-    { enabled: gldExpiries.length > 0, refetchInterval: 10_000 },
+    { ...MARKET_QUERY_OPTIONS, enabled: gldExpiries.length > 0 },
   );
   const { data: sourceInfo } = trpc.market.sources.useQuery();
 

@@ -2,11 +2,12 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MARKET_QUERY_OPTIONS } from "@/lib/marketPolling";
 import { CheckCircle2, ExternalLink, Loader2, ShieldAlert } from "lucide-react";
 
 export default function DataSources() {
   const { data, isLoading } = trpc.market.sources.useQuery();
-  const { data: spots, refetch, isFetching } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
+  const { data: spots, refetch, isFetching } = trpc.market.spotPrices.useQuery(undefined, MARKET_QUERY_OPTIONS);
 
   if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 

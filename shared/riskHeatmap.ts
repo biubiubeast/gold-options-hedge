@@ -596,12 +596,20 @@ export function enrichRiskPositions(
           formulas,
         })
       : null;
-    const nativeBidIv = position.bidIvDerived ? null : finiteOrNull(position.bidIV);
-    const nativeAskIv = position.askIvDerived ? null : finiteOrNull(position.askIV);
+    const upstreamBidIv = finiteOrNull(position.bidIV);
+    const upstreamAskIv = finiteOrNull(position.askIV);
+    const nativeBidIv = position.bidIvDerived ? null : upstreamBidIv;
+    const nativeAskIv = position.askIvDerived ? null : upstreamAskIv;
     const derivedBidIv = nativeBidIv === null ? deriveIv(bidPrice) : null;
     const derivedAskIv = nativeAskIv === null ? deriveIv(askPrice) : null;
-    const bidIV = nativeBidIv ?? derivedBidIv;
-    const askIV = nativeAskIv ?? derivedAskIv;
+    // Native venue IV has first priority. If the editable client-side model
+    // cannot bracket a second-pass solution, retain a valid IV already
+    // calculated by the market-data normalizer instead of turning it into
+    // MISSING. Disabling inversion still removes every calculated IV.
+    const upstreamDerivedBidIv = inversionEnabled && position.bidIvDerived ? upstreamBidIv : null;
+    const upstreamDerivedAskIv = inversionEnabled && position.askIvDerived ? upstreamAskIv : null;
+    const bidIV = nativeBidIv ?? derivedBidIv ?? upstreamDerivedBidIv;
+    const askIV = nativeAskIv ?? derivedAskIv ?? upstreamDerivedAskIv;
     const bidDollarNotional = multiplier !== null && bidPrice !== null && bidSize !== null
       ? editableFormula("bid_dollar_notional", { bidPrice, bidSize, contractMultiplier: multiplier }, formulas, bidPrice * bidSize * multiplier)
       : null;
@@ -616,8 +624,8 @@ export function enrichRiskPositions(
       bidIV,
       askIV,
       ivSpread: bidIV !== null && askIV !== null ? askIV - bidIV : null,
-      bidIvDerived: nativeBidIv === null && derivedBidIv !== null,
-      askIvDerived: nativeAskIv === null && derivedAskIv !== null,
+      bidIvDerived: nativeBidIv === null && bidIV !== null,
+      askIvDerived: nativeAskIv === null && askIV !== null,
       dataStatus: deriveDataStatus(position, asOf),
     };
     return {

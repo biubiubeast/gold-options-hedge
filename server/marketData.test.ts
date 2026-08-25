@@ -35,6 +35,19 @@ describe("Cboe GLD full-chain normalization", () => {
     expect(quote).toMatchObject({ bidIvDerived: true, askIvDerived: true });
   });
 
+  it.each([
+    ["GLD260828C00415000", 12.8, 13.4],
+    ["GLD260828P00415000", 1.16, 1.27],
+    ["GLD260828C00420000", 9.15, 9.5],
+    ["GLD260828P00420000", 2.25, 2.4],
+  ])("derives the 28 Aug 415/420 Cboe quote %s instead of leaving IV blank", (option, bid, ask) => {
+    const quote = normalizeCboeGldOption({ option, bid, ask, iv: 0.29 }, Date.parse("2026-08-25T03:44:36Z"), 426.69);
+    expect(quote?.bidIv).not.toBeNull();
+    expect(quote?.askIv).not.toBeNull();
+    expect(quote!.askIv!).toBeGreaterThan(quote!.bidIv!);
+    expect(quote!.ivSpread).toBeCloseTo(quote!.askIv! - quote!.bidIv!, 10);
+  });
+
   it("does not invent a contract when an OCC symbol is invalid", () => {
     expect(normalizeCboeGldOption({ option: "MISSING" }, Date.now())).toBeNull();
   });

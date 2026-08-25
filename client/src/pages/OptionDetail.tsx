@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { useParams, useLocation } from "wouter";
 import { calculatePosition, getPositionMarketData } from "@/lib/portfolio";
+import { MARKET_QUERY_OPTIONS } from "@/lib/marketPolling";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 
 const money = (value: number) => new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(value);
@@ -15,9 +16,9 @@ export default function OptionDetail() {
   const positionId = Number(params.id || 0);
   const { data: position, isLoading } = trpc.positions.get.useQuery({ id: positionId }, { enabled: positionId > 0 });
   const { data: formulas } = trpc.formulas.list.useQuery();
-  const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
-  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, { refetchInterval: 10_000 });
-  const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
+  const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
+  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
+  const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, MARKET_QUERY_OPTIONS);
   const { data: gldQuotes } = trpc.market.gldOptionQuotes.useQuery(
     {
       expiries: position?.underlying === "GLD" ? [position.expiry] : [],
@@ -27,7 +28,7 @@ export default function OptionDetail() {
         optionType: position.optionType,
       }] : [],
     },
-    { enabled: position?.underlying === "GLD", refetchInterval: 10_000 },
+    { ...MARKET_QUERY_OPTIONS, enabled: position?.underlying === "GLD" },
   );
   const { settings } = usePortfolioSettings();
 

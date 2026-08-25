@@ -14,6 +14,7 @@ import { formatReferenceSnapshotTime, POSITION_SOURCE_DEFAULTS, type PositionExc
 import type { TransactionExcelPreview } from "@shared/transactionExcel";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { calculatePosition, getPositionMarketData, type PortfolioPosition } from "@/lib/portfolio";
+import { MARKET_QUERY_OPTIONS } from "@/lib/marketPolling";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import {
   DEFAULT_GLD_CONTRACT_MULTIPLIER,
@@ -87,10 +88,10 @@ export default function Positions() {
   const utils = trpc.useUtils();
   const { data: positions, isLoading } = trpc.positions.list.useQuery();
   const { data: transactionSummaries } = trpc.positions.transactionSummaries.useQuery();
-  const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, { refetchInterval: 10_000 });
+  const { data: spotPrices } = trpc.market.spotPrices.useQuery(undefined, MARKET_QUERY_OPTIONS);
   const { data: formulas } = trpc.formulas.list.useQuery();
-  const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, { refetchInterval: 10_000 });
-  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, { refetchInterval: 10_000 });
+  const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
+  const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
   const { settings } = usePortfolioSettings();
   const gldXauMultiplier = resolveGldXauMultiplier(formulas?.length ? formulas : [], settings.gldSpotScaleOverride ?? 0.092);
   const xautXauMultiplier = resolveXautXauMultiplier(formulas?.length ? formulas : [], settings.xautSpotScaleOverride ?? 1);

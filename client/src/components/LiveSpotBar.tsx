@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { MARKET_QUERY_OPTIONS } from "@/lib/marketPolling";
 import { trpc } from "@/lib/trpc";
 import type { SpotPrice } from "@shared/marketTypes";
 import { RefreshCw } from "lucide-react";
@@ -34,10 +35,7 @@ function SpotChip({ label, value }: { label: string; value?: SpotPrice | null })
 }
 
 export function LiveSpotBar() {
-  const { data, isFetching, refetch } = trpc.market.spotPrices.useQuery(undefined, {
-    refetchInterval: 10_000,
-    refetchOnWindowFocus: true,
-  });
+  const { data, isFetching, refetch } = trpc.market.spotPrices.useQuery(undefined, MARKET_QUERY_OPTIONS);
 
   return (
     <div className="flex items-center gap-1.5" aria-label="实时现价">

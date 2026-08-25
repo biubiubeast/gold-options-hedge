@@ -299,4 +299,39 @@ describe("institutional risk heatmap acceptance", () => {
     expect(notCalculated.askIV).toBeNull();
     expect(notCalculated.ivSpread).toBeNull();
   });
+
+  it("keeps upstream calculated IV when an enabled custom second pass cannot solve", () => {
+    const source = generateMockPositions(100, 71, asOf).find(position => position.underlying === "GLD")!;
+    const upstream = {
+      ...source,
+      underlying: "GLD" as const,
+      callPut: "call" as const,
+      expiry: "2026-08-28",
+      strike: 415,
+      bid: 12.8,
+      ask: 13.4,
+      bidIV: 0.2747,
+      askIV: 0.3298,
+      bidIvDerived: true,
+      askIvDerived: true,
+    };
+    const unbracketedModel = DEFAULT_FORMULAS.map(formula =>
+      formula.name === "iv_inversion_model_price_call" ? { ...formula, expression: "0" } : formula,
+    );
+
+    const calculated = enrichRiskPositions([upstream], { ...spots, GLD: 426.69 }, asOf, unbracketedModel)[0];
+    expect(calculated.bidIV).toBe(0.2747);
+    expect(calculated.askIV).toBe(0.3298);
+    expect(calculated.ivSpread).toBeCloseTo(0.0551, 10);
+    expect(calculated).toMatchObject({ bidIvDerived: true, askIvDerived: true });
+
+    const disabled = unbracketedModel.map(formula => formula.name === "bid_ask_iv_inversion_enabled"
+      ? { ...formula, expression: "0" }
+      : formula,
+    );
+    const hidden = enrichRiskPositions([upstream], { ...spots, GLD: 426.69 }, asOf, disabled)[0];
+    expect(hidden.bidIV).toBeNull();
+    expect(hidden.askIV).toBeNull();
+    expect(hidden.ivSpread).toBeNull();
+  });
 });
