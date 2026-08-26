@@ -28,7 +28,8 @@
 - `Display Spot` 用于顶部现货、ATM 和矩阵定位，可以采用更新的独立现货报价；`IV Reference Spot` 必须与期权价格来自同一行情快照，只用于 Model IV。两者不再混用。
 - Cboe 完整链目前只直接返回 Mark IV，不返回原生 Bid IV / Ask IV。网站用该链同一快照的 `current_price`、Bid/Ask、Strike、到期时间和默认 4.5% 无风险利率分别反解 Model Bid/Ask IV；无法满足无套利边界时显示明确状态并保持 MISSING，不会退回 Display Spot，也不会把 Model IV 填入 Market IV。
 - Bybit ticker 本身直接提供 Mark/Bid/Ask IV；网站原样保存在 Market IV，并另外使用同一 ticker 的 `underlyingPrice` 计算 Model IV，便于比较交易所波动率与网站统一模型的差异。
-- Deribit 批量期权摘要直接提供 Mark IV 和 `underlying_price`，但不含 Bid/Ask IV；因此 Market Bid/Ask IV 保持 MISSING，Model IV 使用该摘要的同步参考现货反解。Deribit 单合约 ticker 虽能提供原生 Bid/Ask IV，但不用于当前完整链批量路径，避免为数千合约逐笔请求。
+- Deribit BTC/ETH 完整链先用 REST 读取合约主数据与批量摘要，再通过一条长连接 WebSocket 分批订阅 `ticker.{instrument}.100ms`。Ticker 原生提供 Best Bid/Ask Price、Best Bid/Ask Amount、Market Bid/Ask IV 和 Greeks；服务器维护每个币种的最新快照、自动心跳与断线重连。冷启动最多等待 3.5 秒达到 95% 覆盖率；对仍未收到 ticker、但批量摘要显示有 Bid/Ask 的合约，再按成交量/OI 排序调用最多 60 次 REST `public/ticker` 兜底，避免数千个逐笔请求触发限流。
+- Deribit BTC/ETH 的期权权利金以 BTC/ETH 计价，不可直接加美元符号。网站使用同一 ticker/summary 的 `underlying_price` 作为 `premiumToUsd`，按 `Price × Size × contract_size × premiumToUsd` 计算 Bid/Ask Dollar Notional。任何价格、Size、contract size 或换算币价缺失时保持 MISSING，不参与色标；不会静默填 0。
 - `− / +` 调整单格高度；`Fit All` 根据当前窗口和行列数压缩矩阵，目标是在无需上下滚动时查看全部 Strike/Expiry。极端多列时轴标签会简化，但 Hover/点击仍保留完整数据。
 - `Transpose` 只交换轴；`Strike ↑/↓` 独立控制行权价从低到高或从高到低，不会改变风险数据。
 
@@ -50,6 +51,7 @@
 ## 5. 行情延迟说明
 
 - Bybit XAUT：交易所实时快照；
+- Deribit BTC/ETH：公开 WebSocket ticker 实时更新，REST 合约/摘要用于完整链结构与冷启动；网页显示每份合约自己的交易所 timestamp。服务器重启或休眠唤醒后会自动重建订阅，首次完整覆盖通常需要数秒；
 - MarketData.app：需 `MARKETDATA_TOKEN` 和适用的 OPRA 权限；实时/延迟等级取决于授权；
 - Tradier：需 production `TRADIER_API_TOKEN`；报价权限取决于账户，Greeks 来源为 ORATS；
 - Cboe GLD 全链：无需密钥，属于 Cboe 标记的 delayed feed；页面直接显示 JSON 提供的最新 `updated` 时间和系统观测到的 age。实际延迟会随交易时段/缓存更新变化，因此网站显示实测分钟数，不硬写固定延迟；

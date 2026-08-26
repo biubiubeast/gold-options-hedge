@@ -30,9 +30,18 @@ function normalCDF(value: number): number {
   const sign = value < 0 ? -1 : 1;
   const x = Math.abs(value) / Math.sqrt(2);
   const p = 0.3275911;
-  const coefficients = [0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429];
+  const coefficients = [
+    0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429,
+  ];
   const t = 1 / (1 + p * x);
-  const y = 1 - (((((coefficients[4] * t + coefficients[3]) * t + coefficients[2]) * t + coefficients[1]) * t + coefficients[0]) * t * Math.exp(-x * x));
+  const y =
+    1 -
+    ((((coefficients[4] * t + coefficients[3]) * t + coefficients[2]) * t +
+      coefficients[1]) *
+      t +
+      coefficients[0]) *
+      t *
+      Math.exp(-x * x);
   return 0.5 * (1 + sign * y);
 }
 
@@ -70,8 +79,10 @@ function tokenize(rawExpression: string): Token[] {
       continue;
     }
     const character = expression[index];
-    if ("+-*/^".includes(character)) tokens.push({ type: "operator", value: character });
-    else if (character === "(" || character === ")") tokens.push({ type: "paren", value: character });
+    if ("+-*/^".includes(character))
+      tokens.push({ type: "operator", value: character });
+    else if (character === "(" || character === ")")
+      tokens.push({ type: "paren", value: character });
     else if (character === ",") tokens.push({ type: "comma" });
     else throw new Error(`无法识别字符“${character}”`);
     index += 1;
@@ -87,12 +98,13 @@ class Parser {
     private readonly tokens: Token[],
     private readonly variables: Record<string, number>,
     private readonly registry: Map<string, FormulaLike>,
-    private readonly stack: Set<string>,
+    private readonly stack: Set<string>
   ) {}
 
   parse(): number {
     const value = this.parseAdditive();
-    if (this.index !== this.tokens.length) throw new Error("表达式末尾存在多余内容");
+    if (this.index !== this.tokens.length)
+      throw new Error("表达式末尾存在多余内容");
     if (!Number.isFinite(value)) throw new Error("计算结果不是有限数值");
     return value;
   }
@@ -109,7 +121,10 @@ class Parser {
 
   private parseAdditive(): number {
     let value = this.parseMultiplicative();
-    while (this.peek()?.type === "operator" && ["+", "-"].includes((this.peek() as { value: string }).value)) {
+    while (
+      this.peek()?.type === "operator" &&
+      ["+", "-"].includes((this.peek() as { value: string }).value)
+    ) {
       const operator = (this.consume() as { value: string }).value;
       const right = this.parseMultiplicative();
       value = operator === "+" ? value + right : value - right;
@@ -119,7 +134,10 @@ class Parser {
 
   private parseMultiplicative(): number {
     let value = this.parsePower();
-    while (this.peek()?.type === "operator" && ["*", "/"].includes((this.peek() as { value: string }).value)) {
+    while (
+      this.peek()?.type === "operator" &&
+      ["*", "/"].includes((this.peek() as { value: string }).value)
+    ) {
       const operator = (this.consume() as { value: string }).value;
       const right = this.parsePower();
       value = operator === "*" ? value * right : value / right;
@@ -129,7 +147,10 @@ class Parser {
 
   private parsePower(): number {
     const left = this.parseUnary();
-    if (this.peek()?.type === "operator" && (this.peek() as { value: string }).value === "^") {
+    if (
+      this.peek()?.type === "operator" &&
+      (this.peek() as { value: string }).value === "^"
+    ) {
       this.consume();
       return Math.pow(left, this.parsePower());
     }
@@ -138,7 +159,10 @@ class Parser {
 
   private parseUnary(): number {
     const token = this.peek();
-    if (token?.type === "operator" && (token.value === "+" || token.value === "-")) {
+    if (
+      token?.type === "operator" &&
+      (token.value === "+" || token.value === "-")
+    ) {
       this.consume();
       const value = this.parseUnary();
       return token.value === "-" ? -value : value;
@@ -152,15 +176,25 @@ class Parser {
     if (token.type === "paren" && token.value === "(") {
       const value = this.parseAdditive();
       const closing = this.consume();
-      if (closing.type !== "paren" || closing.value !== ")") throw new Error("缺少右括号");
+      if (closing.type !== "paren" || closing.value !== ")")
+        throw new Error("缺少右括号");
       return value;
     }
-    if (token.type !== "identifier") throw new Error("此处需要数字、变量或函数");
+    if (token.type !== "identifier")
+      throw new Error("此处需要数字、变量或函数");
 
-    if (this.peek()?.type === "paren" && (this.peek() as { value: string }).value === "(") {
+    if (
+      this.peek()?.type === "paren" &&
+      (this.peek() as { value: string }).value === "("
+    ) {
       this.consume();
       const args: number[] = [];
-      if (!(this.peek()?.type === "paren" && (this.peek() as { value: string }).value === ")")) {
+      if (
+        !(
+          this.peek()?.type === "paren" &&
+          (this.peek() as { value: string }).value === ")"
+        )
+      ) {
         while (true) {
           args.push(this.parseAdditive());
           if (this.peek()?.type !== "comma") break;
@@ -168,7 +202,8 @@ class Parser {
         }
       }
       const closing = this.consume();
-      if (closing.type !== "paren" || closing.value !== ")") throw new Error("函数缺少右括号");
+      if (closing.type !== "paren" || closing.value !== ")")
+        throw new Error("函数缺少右括号");
       const fn = functions[token.value];
       if (!fn) throw new Error(`不支持函数 ${token.value}`);
       return fn(...args);
@@ -182,8 +217,16 @@ class Parser {
 
     const referenced = this.registry.get(token.value);
     if (!referenced) throw new Error(`未知变量或公式 ${token.value}`);
-    if (this.stack.has(token.value)) throw new Error(`公式循环引用：${[...this.stack, token.value].join(" → ")}`);
-    return evaluateNamedFormula(token.value, this.variables, [...this.registry.values()], this.stack);
+    if (this.stack.has(token.value))
+      throw new Error(
+        `公式循环引用：${[...this.stack, token.value].join(" → ")}`
+      );
+    return evaluateNamedFormula(
+      token.value,
+      this.variables,
+      [...this.registry.values()],
+      this.stack
+    );
   }
 }
 
@@ -191,16 +234,21 @@ export function evaluateExpression(
   expression: string,
   variables: Record<string, number>,
   formulas: readonly FormulaLike[] = [],
-  stack = new Set<string>(),
+  stack = new Set<string>()
 ): number {
-  return new Parser(tokenize(expression), variables, new Map(formulas.map(formula => [formula.name, formula])), stack).parse();
+  return new Parser(
+    tokenize(expression),
+    variables,
+    new Map(formulas.map(formula => [formula.name, formula])),
+    stack
+  ).parse();
 }
 
 export function evaluateNamedFormula(
   name: string,
   variables: Record<string, number>,
   formulas: readonly FormulaLike[],
-  parentStack = new Set<string>(),
+  parentStack = new Set<string>()
 ): number {
   const formula = formulas.find(item => item.name === name);
   if (!formula) throw new Error(`公式 ${name} 不存在`);
@@ -217,7 +265,7 @@ export function evaluateNamedFormula(
 function resolvePositiveConstantFormula(
   name: string,
   formulas: readonly FormulaLike[],
-  fallback: number,
+  fallback: number
 ): number {
   try {
     const value = evaluateNamedFormula(name, {}, formulas, new Set());
@@ -229,35 +277,51 @@ function resolvePositiveConstantFormula(
 
 export function resolveGldXauMultiplier(
   formulas: readonly FormulaLike[],
-  fallback = DEFAULT_GLD_XAU_MULTIPLIER,
+  fallback = DEFAULT_GLD_XAU_MULTIPLIER
 ): number {
-  return resolvePositiveConstantFormula("gld_xau_multiplier", formulas, fallback);
+  return resolvePositiveConstantFormula(
+    "gld_xau_multiplier",
+    formulas,
+    fallback
+  );
 }
 
 export function resolveXautXauMultiplier(
   formulas: readonly FormulaLike[],
-  fallback = DEFAULT_XAUT_XAU_MULTIPLIER,
+  fallback = DEFAULT_XAUT_XAU_MULTIPLIER
 ): number {
-  return resolvePositiveConstantFormula("xaut_xau_multiplier", formulas, fallback);
+  return resolvePositiveConstantFormula(
+    "xaut_xau_multiplier",
+    formulas,
+    fallback
+  );
 }
 
 export function resolveGldContractMultiplier(
   formulas: readonly FormulaLike[],
-  fallback = DEFAULT_GLD_CONTRACT_MULTIPLIER,
+  fallback = DEFAULT_GLD_CONTRACT_MULTIPLIER
 ): number {
-  return resolvePositiveConstantFormula("gld_contract_multiplier", formulas, fallback);
+  return resolvePositiveConstantFormula(
+    "gld_contract_multiplier",
+    formulas,
+    fallback
+  );
 }
 
 export function resolveXautContractMultiplier(
   formulas: readonly FormulaLike[],
-  fallback = DEFAULT_XAUT_CONTRACT_MULTIPLIER,
+  fallback = DEFAULT_XAUT_CONTRACT_MULTIPLIER
 ): number {
-  return resolvePositiveConstantFormula("xaut_contract_multiplier", formulas, fallback);
+  return resolvePositiveConstantFormula(
+    "xaut_contract_multiplier",
+    formulas,
+    fallback
+  );
 }
 
 export function validateFormula(
   expression: string,
-  formulas: readonly FormulaLike[],
+  formulas: readonly FormulaLike[]
 ): { valid: true } | { valid: false; error: string } {
   const sampleVariables = {
     S: 300,
@@ -283,6 +347,7 @@ export function validateFormula(
     askPrice: 12.5,
     bidSize: 8,
     askSize: 6,
+    premiumToUsd: 1,
     bidDollarNotional: 9200,
     askDollarNotional: 7500,
   };
@@ -290,6 +355,9 @@ export function validateFormula(
     evaluateExpression(expression, sampleVariables, formulas);
     return { valid: true };
   } catch (error) {
-    return { valid: false, error: error instanceof Error ? error.message : String(error) };
+    return {
+      valid: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }

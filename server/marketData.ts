@@ -3,6 +3,7 @@ import type { ModelIvResult, ModelIvStatus } from "@shared/impliedVolatility";
 
 const BYBIT_BASE_URL = "https://api.bybit.com";
 const DERIBIT_BASE_URL = "https://www.deribit.com/api/v2";
+const DERIBIT_WS_URL = "wss://www.deribit.com/ws/api/v2";
 const YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart";
 const TRADIER_BASE_URL =
   process.env.TRADIER_BASE_URL || "https://api.tradier.com/v1";
@@ -14,6 +15,10 @@ const CBOE_GLD_QUOTE_URL =
 const REQUEST_TIMEOUT_MS = 15_000;
 const LIVE_CACHE_MS = 5_000;
 const OPTION_CACHE_MS = 10_000;
+const DERIBIT_CHANNEL_BATCH_SIZE = 400;
+const DERIBIT_INITIAL_SNAPSHOT_COVERAGE = 0.95;
+const DERIBIT_INITIAL_SNAPSHOT_TIMEOUT_MS = 3_500;
+const DERIBIT_REST_FALLBACK_LIMIT = 60;
 
 type CacheEntry<T> = { value: T; expiresAt: number };
 const cache = new Map<string, CacheEntry<unknown>>();
@@ -152,6 +157,34 @@ export interface DeribitBookSummary {
   creation_timestamp: number;
   base_currency: string;
   quote_currency: string;
+}
+
+export interface DeribitTickerSnapshot {
+  instrument_name: string;
+  best_bid_price: number | null;
+  best_bid_amount: number | null;
+  best_ask_price: number | null;
+  best_ask_amount: number | null;
+  bid_iv: number | null;
+  ask_iv: number | null;
+  mark_iv: number | null;
+  mark_price: number | null;
+  underlying_price: number | null;
+  interest_rate: number | null;
+  open_interest: number | null;
+  timestamp: number;
+  state?: string;
+  stats?: {
+    volume?: number | null;
+    volume_usd?: number | null;
+  };
+  greeks?: {
+    delta?: number | null;
+    gamma?: number | null;
+    theta?: number | null;
+    vega?: number | null;
+    rho?: number | null;
+  };
 }
 
 interface DeribitResponse<T> {
@@ -404,6 +437,297 @@ function optionalTimestamp(value: unknown): number {
   return raw > 10_000_000_000 ? raw : raw * 1000;
 }
 
+type DeribitTickerFeedState = {
+  currency: DeribitOptionCurrency;
+  socket: WebSocket | null;
+  connecting: boolean;
+  desiredNames: Set<string>;
+  subscribedChannels: Set<string>;
+  tickers: Map<string, DeribitTickerSnapshot>;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+  reconnectAttempt: number;
+  nextRequestId: number;
+};
+
+const deribitTickerFeeds = new Map<
+  DeribitOptionCurrency,
+  DeribitTickerFeedState
+>();
+
+function deribitTickerFeed(
+  currency: DeribitOptionCurrency
+): DeribitTickerFeedState {
+  const existing = deribitTickerFeeds.get(currency);
+  if (existing) return existing;
+  const created: DeribitTickerFeedState = {
+    currency,
+    socket: null,
+    connecting: false,
+    desiredNames: new Set(),
+    subscribedChannels: new Set(),
+    tickers: new Map(),
+    reconnectTimer: null,
+    reconnectAttempt: 0,
+    nextRequestId: 1,
+  };
+  deribitTickerFeeds.set(currency, created);
+  return created;
+}
+
+function chunks<T>(values: readonly T[], size: number): T[][] {
+  const output: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    output.push(values.slice(index, index + size));
+  }
+  return output;
+}
+
+function sendDeribitWsRequest(
+  state: DeribitTickerFeedState,
+  method: string,
+  params: Record<string, unknown>
+): boolean {
+  if (!state.socket || state.socket.readyState !== 1) return false;
+  state.socket.send(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: state.nextRequestId++,
+      method,
+      params,
+    })
+  );
+  return true;
+}
+
+function syncDeribitSubscriptions(state: DeribitTickerFeedState): void {
+  if (!state.socket || state.socket.readyState !== 1) return;
+  const desiredChannels = new Set(
+    [...state.desiredNames].map(name => `ticker.${name}.100ms`)
+  );
+  const removed = [...state.subscribedChannels].filter(
+    channel => !desiredChannels.has(channel)
+  );
+  const added = [...desiredChannels].filter(
+    channel => !state.subscribedChannels.has(channel)
+  );
+  for (const batch of chunks(removed, DERIBIT_CHANNEL_BATCH_SIZE)) {
+    sendDeribitWsRequest(state, "public/unsubscribe", { channels: batch });
+    for (const channel of batch) state.subscribedChannels.delete(channel);
+  }
+  for (const batch of chunks(added, DERIBIT_CHANNEL_BATCH_SIZE)) {
+    sendDeribitWsRequest(state, "public/subscribe", { channels: batch });
+    for (const channel of batch) state.subscribedChannels.add(channel);
+  }
+}
+
+function scheduleDeribitReconnect(state: DeribitTickerFeedState): void {
+  if (state.reconnectTimer || state.desiredNames.size === 0) return;
+  const delay = Math.min(30_000, 1_000 * 2 ** state.reconnectAttempt);
+  state.reconnectAttempt = Math.min(state.reconnectAttempt + 1, 5);
+  state.reconnectTimer = setTimeout(() => {
+    state.reconnectTimer = null;
+    connectDeribitTickerFeed(state);
+  }, delay);
+  (state.reconnectTimer as NodeJS.Timeout).unref?.();
+}
+
+function handleDeribitWsPayload(
+  state: DeribitTickerFeedState,
+  payload: any
+): void {
+  if (Array.isArray(payload)) {
+    for (const item of payload) handleDeribitWsPayload(state, item);
+    return;
+  }
+  if (payload?.method === "heartbeat") {
+    if (payload.params?.type === "test_request") {
+      sendDeribitWsRequest(state, "public/test", {});
+    }
+    return;
+  }
+  if (payload?.method !== "subscription") return;
+  const ticker = payload.params?.data as DeribitTickerSnapshot | undefined;
+  const instrumentName = String(ticker?.instrument_name ?? "");
+  if (!instrumentName || !state.desiredNames.has(instrumentName)) return;
+  state.tickers.set(instrumentName, ticker!);
+}
+
+function connectDeribitTickerFeed(state: DeribitTickerFeedState): void {
+  if (
+    state.connecting ||
+    state.socket?.readyState === 0 ||
+    state.socket?.readyState === 1 ||
+    state.desiredNames.size === 0
+  ) {
+    return;
+  }
+  if (typeof WebSocket === "undefined") {
+    console.warn(
+      `[MarketData] Node runtime has no WebSocket support; Deribit ${state.currency} top size will use REST fallback`
+    );
+    return;
+  }
+  state.connecting = true;
+  let socket: WebSocket;
+  try {
+    socket = new WebSocket(DERIBIT_WS_URL);
+  } catch (error) {
+    state.connecting = false;
+    console.warn(
+      `[MarketData] Failed to open Deribit ${state.currency} WebSocket:`,
+      error
+    );
+    scheduleDeribitReconnect(state);
+    return;
+  }
+  state.socket = socket;
+  socket.addEventListener("open", () => {
+    if (state.socket !== socket) return;
+    state.connecting = false;
+    state.reconnectAttempt = 0;
+    state.subscribedChannels.clear();
+    state.tickers.clear();
+    sendDeribitWsRequest(state, "public/set_heartbeat", { interval: 20 });
+    syncDeribitSubscriptions(state);
+  });
+  socket.addEventListener("message", event => {
+    try {
+      const raw =
+        typeof event.data === "string"
+          ? event.data
+          : event.data instanceof ArrayBuffer
+            ? new TextDecoder().decode(event.data)
+            : null;
+      if (raw) handleDeribitWsPayload(state, JSON.parse(raw));
+    } catch (error) {
+      console.warn(
+        `[MarketData] Ignored malformed Deribit ${state.currency} WebSocket message:`,
+        error
+      );
+    }
+  });
+  socket.addEventListener("error", () => {
+    try {
+      socket.close();
+    } catch {
+      // The close handler performs reconnect scheduling.
+    }
+  });
+  socket.addEventListener("close", () => {
+    if (state.socket !== socket) return;
+    state.socket = null;
+    state.connecting = false;
+    state.subscribedChannels.clear();
+    state.tickers.clear();
+    scheduleDeribitReconnect(state);
+  });
+}
+
+function updateDeribitDesiredInstruments(
+  state: DeribitTickerFeedState,
+  instrumentNames: readonly string[]
+): void {
+  const next = new Set(instrumentNames);
+  state.desiredNames = next;
+  for (const instrumentName of state.tickers.keys()) {
+    if (!next.has(instrumentName)) state.tickers.delete(instrumentName);
+  }
+  if (state.socket?.readyState === 1) syncDeribitSubscriptions(state);
+  else connectDeribitTickerFeed(state);
+}
+
+async function waitForDeribitTickerCoverage(
+  state: DeribitTickerFeedState,
+  instrumentNames: readonly string[]
+): Promise<void> {
+  if (instrumentNames.length === 0) return;
+  const target = Math.max(
+    1,
+    Math.ceil(instrumentNames.length * DERIBIT_INITIAL_SNAPSHOT_COVERAGE)
+  );
+  const startedAt = Date.now();
+  await new Promise<void>(resolve => {
+    const check = () => {
+      const covered = instrumentNames.reduce(
+        (count, name) => count + (state.tickers.has(name) ? 1 : 0),
+        0
+      );
+      if (
+        covered >= target ||
+        Date.now() - startedAt >= DERIBIT_INITIAL_SNAPSHOT_TIMEOUT_MS
+      ) {
+        clearInterval(interval);
+        resolve();
+      }
+    };
+    const interval = setInterval(check, 50);
+    check();
+  });
+}
+
+async function fetchDeribitTickerRest(
+  instrumentName: string
+): Promise<DeribitTickerSnapshot | null> {
+  return cached(
+    `deribit-ticker-${instrumentName}`,
+    OPTION_CACHE_MS,
+    async () => {
+      const response = await fetchJson<DeribitResponse<DeribitTickerSnapshot>>(
+        `${DERIBIT_BASE_URL}/public/ticker?instrument_name=${encodeURIComponent(instrumentName)}`
+      );
+      if (response.error || !response.result) {
+        throw new Error(
+          response.error?.message ||
+            `Deribit returned no ticker for ${instrumentName}`
+        );
+      }
+      return response.result;
+    }
+  ).catch(() => null);
+}
+
+async function getDeribitTickerSnapshots(
+  currency: DeribitOptionCurrency,
+  instrumentNames: readonly string[],
+  summaries: readonly DeribitBookSummary[]
+): Promise<Map<string, DeribitTickerSnapshot>> {
+  const state = deribitTickerFeed(currency);
+  updateDeribitDesiredInstruments(state, instrumentNames);
+  await waitForDeribitTickerCoverage(state, instrumentNames);
+  const snapshot = new Map<string, DeribitTickerSnapshot>();
+  for (const instrumentName of instrumentNames) {
+    const ticker = state.tickers.get(instrumentName);
+    if (ticker) snapshot.set(instrumentName, ticker);
+  }
+
+  // Fill any still-missing liquid contracts, not only total WebSocket
+  // failures. This makes a 95-99% cold-start snapshot dependable without
+  // issuing one REST request per (often empty) far-tail contract.
+  const wantedNames = new Set(instrumentNames);
+  const fallbackNames = [...summaries]
+    .filter(
+      summary =>
+        wantedNames.has(summary.instrument_name) &&
+        !snapshot.has(summary.instrument_name) &&
+        (toNumber(summary.bid_price) > 0 || toNumber(summary.ask_price) > 0)
+    )
+    .sort(
+      (left, right) =>
+        toNumber(right.volume) +
+        toNumber(right.open_interest) -
+        (toNumber(left.volume) + toNumber(left.open_interest))
+    )
+    .slice(0, DERIBIT_REST_FALLBACK_LIMIT)
+    .map(summary => summary.instrument_name);
+  for (const batch of chunks(fallbackNames, 12)) {
+    const tickers = await Promise.all(batch.map(fetchDeribitTickerRest));
+    for (const ticker of tickers) {
+      if (ticker) snapshot.set(ticker.instrument_name, ticker);
+    }
+  }
+  return snapshot;
+}
+
 export function parseCboeTimestamp(value: unknown): number {
   const text = String(value ?? "").trim();
   const matched = text.match(
@@ -585,6 +909,8 @@ async function getBybitOptionChain(
         quotes.push({
           symbol: instrument.symbol,
           ...parsed,
+          contractMultiplier: 1,
+          premiumCurrency: instrument.quoteCoin || "USDT",
           markPrice: ticker ? toNumber(ticker.markPrice) : 0,
           markIv: ticker ? toNumber(ticker.markIv) : 0,
           bidIv,
@@ -715,21 +1041,34 @@ function deribitModelGreeks(args: {
 export function normalizeDeribitOption(
   instrument: DeribitInstrument,
   summary: DeribitBookSummary | undefined,
-  asOf: number
+  asOf: number,
+  ticker?: DeribitTickerSnapshot
 ): XautOptionQuote {
   const expiry = new Date(instrument.expiration_timestamp)
     .toISOString()
     .slice(0, 10);
-  const underlyingPrice = toNumber(summary?.underlying_price);
-  const markIv = toNumber(summary?.mark_iv) / 100;
-  const rate = toNumber(summary?.interest_rate);
-  const bidPrice = toNumber(summary?.bid_price);
-  const askPrice = toNumber(summary?.ask_price);
-  // Deribit publishes Mark IV, but the current summary endpoint does not
-  // publish native Bid/Ask IV. Keep those market fields empty and expose our
-  // price inversions only through the separate MODEL fields.
+  const quoteTimestamp =
+    optionalTimestamp(ticker?.timestamp) ||
+    optionalTimestamp(summary?.creation_timestamp) ||
+    asOf;
+  const underlyingPrice =
+    toNumber(ticker?.underlying_price) || toNumber(summary?.underlying_price);
+  const markPrice =
+    toNumber(ticker?.mark_price) || toNumber(summary?.mark_price);
+  const rawMarkIv = toNumber(ticker?.mark_iv) || toNumber(summary?.mark_iv);
+  const markIv = rawMarkIv > 0 ? rawMarkIv / 100 : 0;
+  const rate =
+    toNumber(ticker?.interest_rate) || toNumber(summary?.interest_rate);
+  const bidPrice =
+    toNumber(ticker?.best_bid_price) || toNumber(summary?.bid_price);
+  const askPrice =
+    toNumber(ticker?.best_ask_price) || toNumber(summary?.ask_price);
+  const bidIvRaw = toNumber(ticker?.bid_iv);
+  const askIvRaw = toNumber(ticker?.ask_iv);
+  const bidIv = bidIvRaw > 0 ? bidIvRaw / 100 : null;
+  const askIv = askIvRaw > 0 ? askIvRaw / 100 : null;
   const modelIv = modelIvSet({
-    markPrice: toNumber(summary?.mark_price) * underlyingPrice,
+    markPrice: markPrice * underlyingPrice,
     bidPrice: bidPrice * underlyingPrice,
     askPrice: askPrice * underlyingPrice,
     referenceSpot: underlyingPrice,
@@ -737,7 +1076,7 @@ export function normalizeDeribitOption(
     expiry,
     expiryTimestamp: instrument.expiration_timestamp,
     optionType: instrument.option_type,
-    asOf,
+    asOf: quoteTimestamp,
     rate,
     referenceSource: `Deribit book summary underlying_price · ${instrument.base_currency}`,
   });
@@ -747,41 +1086,51 @@ export function normalizeDeribitOption(
           spot: underlyingPrice,
           strike: instrument.strike,
           expiryTimestamp: instrument.expiration_timestamp,
-          asOf,
+          asOf: quoteTimestamp,
           rate,
           volatility: markIv,
           optionType: instrument.option_type,
         })
       : null;
   const marketAvailable =
-    Boolean(summary) &&
+    Boolean(summary || ticker) &&
     underlyingPrice > 0 &&
-    toNumber(summary?.mark_price) > 0 &&
+    markPrice > 0 &&
     markIv > 0;
+  const nativeGreeks = ticker?.greeks;
   return {
     symbol: instrument.instrument_name,
     expiry,
     strike: instrument.strike,
     optionType: instrument.option_type,
-    markPrice: toNumber(summary?.mark_price),
+    markPrice,
     markIv,
-    bidIv: null,
-    askIv: null,
-    ivSpread: null,
+    bidIv,
+    askIv,
+    ivSpread: bidIv !== null && askIv !== null ? askIv - bidIv : null,
     ...modelIv,
     expiryTimestamp: instrument.expiration_timestamp,
     bid1Price: bidPrice,
     ask1Price: askPrice,
-    bid1Size: null,
-    ask1Size: null,
-    delta: model?.delta ?? 0,
-    gamma: model?.gamma ?? 0,
-    theta: model?.theta ?? 0,
-    vega: model?.vega ?? 0,
-    timestamp: optionalTimestamp(summary?.creation_timestamp) || asOf,
-    source: `Deribit REST full-chain snapshot · native Mark IV · model Greeks · premium ${instrument.quote_currency}`,
-    openInterest: summary ? toNumber(summary.open_interest) : 0,
-    volume: summary ? toNumber(summary.volume) : 0,
+    bid1Size:
+      toNumber(ticker?.best_bid_amount) > 0
+        ? toNumber(ticker?.best_bid_amount)
+        : null,
+    ask1Size:
+      toNumber(ticker?.best_ask_amount) > 0
+        ? toNumber(ticker?.best_ask_amount)
+        : null,
+    delta: nativeGreeks ? toNumber(nativeGreeks.delta) : (model?.delta ?? 0),
+    gamma: nativeGreeks ? toNumber(nativeGreeks.gamma) : (model?.gamma ?? 0),
+    theta: nativeGreeks ? toNumber(nativeGreeks.theta) : (model?.theta ?? 0),
+    vega: nativeGreeks ? toNumber(nativeGreeks.vega) : (model?.vega ?? 0),
+    timestamp: quoteTimestamp,
+    source: ticker
+      ? `Deribit WebSocket ticker + REST summary · native top size / Bid-Ask IV / Greeks · premium ${instrument.quote_currency}`
+      : `Deribit REST summary fallback · top size unavailable · native Mark IV · model Greeks · premium ${instrument.quote_currency}`,
+    openInterest:
+      toNumber(ticker?.open_interest) || toNumber(summary?.open_interest),
+    volume: toNumber(ticker?.stats?.volume) || toNumber(summary?.volume),
     tradeable: instrument.is_active && instrument.state === "open",
     marketAvailable,
     contractMultiplier: toNumber(instrument.contract_size) || 1,
@@ -902,16 +1251,28 @@ async function getDeribitOptionChain(
           instrument.is_active &&
           instrument.state === "open"
       );
+      const tickerSnapshot = await getDeribitTickerSnapshots(
+        currency,
+        activeInstruments.map(instrument => instrument.instrument_name),
+        summarySnapshot.summaries
+      );
       const quotes = activeInstruments.map(instrument =>
         normalizeDeribitOption(
           instrument,
           summaryMap.get(instrument.instrument_name),
-          summarySnapshot.timestamp
+          summarySnapshot.timestamp,
+          tickerSnapshot.get(instrument.instrument_name)
+        )
+      );
+      const timestamp = Math.max(
+        summarySnapshot.timestamp,
+        ...[...tickerSnapshot.values()].map(ticker =>
+          optionalTimestamp(ticker.timestamp)
         )
       );
       const delaySeconds = Math.max(
         0,
-        Math.round((Date.now() - summarySnapshot.timestamp) / 1000)
+        Math.round((Date.now() - timestamp) / 1000)
       );
       const representativeReference = quotes.find(
         quote => quote.ivReferenceSpot !== null
@@ -929,8 +1290,8 @@ async function getDeribitOptionChain(
         ivReferenceTimestamp:
           representativeReference?.ivReferenceTimestamp ?? null,
         ivReferenceSource: representativeReference?.ivReferenceSource ?? null,
-        timestamp: summarySnapshot.timestamp,
-        source: `Deribit REST full-chain snapshot · ${currency}/USD inverse options`,
+        timestamp,
+        source: `Deribit REST full-chain + WebSocket ticker · ${currency}/USD inverse options · ${tickerSnapshot.size}/${quotes.length} top-of-book snapshots`,
         status: delaySeconds > 15 * 60 ? "stale" : "realtime",
         delaySeconds,
         contractCount: quotes.length,
@@ -1088,7 +1449,7 @@ function first<T>(value: T[] | undefined): T | undefined {
   return Array.isArray(value) ? value[0] : undefined;
 }
 
-function normalizeMarketDataOption(
+export function normalizeMarketDataOption(
   data: any,
   contract: GldContractRequest
 ): GldOptionQuote | null {
@@ -1133,6 +1494,10 @@ function normalizeMarketDataOption(
     gamma: toNumber(first(data.gamma)),
     theta: toNumber(first(data.theta)),
     vega: toNumber(first(data.vega)),
+    openInterest: toNumber(first(data.openInterest)),
+    volume: toNumber(first(data.volume)),
+    tradeable: true,
+    marketAvailable: true,
     timestamp,
     source: "MarketData.app / OPRA",
   };
@@ -1175,7 +1540,7 @@ async function getMarketDataGldOptionQuotes(
   return quotes.filter((quote): quote is GldOptionQuote => quote !== null);
 }
 
-function normalizeTradierOption(
+export function normalizeTradierOption(
   raw: any,
   expiry: string
 ): GldOptionQuote | null {
@@ -1237,6 +1602,10 @@ function normalizeTradierOption(
     gamma: toNumber(greeks.gamma),
     theta: toNumber(greeks.theta),
     vega: toNumber(greeks.vega),
+    openInterest: toNumber(raw.open_interest ?? raw.openInterest),
+    volume: toNumber(raw.volume),
+    tradeable: true,
+    marketAvailable: markPrice > 0,
     timestamp,
     source: "Tradier / ORATS",
   };
@@ -1535,14 +1904,15 @@ export function getMarketSources() {
           "https://bybit-exchange.github.io/docs/v5/market/tickers",
       },
       {
-        product: "BTC + ETH 完整期权链 / Mark IV / Bid-Ask / OI / Volume",
-        provider: "Deribit Public REST",
+        product:
+          "BTC + ETH 完整期权链 / Top Size / Market IV / Greeks / OI / Volume",
+        provider: "Deribit Public REST + WebSocket",
         endpoint:
-          "/api/v2/public/get_instruments + /public/get_book_summary_by_currency",
+          "/api/v2/public/get_instruments + /public/get_book_summary_by_currency + ticker.{instrument}.100ms",
         authentication: "无需密钥",
-        mode: "交易所实时全链快照；Mark IV 为交易所原生值；当前批量摘要不含原生 Bid/Ask IV，网站另列使用 underlying_price 反解的 Model Mark/Bid/Ask IV",
+        mode: "REST 批量摘要建立完整链；公共 WebSocket 分批订阅原生 Bid/Ask Price、Size、Bid/Ask IV 与 Greeks；断线自动重连，冷启动失败时对高流动性合约使用 public/ticker REST 降级。BTC/ETH 权利金通过 premium_currency_to_usd 统一换算成 USD 深度",
         documentationUrl:
-          "https://docs.deribit.com/articles/options-data-collection-best-practices",
+          "https://docs.deribit.com/articles/market-data-collection-best-practices",
       },
       {
         product: "BTC/USD + ETH/USD Index",

@@ -457,6 +457,56 @@ describe("institutional risk heatmap acceptance", () => {
     ).toBeNull();
   });
 
+  it("converts Deribit BTC/ETH premium depth into USD with the synchronized reference spot", () => {
+    const source = generateMockPositions(1, 59, asOf)[0];
+    const enriched = enrichRiskPositions(
+      [
+        {
+          ...source,
+          underlying: "BTC",
+          venue: "Deribit",
+          premiumCurrency: "BTC",
+          bid: 0.01,
+          ask: 0.02,
+          bidSize: 2,
+          askSize: 3,
+          contractMultiplier: 1,
+          ivReferenceSpot: 80_000,
+        },
+      ],
+      spots,
+      asOf
+    )[0];
+    expect(enriched.bidDollarNotional).toBe(1_600);
+    expect(enriched.askDollarNotional).toBe(4_800);
+    expect(enriched.bidAskDollarNotional).toBe(6_400);
+  });
+
+  it("keeps non-USD premium depth missing when no currency conversion spot exists", () => {
+    const source = generateMockPositions(1, 61, asOf)[0];
+    const enriched = enrichRiskPositions(
+      [
+        {
+          ...source,
+          underlying: "ETH",
+          venue: "Deribit",
+          premiumCurrency: "ETH",
+          bid: 0.01,
+          ask: 0.02,
+          bidSize: 2,
+          askSize: 3,
+          contractMultiplier: 1,
+          ivReferenceSpot: null,
+        },
+      ],
+      { ...spots, ETH: 0 },
+      asOf
+    )[0];
+    expect(enriched.bidDollarNotional).toBeNull();
+    expect(enriched.askDollarNotional).toBeNull();
+    expect(enriched.bidAskDollarNotional).toBeNull();
+  });
+
   it("keeps Market IV separate, derives MODEL IV, and obeys the formula toggle", () => {
     const source = generateMockPositions(100, 61, asOf).find(
       position => position.underlying === "GLD"

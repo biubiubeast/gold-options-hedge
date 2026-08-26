@@ -182,24 +182,62 @@ export const DEFAULT_FORMULAS = [
     defaultExpression: "quantity * contractMultiplier * underlyingPrice",
   },
   {
+    name: "premium_currency_to_usd",
+    category: "conversion",
+    expression: "premiumToUsd",
+    description:
+      "期权权利金币种换算到 USD 的运行时乘数。USD/USDT/USDC = 1；Deribit BTC/ETH 期权使用与盘口同一快照的 underlying/index price。变量 premiumToUsd 由行情适配器提供；缺失时结果保持 MISSING，不静默使用 0。",
+    usedIn:
+      "Deribit BTC/ETH Bid/Ask Dollar Notional，以及其他非 USD 权利金币种的统一 USD 量纲；可被估值公式按名称引用",
+    defaultExpression: "premiumToUsd",
+  },
+  {
+    name: "mark_price_usd",
+    category: "conversion",
+    expression: "markPrice * premium_currency_to_usd",
+    description:
+      "单份期权 Mark 权利金的 USD 等值。GLD/Bybit 的 USD/USDT/USDC 权利金不变；Deribit BTC/ETH 权利金乘同步币价。",
+    usedIn:
+      "理解和审计非 USD 权利金；可被自定义估值公式引用。原始 Mark Price 仍保留交易所原生计价单位。",
+    defaultExpression: "markPrice * premium_currency_to_usd",
+  },
+  {
+    name: "bid_price_usd",
+    category: "conversion",
+    expression: "bidPrice * premium_currency_to_usd",
+    description:
+      "单份期权 Best Bid 权利金的 USD 等值；使用与该期权盘口同一快照的 premium_currency_to_usd。",
+    usedIn: "Bid Dollar Notional；也可被自定义公式引用",
+    defaultExpression: "bidPrice * premium_currency_to_usd",
+  },
+  {
+    name: "ask_price_usd",
+    category: "conversion",
+    expression: "askPrice * premium_currency_to_usd",
+    description:
+      "单份期权 Best Ask 权利金的 USD 等值；使用与该期权盘口同一快照的 premium_currency_to_usd。",
+    usedIn: "Ask Dollar Notional；也可被自定义公式引用",
+    defaultExpression: "askPrice * premium_currency_to_usd",
+  },
+  {
     name: "bid_dollar_notional",
     category: "valuation",
-    expression: "bidPrice * bidSize * contractMultiplier",
+    expression: "bid_price_usd * bidSize * contractMultiplier",
     description:
-      "Bid 一档美元名义深度 = Bid1 Price × Bid1 Size × Contract Multiplier。它衡量买盘第一档可成交的期权权利金金额，不使用持仓 Qty。",
+      "Bid 一档美元权利金深度 = Bid1 Price × Bid1 Size × Contract Multiplier × premium_currency_to_usd。GLD/Bybit 的 USD/USDT/USDC 乘数为 1；Deribit BTC/ETH 权利金再乘同步币价转为 USD。它不使用持仓 Qty。",
     usedIn:
       "市场热力图 Bid Dollar Notional metric、方格 Hover 与完整详情；任一输入缺失时显示 MISSING 且不参与色标",
-    defaultExpression: "bidPrice * bidSize * contractMultiplier",
+    defaultExpression: "bid_price_usd * bidSize * contractMultiplier",
   },
   {
     name: "ask_dollar_notional",
     category: "valuation",
-    expression: "askPrice * askSize * contractMultiplier",
+    expression: "ask_price_usd * askSize * contractMultiplier",
     description:
-      "Ask 一档美元名义深度 = Ask1 Price × Ask1 Size × Contract Multiplier。它衡量卖盘第一档可成交的期权权利金金额，不使用持仓 Qty。",
+      "Ask 一档美元权利金深度 = Ask1 Price × Ask1 Size × Contract Multiplier × premium_currency_to_usd。GLD/Bybit 的 USD/USDT/USDC 乘数为 1；Deribit BTC/ETH 权利金再乘同步币价转为 USD。它不使用持仓 Qty。",
     usedIn:
       "市场热力图 Ask Dollar Notional metric、方格 Hover 与完整详情；任一输入缺失时显示 MISSING 且不参与色标",
-    defaultExpression: "askPrice * askSize * contractMultiplier",
+    defaultExpression: "ask_price_usd * askSize * contractMultiplier",
   },
   {
     name: "bid_ask_dollar_notional",

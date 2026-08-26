@@ -3,6 +3,8 @@ import {
   impliedVolatilityFromPrice,
   normalizeCboeGldOption,
   normalizeDeribitOption,
+  normalizeMarketDataOption,
+  normalizeTradierOption,
   parseCboeTimestamp,
 } from "./marketData";
 
@@ -11,6 +13,80 @@ describe("Cboe timestamp normalization", () => {
     expect(parseCboeTimestamp("2026-08-12 08:16:24")).toBe(
       Date.parse("2026-08-12T08:16:24Z")
     );
+  });
+});
+
+describe("licensed GLD provider normalization", () => {
+  it("keeps MarketData.app top size, OI and volume instead of dropping them", () => {
+    const quote = normalizeMarketDataOption(
+      {
+        s: "ok",
+        optionSymbol: ["GLD260828C00420000"],
+        bid: [8.1],
+        ask: [8.4],
+        mid: [8.25],
+        bidSize: [14],
+        askSize: [21],
+        iv: [0.29],
+        delta: [0.61],
+        gamma: [0.02],
+        theta: [-0.08],
+        vega: [0.16],
+        openInterest: [1240],
+        volume: [83],
+        underlyingPrice: [426.69],
+        updated: [Date.parse("2026-08-26T01:00:00Z") / 1000],
+      },
+      {
+        expiry: "2026-08-28",
+        strike: 420,
+        optionType: "call",
+      }
+    );
+
+    expect(quote).toMatchObject({
+      bid1Size: 14,
+      ask1Size: 21,
+      openInterest: 1240,
+      volume: 83,
+      tradeable: true,
+      marketAvailable: true,
+    });
+  });
+
+  it("keeps Tradier top size, OI and volume instead of dropping them", () => {
+    const quote = normalizeTradierOption(
+      {
+        symbol: "GLD260828P00420000",
+        option_type: "put",
+        expiration_date: "2026-08-28",
+        strike: 420,
+        bid: 1.9,
+        ask: 2.1,
+        bidsize: 9,
+        asksize: 11,
+        open_interest: 880,
+        volume: 47,
+        underlying_price: 426.69,
+        greeks: {
+          mid_iv: 0.31,
+          delta: -0.29,
+          gamma: 0.02,
+          theta: -0.07,
+          vega: 0.13,
+        },
+      },
+      "2026-08-28"
+    );
+
+    expect(quote).toMatchObject({
+      bid1Size: 9,
+      ask1Size: 11,
+      openInterest: 880,
+      volume: 47,
+      tradeable: true,
+      marketAvailable: true,
+    });
   });
 });
 
@@ -191,5 +267,77 @@ describe("Deribit inverse option normalization", () => {
     expect(quote.modelBidIv).not.toBeNull();
     expect(quote.modelAskIv).not.toBeNull();
     expect(quote.modelAskIv!).toBeGreaterThan(quote.modelBidIv!);
+  });
+
+  it("merges native ticker size, Bid/Ask IV and Greeks into the full-chain quote", () => {
+    const asOf = Date.parse("2026-08-26T00:00:00Z");
+    const quote = normalizeDeribitOption(
+      {
+        state: "open",
+        kind: "option",
+        instrument_name: "BTC-11SEP26-76000-C",
+        expiration_timestamp: Date.parse("2026-09-11T08:00:00Z"),
+        is_active: true,
+        contract_size: 1,
+        strike: 76000,
+        base_currency: "BTC",
+        quote_currency: "BTC",
+        option_type: "call",
+      },
+      {
+        instrument_name: "BTC-11SEP26-76000-C",
+        bid_price: 0.057,
+        ask_price: 0.059,
+        mark_price: 0.058,
+        mark_iv: 40.91,
+        underlying_price: 79280,
+        interest_rate: 0,
+        open_interest: 112.8,
+        volume: 2.1,
+        creation_timestamp: asOf,
+        base_currency: "BTC",
+        quote_currency: "BTC",
+      },
+      asOf,
+      {
+        instrument_name: "BTC-11SEP26-76000-C",
+        best_bid_price: 0.0565,
+        best_bid_amount: 22.2,
+        best_ask_price: 0.06,
+        best_ask_amount: 18,
+        bid_iv: 38.36,
+        ask_iv: 43.16,
+        mark_iv: 40.91,
+        mark_price: 0.058,
+        underlying_price: 79280.86,
+        interest_rate: 0,
+        open_interest: 112.8,
+        timestamp: asOf + 2_000,
+        state: "open",
+        stats: { volume: 2.1, volume_usd: 166_000 },
+        greeks: {
+          delta: 0.61,
+          gamma: 0.00002,
+          theta: -15.4,
+          vega: 21.7,
+          rho: 3.2,
+        },
+      }
+    );
+    expect(quote).toMatchObject({
+      bid1Price: 0.0565,
+      ask1Price: 0.06,
+      bid1Size: 22.2,
+      ask1Size: 18,
+      bidIv: 0.3836,
+      askIv: 0.4316,
+      delta: 0.61,
+      gamma: 0.00002,
+      theta: -15.4,
+      vega: 21.7,
+      timestamp: asOf + 2_000,
+    });
+    expect(quote.ivSpread).toBeCloseTo(0.048, 10);
+    expect(quote.source).toContain("native top size / Bid-Ask IV / Greeks");
   });
 });

@@ -930,13 +930,16 @@ export function enrichRiskPositions(
       : position.quoteTime
         ? new Date(position.quoteTime).getTime()
         : Number.NaN;
-    const premiumToUsd =
+    const premiumToUsd: number | null =
       position.premiumCurrency === "BTC" || position.premiumCurrency === "ETH"
-        ? (ivReferenceSpot ?? 0)
+        ? (ivReferenceSpot ?? (spot > 0 ? spot : null))
         : 1;
     const deriveModelIv = (priceValue: number | null) =>
       modelImpliedVolatilityFromPrice({
-        price: priceValue !== null ? priceValue * premiumToUsd : Number.NaN,
+        price:
+          priceValue !== null && premiumToUsd !== null
+            ? priceValue * premiumToUsd
+            : Number.NaN,
         spot: ivReferenceSpot ?? Number.NaN,
         strike: position.strike,
         expiry: position.expiry,
@@ -981,21 +984,37 @@ export function enrichRiskPositions(
     const modelBidIV = modelBid.value;
     const modelAskIV = modelAsk.value;
     const bidDollarNotional =
-      multiplier !== null && bidPrice !== null && bidSize !== null
+      multiplier !== null &&
+      bidPrice !== null &&
+      bidSize !== null &&
+      premiumToUsd !== null
         ? editableFormula(
             "bid_dollar_notional",
-            { bidPrice, bidSize, contractMultiplier: multiplier },
+            {
+              bidPrice,
+              bidSize,
+              contractMultiplier: multiplier,
+              premiumToUsd,
+            },
             formulas,
-            bidPrice * bidSize * multiplier
+            bidPrice * bidSize * multiplier * premiumToUsd
           )
         : null;
     const askDollarNotional =
-      multiplier !== null && askPrice !== null && askSize !== null
+      multiplier !== null &&
+      askPrice !== null &&
+      askSize !== null &&
+      premiumToUsd !== null
         ? editableFormula(
             "ask_dollar_notional",
-            { askPrice, askSize, contractMultiplier: multiplier },
+            {
+              askPrice,
+              askSize,
+              contractMultiplier: multiplier,
+              premiumToUsd,
+            },
             formulas,
-            askPrice * askSize * multiplier
+            askPrice * askSize * multiplier * premiumToUsd
           )
         : null;
     const bidAskDollarNotional =

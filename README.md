@@ -1,6 +1,6 @@
 # 黄金期权对冲仓位分析
 
-这是一个可自行运行的 XAUT / GLD 期权组合分析网站。它不再依赖 Manus 登录、Manus 数据代理或外部 MySQL：仓位和公式默认保存在本机 `data/portfolio.json`，所以 Manus 停止服务后仍能持续使用。
+这是一个可自行运行的 GLD / XAUT / BTC / ETH 期权组合分析网站。它不再依赖 Manus 登录、Manus 数据代理或外部 MySQL：仓位和公式默认保存在本机 `data/portfolio.json`，所以 Manus 停止服务后仍能持续使用。
 
 > 这是分析工具，不会连接交易账户或自动下单。模型估值与第三方行情可能延迟、缺失或出错，不构成投资建议。
 
@@ -32,6 +32,8 @@
 完整的架构、schema、计算定义、颜色算法和验收记录见 [`docs/risk-heatmap-spec.md`](docs/risk-heatmap-spec.md)。
 
 持仓 Excel、KGI / Bybit 全量交易导入、移动加权成本配对、累计损益、恢复、导出和紧凑热力图操作见 [`docs/excel-position-guide.md`](docs/excel-position-guide.md)。
+
+Deribit WebSocket 行情、USD 权利金换算、全标的字段完整性与剩余限制见 [`docs/market-data-field-audit.md`](docs/market-data-field-audit.md)。
 
 ## 快速启动
 
@@ -178,15 +180,17 @@ XAUT 行情使用 Bybit 公共接口，无需密钥。GLD 数据按以下优先�
 
 ## API 清单与来源
 
-| 数据                | Provider / Endpoint                                                      |      密钥 | 用途                                 |
-| ------------------- | ------------------------------------------------------------------------ | --------: | ------------------------------------ |
-| XAUT 期权 Ticker    | Bybit V5 `GET /v5/market/tickers?category=option&baseCoin=XAUT`          |        否 | Mark、IV、Bid/Ask、Greeks            |
-| XAUT 期权合约       | Bybit V5 `GET /v5/market/instruments-info?category=option&baseCoin=XAUT` |        否 | 合约元数据（后续扩展）               |
-| XAUT/USDT           | Bybit V5 `GET /v5/market/tickers?category=spot&symbol=XAUTUSDT`          |        否 | Spot 和 XAU 比例                     |
-| GLD 实时 Spot       | MarketData.app `GET /v1/stocks/prices/GLD/`                              |        是 | SmartMid 实时 GLD，含 extended hours |
-| GLD 逐合约期权      | MarketData.app `GET /v1/options/quotes/{OCC_SYMBOL}/?mode=live`          | 是 + OPRA | 实时 Bid/Ask、Mark、IV、Greeks       |
-| GLD 兼容期权链      | Tradier `GET /v1/markets/options/chains`                                 |        是 | 实时报价；ORATS Greeks 约每小时      |
-| GLD / GC=F fallback | Yahoo Finance chart `GET /v8/finance/chart/{symbol}`                     |        否 | 最后备用 Spot 与 XAU/USD 代理        |
+| 数据                 | Provider / Endpoint                                                      |      密钥 | 用途                                 |
+| -------------------- | ------------------------------------------------------------------------ | --------: | ------------------------------------ |
+| XAUT 期权 Ticker     | Bybit V5 `GET /v5/market/tickers?category=option&baseCoin=XAUT`          |        否 | Mark、IV、Bid/Ask、Greeks            |
+| XAUT 期权合约        | Bybit V5 `GET /v5/market/instruments-info?category=option&baseCoin=XAUT` |        否 | 合约元数据（后续扩展）               |
+| XAUT/USDT            | Bybit V5 `GET /v5/market/tickers?category=spot&symbol=XAUTUSDT`          |        否 | Spot 和 XAU 比例                     |
+| GLD 实时 Spot        | MarketData.app `GET /v1/stocks/prices/GLD/`                              |        是 | SmartMid 实时 GLD，含 extended hours |
+| GLD 逐合约期权       | MarketData.app `GET /v1/options/quotes/{OCC_SYMBOL}/?mode=live`          | 是 + OPRA | 实时 Bid/Ask、Mark、IV、Greeks       |
+| GLD 兼容期权链       | Tradier `GET /v1/markets/options/chains`                                 |        是 | 实时报价；ORATS Greeks 约每小时      |
+| BTC/ETH Deribit 合约 | Deribit `public/get_instruments` + `public/get_book_summary_by_currency` |        否 | 完整链结构、合约规格与冷启动摘要     |
+| BTC/ETH Deribit 行情 | Deribit WS `ticker.{instrument}.100ms`                                   |        否 | Bid/Ask Price/Size、IV、Greeks、OI   |
+| GLD / GC=F fallback  | Yahoo Finance chart `GET /v8/finance/chart/{symbol}`                     |        否 | 最后备用 Spot 与 XAU/USD 代理        |
 
 参考链接：
 
@@ -196,6 +200,8 @@ XAUT 行情使用 Bybit 公共接口，无需密钥。GLD 数据按以下优先�
 - [Tradier Market Data（实时、延迟及 Greeks 说明）](https://docs.tradier.com/docs/market-data)
 - [MarketData.app Real-Time Stock Prices](https://www.marketdata.app/docs/api/stocks/prices/)
 - [MarketData.app Option Quotes / Greeks](https://www.marketdata.app/docs/api/options/quotes/)
+- [Deribit Public Ticker](https://docs.deribit.com/api-reference/market-data/public-ticker)
+- [Deribit Market Data Best Practices](https://docs.deribit.com/articles/market-data-collection-best-practices)
 - [SPDR GLD 官方产品页](https://www.ssga.com/us/en/individual/etfs/spdr-gold-shares-gld)
 
 Yahoo Finance 的 chart 地址是无密钥兼容接口，并非承诺稳定性的正式开发者产品。因此服务器加入了超时、短期缓存和最后成功值降级；如果用于关键生产用途，建议按下文方案换成有 SLA 的数据商。
