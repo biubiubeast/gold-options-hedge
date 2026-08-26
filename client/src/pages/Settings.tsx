@@ -161,6 +161,11 @@ const heatmapSectionLabels: Array<
   ],
   ["dataError", "Largest Data Error", "显示顶部数据质量说明按钮；默认隐藏"],
   [
+    "expiryControlPanel",
+    "GLD 到期执行控制提醒",
+    "显示底部 DTE≤2 的 Funding、Buying Power、Cutoff 与行动检查；资料缺失会标记 MISSING DATA，默认隐藏",
+  ],
+  [
     "scenario",
     "情景分析",
     "显示热力图底部 XAU / IV / Day Shock 分析；默认隐藏",

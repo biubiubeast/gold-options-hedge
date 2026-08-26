@@ -78,6 +78,9 @@ describe("operator display defaults", () => {
     expect(
       DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.chainContractCount
     ).toBe(false);
+    expect(
+      DEFAULT_PORTFOLIO_SETTINGS.heatmapVisibleSections.expiryControlPanel
+    ).toBe(false);
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapChainContractCountLabel).toContain(
       "Call + Put"
     );

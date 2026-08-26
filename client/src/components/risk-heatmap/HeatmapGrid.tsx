@@ -961,7 +961,7 @@ export function HeatmapGrid({
                         <span
                           data-target-border="true"
                           aria-hidden="true"
-                          className="pointer-events-none absolute inset-0 z-[4] border-2 border-sky-300"
+                          className="pointer-events-none absolute inset-px z-[4] border border-violet-300"
                         />
                       )}
                       {showLabel && (
@@ -1066,7 +1066,7 @@ export function HeatmapGrid({
                         ))}
                       </div>
                       {targetMode !== "idle" && (
-                        <p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-sky-300">
+                        <p className="mt-2 border-t border-border/50 pt-1 text-[9px] text-violet-300">
                           点击将{targetMode === "add" ? "选中" : "取消选中"}此
                           Target Option
                         </p>
@@ -1140,8 +1140,8 @@ export function HeatmapGrid({
           </span>
         )}
         {targetCellKeys.size > 0 && (
-          <span className="mt-1 text-center text-[6px] font-semibold leading-tight text-sky-300">
-            SKY BLUE
+          <span className="mt-1 text-center text-[6px] font-semibold leading-tight text-violet-300">
+            VIOLET
             <br />
             TARGET
           </span>

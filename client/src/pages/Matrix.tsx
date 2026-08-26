@@ -2050,12 +2050,12 @@ export default function Matrix() {
                 onClick={() =>
                   setTargetMode(current => (current === "add" ? "idle" : "add"))
                 }
-                className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "add" ? "bg-sky-400/20 text-sky-300" : "hover:text-foreground"}`}
+                className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "add" ? "bg-violet-400/20 text-violet-300" : "hover:text-foreground"}`}
               >
                 <Plus className="h-3 w-3" />
               </button>
               <span
-                className={`min-w-7 px-1 text-center font-mono ${activeTargetCellKeys.size ? "text-sky-300" : ""}`}
+                className={`min-w-7 px-1 text-center font-mono ${activeTargetCellKeys.size ? "text-violet-300" : ""}`}
                 title={`${targetOptionKeys.size} saved targets across all views`}
               >
                 {activeTargetCellKeys.size}
@@ -2064,7 +2064,7 @@ export default function Matrix() {
                 type="button"
                 aria-label="Unselect Target Options"
                 aria-pressed={targetMode === "remove"}
-                title="点击 − 后，再点击天蓝色方格以取消选中；再次点击 − 退出"
+                title="点击 − 后，再点击紫色细边框方格以取消选中；再次点击 − 退出"
                 onClick={() =>
                   setTargetMode(current =>
                     current === "remove" ? "idle" : "remove"
@@ -2477,7 +2477,9 @@ export default function Matrix() {
         />
       )}
 
-      <ExpiryPanel positions={heldFiltered} gldSpot={displaySpots.GLD} />
+      {visibleSections.expiryControlPanel && (
+        <ExpiryPanel positions={heldFiltered} gldSpot={displaySpots.GLD} />
+      )}
       {visibleSections.scenario && (
         <ScenarioStrip positions={heldFiltered} spots={displaySpots} />
       )}

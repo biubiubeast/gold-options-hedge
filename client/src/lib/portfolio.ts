@@ -272,6 +272,7 @@ export type PortfolioSettings = {
   heatmapVisibleSections: {
     decisionCards: boolean;
     dataError: boolean;
+    expiryControlPanel: boolean;
     scenario: boolean;
     chainStatusBanner: boolean;
     positionOnlyMetricBanner: boolean;
@@ -488,6 +489,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   heatmapVisibleSections: {
     decisionCards: false,
     dataError: false,
+    expiryControlPanel: false,
     scenario: false,
     chainStatusBanner: false,
     positionOnlyMetricBanner: false,
