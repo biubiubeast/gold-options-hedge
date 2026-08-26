@@ -77,7 +77,7 @@ const heatmapFilterLabels: Array<
   [
     "targetOption",
     "Target Option",
-    "用 + / − 模式选择或取消热力图目标合约；选择结果保存在当前浏览器",
+    "用 + / − 模式选择或取消目标合约；紫色外框替换原边框，并自动显示当前 Metric（Label=None 除外）",
   ],
   ["range", "色标上下限", "MIN、MAX 和自定义范围按钮"],
   ["transpose", "Transpose", "Expiry 与 Strike 转置"],

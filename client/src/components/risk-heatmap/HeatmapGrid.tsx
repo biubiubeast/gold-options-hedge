@@ -825,6 +825,7 @@ export function HeatmapGrid({
               const strike = transpose ? Number(column) : Number(row);
               const key = `${expiry}|${strike}`;
               const cell = cellMap.get(key);
+              const targetSelected = targetCellKeys.has(key);
               const status = cell ? worstStatus(cell.positions) : "LIVE";
               const important =
                 cell?.value != null &&
@@ -836,10 +837,12 @@ export function HeatmapGrid({
               const showLabel =
                 cell &&
                 cell.value !== null &&
-                (labelMode === "all" ||
+                (targetSelected ||
+                  labelMode === "all" ||
                   (labelMode === "held" && cell.held) ||
                   (labelMode === "top" && important) ||
-                  (labelMode === "bottom" && lowImportance));
+                  (labelMode === "bottom" && lowImportance)) &&
+                labelMode !== "none";
               const topPositions = cell
                 ? [...cell.positions].sort(
                     (a, b) =>
@@ -888,7 +891,6 @@ export function HeatmapGrid({
                     (heldCellContent.dataStatus && heldStatusMarker))
               );
               const spotLine = range.nearestStrike === strike;
-              const targetSelected = targetCellKeys.has(key);
               const cellMetricText =
                 cell?.ungradedReason === "zero"
                   ? "0.000 uncolored"
@@ -913,7 +915,7 @@ export function HeatmapGrid({
                       data-metric-zero={
                         cell?.ungradedReason === "zero" ? "true" : "false"
                       }
-                      className={`relative overflow-hidden border border-solid px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${targetMode !== "idle" && cell ? "cursor-crosshair" : ""} ${cell?.value == null ? "" : zoneClass[zoneFor(strike, spot, callPut, atmStrikes)]} ${cell ? "border-cyan-300/45" : "border-border/[0.07] opacity-30"} ${cell?.held ? "z-[3] border-white" : ""} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine ? "border-y-amber-300/70" : ""}`}
+                      className={`relative overflow-hidden border border-solid px-0.5 text-center font-mono text-[7px] transition-[filter,outline] hover:z-10 hover:brightness-125 focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-primary ${targetMode !== "idle" && cell ? "cursor-crosshair" : ""} ${cell?.value == null ? "" : zoneClass[zoneFor(strike, spot, callPut, atmStrikes)]} ${cell ? (targetSelected ? "z-[4] border-violet-300" : cell.held ? "z-[3] border-white" : "border-cyan-300/45") : "border-border/[0.07] opacity-30"} ${key === highlightCellKey ? "z-10 animate-pulse ring-2 ring-white/90" : ""} ${spotLine && !targetSelected ? "border-y-amber-300/70" : ""}`}
                       style={{
                         height: rowHeight,
                         containerType: "size",
@@ -947,7 +949,7 @@ export function HeatmapGrid({
                           : `${key} unavailable not listed`
                       }
                     >
-                      {xautHeld && (
+                      {xautHeld && !targetSelected && (
                         <span
                           data-xaut-held-border="true"
                           aria-hidden="true"
@@ -957,26 +959,22 @@ export function HeatmapGrid({
                           }}
                         />
                       )}
-                      {targetSelected && (
-                        <span
-                          data-target-border="true"
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-px z-[4] border border-violet-300"
-                        />
-                      )}
                       {showLabel && (
                         <span
                           title={formatCompact(cell!.value, metric)}
                           className="relative z-[2] block max-w-full truncate pl-px font-semibold leading-none text-white drop-shadow-sm"
                           style={{
-                            paddingRight: heldMarkerVisible ? "38%" : "1px",
+                            paddingRight:
+                              heldMarkerVisible && !targetSelected
+                                ? "38%"
+                                : "1px",
                             fontSize: "clamp(4px, min(28cqi, 65cqh), 11px)",
                           }}
                         >
                           {cellMetricLabel(cell!.value, metric)}
                         </span>
                       )}
-                      {heldMarkerVisible && (
+                      {heldMarkerVisible && !targetSelected && (
                         <span
                           data-held-marker="true"
                           aria-hidden="true"
