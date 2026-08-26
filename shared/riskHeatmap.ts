@@ -592,14 +592,32 @@ export function nearestStrikeLevels(
 export function classifyOptionMoneyness(
   strike: number,
   spot: number,
-  callPut: CallPut,
-  atmStrike: number | null
+  callPut: CallPut
 ): OptionMoneyness | null {
   if (!Number.isFinite(strike) || !Number.isFinite(spot) || spot <= 0)
     return null;
-  if (atmStrike !== null && strike === atmStrike) return "ATM";
+  // Moneyness is an economic comparison with the continuous spot price. The
+  // nearest listed strike is an ATM *display marker*, but can still be ITM or
+  // OTM (for example, a 423 call with spot at 422.87 is OTM). Keeping these two
+  // concepts separate prevents the nearest strike from disappearing whenever
+  // the heatmap is filtered to ITM or OTM.
+  if (Math.abs(strike - spot) <= Math.max(1, Math.abs(spot)) * 1e-12)
+    return "ATM";
   const itm = callPut === "call" ? strike < spot : strike > spot;
   return itm ? "ITM" : "OTM";
+}
+
+export function optionMatchesMoneynessFilter(
+  strike: number,
+  spot: number,
+  callPut: CallPut,
+  filter: MoneynessFilter
+): boolean {
+  if (filter === "all") return true;
+  const moneyness = classifyOptionMoneyness(strike, spot, callPut);
+  // If spot lands exactly on a listed strike, retain that true-ATM reference
+  // in either filtered view instead of dropping the entire spot row.
+  return moneyness === "ATM" || moneyness === filter.toUpperCase();
 }
 
 function statusSeverity(status: DataStatus): number {

@@ -65,7 +65,6 @@ import {
   aggregateHeatmapCellMetric,
   buildHeatScale,
   canonicalStrike,
-  classifyOptionMoneyness,
   enrichRiskPositions,
   expiryBucketMatchesDte,
   formatCompact,
@@ -78,6 +77,7 @@ import {
   metricValue,
   metricDistribution,
   nearestStrikeLevels,
+  optionMatchesMoneynessFilter,
   percentile,
   positionLabel,
   resolveIvMetric,
@@ -1416,18 +1416,15 @@ export default function Matrix() {
   );
   const filtered = useMemo(
     () =>
-      moneyness === "all"
-        ? baseFiltered
-        : baseFiltered.filter(
-            position =>
-              classifyOptionMoneyness(
-                position.strike,
-                displaySpots[position.underlying],
-                position.callPut,
-                atmStrikeByUnderlying[position.underlying]
-              ) === moneyness.toUpperCase()
-          ),
-    [atmStrikeByUnderlying, baseFiltered, displaySpots, moneyness]
+      baseFiltered.filter(position =>
+        optionMatchesMoneynessFilter(
+          position.strike,
+          displaySpots[position.underlying],
+          position.callPut,
+          moneyness
+        )
+      ),
+    [baseFiltered, displaySpots, moneyness]
   );
 
   const applyCustomRange = () => {

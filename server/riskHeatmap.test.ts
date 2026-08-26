@@ -20,6 +20,7 @@ import {
   metricDistribution,
   metricValue,
   nearestStrikeLevels,
+  optionMatchesMoneynessFilter,
   resolveIvMetric,
   isIvSelectorMetric,
   isModelIvMetric,
@@ -164,25 +165,51 @@ describe("institutional risk heatmap acceptance", () => {
     ]);
   });
 
-  it("filters ITM and OTM consistently while reserving the nearest strike for ATM", () => {
-    expect(classifyOptionMoneyness(400, 401, "call", 400)).toBe("ATM");
-    expect(classifyOptionMoneyness(395, 401, "call", 400)).toBe("ITM");
-    expect(classifyOptionMoneyness(405, 401, "call", 400)).toBe("OTM");
-    expect(classifyOptionMoneyness(395, 401, "put", 400)).toBe("OTM");
-    expect(classifyOptionMoneyness(405, 401, "put", 400)).toBe("ITM");
+  it("filters ITM and OTM from spot without misclassifying the nearest listed strike", () => {
+    expect(classifyOptionMoneyness(400, 401, "call")).toBe("ITM");
+    expect(classifyOptionMoneyness(395, 401, "call")).toBe("ITM");
+    expect(classifyOptionMoneyness(405, 401, "call")).toBe("OTM");
+    expect(classifyOptionMoneyness(395, 401, "put")).toBe("OTM");
+    expect(classifyOptionMoneyness(405, 401, "put")).toBe("ITM");
+    expect(classifyOptionMoneyness(401, 401, "call")).toBe("ATM");
   });
 
   it("combines Call and Put OTM contracts without overlapping strikes", () => {
     const strikes = [90, 95, 100, 105, 110];
     const callOtm = strikes.filter(
-      strike => classifyOptionMoneyness(strike, 100, "call", 100) === "OTM"
+      strike => classifyOptionMoneyness(strike, 100, "call") === "OTM"
     );
     const putOtm = strikes.filter(
-      strike => classifyOptionMoneyness(strike, 100, "put", 100) === "OTM"
+      strike => classifyOptionMoneyness(strike, 100, "put") === "OTM"
     );
     expect(callOtm).toEqual([105, 110]);
     expect(putOtm).toEqual([90, 95]);
     expect(callOtm.filter(strike => putOtm.includes(strike))).toEqual([]);
+  });
+
+  it.each([
+    ["GLD", 422.87, [420, 423, 425]],
+    ["XAUT", 4_412, [4_400, 4_410, 4_420]],
+    ["BTC", 80_050, [79_000, 80_000, 81_000]],
+    ["ETH", 3_304, [3_250, 3_300, 3_350]],
+  ])(
+    "retains the nearest %s strike in both combined ITM and OTM views",
+    (_underlying, spot, strikes) => {
+      const atmStrike = nearestStrikeLevels(strikes, spot)[0];
+      const sides = ["call", "put"] as const;
+      for (const filter of ["itm", "otm"] as const) {
+        expect(
+          sides.some(callPut =>
+            optionMatchesMoneynessFilter(atmStrike, spot, callPut, filter)
+          )
+        ).toBe(true);
+      }
+    }
+  );
+
+  it("retains a true-ATM row when spot equals the listed strike", () => {
+    expect(optionMatchesMoneynessFilter(423, 423, "call", "otm")).toBe(true);
+    expect(optionMatchesMoneynessFilter(423, 423, "put", "itm")).toBe(true);
   });
 
   it("formats every heatmap spot value with exactly two decimals", () => {
