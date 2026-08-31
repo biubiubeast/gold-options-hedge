@@ -17,6 +17,7 @@ import {
   formatStrikeDistanceFromSpot,
   generateMockPositions,
   magnitudeHeatColor,
+  metricSelectorLabel,
   metricDistribution,
   metricValue,
   nearestStrikeLevels,
@@ -63,6 +64,15 @@ describe("institutional risk heatmap acceptance", () => {
     expect(formatCompact(null, "unitDelta")).toBe("MISSING");
   });
 
+  it("labels the Volume metric with the selected market window", () => {
+    expect(metricSelectorLabel("volume", "GLD")).toBe("Volume (Session)");
+    expect(metricSelectorLabel("volume", "XAUT")).toBe("Volume (24h)");
+    expect(metricSelectorLabel("volume", "BTC")).toBe("Volume (24h)");
+    expect(metricSelectorLabel("volume", "ETH")).toBe("Volume (24h)");
+    expect(metricSelectorLabel("volume", "all")).toBe("Volume");
+    expect(metricSelectorLabel("unitDelta", "GLD")).toBe("Unit Delta");
+  });
+
   it("normalizes Volume to additive USD notional and preserves missing inputs", () => {
     const raw = generateMockPositions(2, 83, asOf).map((position, index) => ({
       ...position,
@@ -91,11 +101,7 @@ describe("institutional risk heatmap acceptance", () => {
     expect(metricValue(missing, "volume")).toBeNull();
     expect(aggregateHeatmapCellMetric([call, missing], "volume")).toBeNull();
 
-    const [zero] = enrichRiskPositions(
-      [{ ...raw[0], volume: 0 }],
-      spots,
-      asOf
-    );
+    const [zero] = enrichRiskPositions([{ ...raw[0], volume: 0 }], spots, asOf);
     expect(metricValue(zero, "volume")).toBe(0);
 
     const doubledFormula = DEFAULT_FORMULAS.map(formula =>

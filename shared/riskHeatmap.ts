@@ -288,6 +288,18 @@ export const METRIC_LABELS: Record<HeatmapMetric, string> = {
   rollPriority: "Roll Priority",
 };
 
+/** Compact selector label that keeps the provider's Volume time window explicit. */
+export function metricSelectorLabel(
+  metric: HeatmapMetric,
+  underlying: RiskUnderlying | "all"
+): string {
+  if (metric !== "volume") return METRIC_LABELS[metric];
+  if (underlying === "GLD") return "Volume (Session)";
+  if (underlying === "XAUT" || underlying === "BTC" || underlying === "ETH")
+    return "Volume (24h)";
+  return "Volume";
+}
+
 export const CENTERED_METRICS = new Set<HeatmapMetric>([
   "unitDelta",
   "totalDelta",

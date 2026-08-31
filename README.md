@@ -40,7 +40,7 @@ Render 由 `main` 分支自动部署。公司服务器是独立部署，除非�
 主要 Metric：
 
 - Unit Delta、Total Delta XAU、Gamma XAU、Theta USD/day、Vega USD/vol。
-- Mark IV、Bid IV、Ask IV、Bid Ask IV Spread、Volume Notional USD。
+- Mark IV、Bid IV、Ask IV、Bid Ask IV Spread、Volume Notional USD（Metric 下拉框按所选标的显示为 GLD `Volume (Session)` 或加密期权 `Volume (24h)`）。
 - Raw Qty、Notional Size USD、Market Value、UPL、DTE、Distance to Strike、Roll Priority。
 - Bid Dollar Notional、Ask Dollar Notional、Bid+Ask Dollar Notional。
 

@@ -74,6 +74,7 @@ import {
   generateMockPositions,
   isIvSelectorMetric,
   isModelIvMetric,
+  metricSelectorLabel,
   metricValue,
   metricDistribution,
   nearestStrikeLevels,
@@ -1233,7 +1234,17 @@ export default function Matrix() {
   const enabledOptions = settings.heatmapFilterOptions;
   const metricOptions = (
     Object.entries(METRIC_LABELS) as Array<[HeatmapMetric, string]>
-  ).filter(([key]) => !isModelIvMetric(key) && enabledOptions.metric[key]);
+  )
+    .filter(([key]) => !isModelIvMetric(key) && enabledOptions.metric[key])
+    .map(
+      ([key, label]) =>
+        [
+          key,
+          key === "volume"
+            ? metricSelectorLabel(key, selectedRiskUnderlying(underlying))
+            : label,
+        ] as [HeatmapMetric, string]
+    );
   useEffect(() => {
     const riskUnderlying = selectedRiskUnderlying(underlying);
     if (riskUnderlying !== "all") setSpotUnderlying(riskUnderlying);
