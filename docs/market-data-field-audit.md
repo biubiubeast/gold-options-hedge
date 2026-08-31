@@ -8,7 +8,7 @@
 2. Deribit 权利金以 BTC 或 ETH 计价。网站保留交易所原始 Price，同时使用同步 `underlying_price` 转换 USD；Bid/Ask Dollar Notional 不再把 BTC/ETH 权利金误当成美元。
 3. MarketData.app 与 Tradier 适配器原先已经读取 Price、Size、IV 和 Greeks，但漏写 OI/Volume 到统一结构。本次已修复，并增加单元测试。
 4. Bybit XAUT/BTC/ETH 与 Cboe GLD 的重要一级行情字段没有发现新的代码漏映射；它们仍有各自的数据源边界，必须由 Source、As-of、Market/Model IV 和 MISSING 状态明确表达。
-5. `Volume` 已接入市场热力图 Metric、颜色尺度、全局/Expiry 分布统计和 Market Hover。Call+Put 同格时求和；任一合约 Volume 缺失时整格不着色，真实 0 则保留为 0，不再把缺失静默转换为 0。
+5. `Volume Notional USD` 已接入市场热力图 Metric、颜色尺度、全局/Expiry 分布统计和 Market Hover。网站按可编辑公式将原始 Volume 统一成 USD 标的名义金额；Call+Put 同格时求和，任一必要输入缺失时整格不着色，真实 0 则保留为 0。
 
 ## Deribit 最可靠读取架构
 
@@ -112,16 +112,21 @@ Bybit 公共接口抽样的 XAUT、BTC、ETH ticker 都包含 `bid1Price/bid1Siz
 
 当前读取的是 Best Bid/Ask 一档数量。它能支持一级 Dollar Notional 和横截面对比，但不能代表扫单 5/10/25 bps 的累计深度、滑点或冲击成本。专业下一步应订阅 Deribit `book.{instrument}.{group}.{depth}.100ms`、Bybit orderbook，并对 GLD 购买具备 OPRA 深度的许可源。
 
-### 3. OI / Volume 尚未跨交易所统一单位
+### 3. Volume 已统一为 USD 名义金额，OI 仍保留原生口径
 
-OI 和 Volume 保留 provider-native 口径；Bybit 是 ticker 的 Open Interest/24h Volume，Deribit 是 ticker stats / summary，GLD 是 OPRA/Cboe 合约数量。它们适合在同一 venue 内排序，不应直接当成跨 venue 的 USD 深度。若要横向比较，应新增 `OI × contract size × spot`、`Volume × contract size × spot` 的独立 USD 指标，并显示窗口（session/24h）和来源。
+原始 Volume 继续按 provider-native 字段保存用于审计：Bybit 是 ticker 的 24h Volume，Deribit 是 ticker stats / summary 的 24h Volume，GLD 是 OPRA/Cboe 当日/当前交易时段合约数。热力图不再直接着色原始数量，而通过公式管理中的可编辑公式统一换算：
 
-当前热力图的 `Volume` 因此遵守以下规则：
+`volume_notional_usd = volume × contractMultiplier × underlyingPrice`
 
-- 选择单一 Underlying/Venue 时可用于同市场横截面排序与着色；
-- Combined Call+Put cell 使用两腿 Volume 之和；
+当前热力图的 `Volume Notional USD` 遵守以下规则：
+
+- GLD 使用 `Session` 标签；Bybit/Deribit 使用 `24h` 标签，同一合约只显示适用的一种窗口；
+- Combined Call+Put cell 使用两腿 Volume Notional USD 之和；
 - Expiry 与左上角统计使用当前筛选后的 Min/P25/Median/Average/P75/Max；
-- `ALL MARKETS` 下的原始 Volume 不代表已统一量纲，不能直接解释为跨市场流动性排名。
+- 任一合约的原始 Volume、实际合约乘数或 Spot 缺失，整格不着色，Hover 不显示无效 Volume 行；真实 0 保留为 0；
+- USD 量纲使跨标的规模比较成为可能，但 Session 与 24h 窗口不同，不能把差异全部解释为流动性差异。
+
+OI 仍保留 provider-native 口径。若要跨市场比较 OI，应另建 `OI × contract size × spot` 的 USD 指标，而不是直接比较原始 OI。
 
 ### 4. GLD adjusted contract deliverable
 
@@ -141,7 +146,7 @@ Render 免费实例休眠后，WebSocket 必须重新建立；公司服务器若
 2. **P0：** 为生产 GLD 接入具备授权与 SLA 的 OPRA 数据；免费 Cboe 继续作为完整链结构和故障回退。
 3. **P1：** 接入 OCC/券商 contract master，覆盖 GLD adjusted deliverable。
 4. **P1：** 新增全深度与标准化冲击成本指标，避免把 Top Size 当作完整流动性。
-5. **P1：** 对 OI/Volume 增加单位、窗口、USD 等值字段，禁止跨 venue 直接比较原始数值。
+5. **P1：** Volume 已完成窗口标签和 USD 名义金额；下一步对 OI 增加单位、窗口和 USD 等值字段，禁止跨 venue 直接比较原始 OI。
 6. **P2：** 保存每次行情质量快照，形成数据缺失率、延迟分布、恢复时间和供应商 SLA 报表。
 
 ## 官方接口依据

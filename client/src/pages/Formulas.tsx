@@ -262,7 +262,7 @@ export default function Formulas() {
             contractMultiplier, currentValue, entryCost, underlyingPrice,
             xauUsdPrice, delta, gamma, theta, vega, spotScale, bidPrice,
             askPrice, bidSize, askSize, premiumToUsd, bidDollarNotional,
-            askDollarNotional
+            askDollarNotional, volume
           </code>
           。其中 <code>premiumToUsd</code> 是权利金币种兑 USD
           的运行时参数：USD/USDT/USDC 为 1，Deribit BTC/ETH
@@ -334,7 +334,19 @@ export default function Formulas() {
               </div>
               <div className="border border-border/60 p-3">
                 <strong className="text-foreground">
-                  5. Largest Data Error
+                  5. Volume Notional USD
+                </strong>
+                <p className="mt-1 leading-relaxed">
+                  <code>volume_notional_usd</code> 默认按原始成交数量 × 实际
+                  Contract Multiplier × 当前标的价格统一换算为 USD
+                  标的名义金额。GLD 使用当日/交易时段 Volume；Bybit 与 Deribit
+                  使用 24h Volume。任一输入缺失时保持 MISSING，不参与热力色标；
+                  原始 Volume 仍保留用于数据审计。
+                </p>
+              </div>
+              <div className="border border-border/60 p-3">
+                <strong className="text-foreground">
+                  6. Largest Data Error
                 </strong>
                 <p className="mt-1 leading-relaxed">
                   这是固定的数据质量排序，不是交易公式：FAIL &gt; MISSING &gt;
@@ -346,7 +358,7 @@ export default function Formulas() {
               </div>
               <div className="border border-border/60 p-3">
                 <strong className="text-foreground">
-                  6. 热力颜色、固定范围与 Roll Priority
+                  7. 热力颜色、固定范围与 Roll Priority
                 </strong>
                 <p className="mt-1 leading-relaxed">
                   热力颜色为低值绿色、中值黄色、高值红色；默认按当前 metric 做

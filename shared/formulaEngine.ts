@@ -347,6 +347,7 @@ export function validateFormula(
     askPrice: 12.5,
     bidSize: 8,
     askSize: 6,
+    volume: 125,
     premiumToUsd: 1,
     bidDollarNotional: 9200,
     askDollarNotional: 7500,

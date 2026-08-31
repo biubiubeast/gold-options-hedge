@@ -30,6 +30,7 @@
 - Bybit ticker 本身直接提供 Mark/Bid/Ask IV；网站原样保存在 Market IV，并另外使用同一 ticker 的 `underlyingPrice` 计算 Model IV，便于比较交易所波动率与网站统一模型的差异。
 - Deribit BTC/ETH 完整链先用 REST 读取合约主数据与批量摘要，再通过一条长连接 WebSocket 分批订阅 `ticker.{instrument}.100ms`。Ticker 原生提供 Best Bid/Ask Price、Best Bid/Ask Amount、Market Bid/Ask IV 和 Greeks；服务器维护每个币种的最新快照、自动心跳与断线重连。冷启动最多等待 3.5 秒达到 95% 覆盖率；对仍未收到 ticker、但批量摘要显示有 Bid/Ask 的合约，再按成交量/OI 排序调用最多 60 次 REST `public/ticker` 兜底，避免数千个逐笔请求触发限流。
 - Deribit BTC/ETH 的期权权利金以 BTC/ETH 计价，不可直接加美元符号。网站使用同一 ticker/summary 的 `underlying_price` 作为 `premiumToUsd`，按 `Price × Size × contract_size × premiumToUsd` 计算 Bid/Ask Dollar Notional。任何价格、Size、contract size 或换算币价缺失时保持 MISSING，不参与色标；不会静默填 0。
+- 热力图不再直接比较各市场原始 Volume，而使用可编辑公式 `volume_notional_usd = volume × contractMultiplier × underlyingPrice` 统一为 Volume Notional USD。GLD 标签只显示 `Session`，Bybit/Deribit 只显示 `24h`；如果原始 Volume、实际合约乘数或 Spot 缺失，Hover 不显示该行，方格保持无色，不用 MISSING 占位。
 - `− / +` 调整单格高度；`Fit All` 根据当前窗口和行列数压缩矩阵，目标是在无需上下滚动时查看全部 Strike/Expiry。极端多列时轴标签会简化，但 Hover/点击仍保留完整数据。
 - `Transpose` 只交换轴；`Strike ↑/↓` 独立控制行权价从低到高或从高到低，不会改变风险数据。
 

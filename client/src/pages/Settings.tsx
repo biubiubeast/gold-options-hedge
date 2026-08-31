@@ -314,8 +314,8 @@ const hoverContentLabels: Array<
   ["bidAsk", "Bid / Ask", "盘口价格"],
   [
     "volume",
-    "Volume",
-    "成交量：GLD 为当日/交易时段累计，Bybit 与 Deribit 为最近 24 小时",
+    "Volume Notional USD",
+    "成交量美元名义金额：GLD 为当日/交易时段累计，Bybit 与 Deribit 为最近 24 小时；缺失项不显示",
   ],
   ["bidAskIv", "Bid / Ask IV", "当前 IV Source 的 Bid / Ask IV"],
   ["ivSpread", "Bid Ask IV Spread", "当前 IV Source 的 Ask IV − Bid IV"],
@@ -346,7 +346,11 @@ const expiryHoverContentLabels: Array<
   ["maxRoll", "Max Roll", "默认隐藏"],
   ["worstStatus", "Worst Status", "最严重数据状态"],
   ["averageIv", "Average IV", "Mark / Bid / Ask IV 平均值"],
-  ["openInterestVolume", "OI / Volume", "合约链聚合盘口统计"],
+  [
+    "openInterestVolume",
+    "OI / Volume Notional USD",
+    "合约链聚合 OI 与统一后的成交量美元名义金额",
+  ],
   ["staleMissing", "Stale / Missing", "旧报价和缺失数据数量"],
   ["latestQuote", "Latest Quote", "最新行情时间"],
   ["netGrossQty", "Net / Gross Qty", "Expiry 持仓数量汇总"],

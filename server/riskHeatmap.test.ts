@@ -63,20 +63,59 @@ describe("institutional risk heatmap acceptance", () => {
     expect(formatCompact(null, "unitDelta")).toBe("MISSING");
   });
 
-  it("treats Volume as an additive market metric and preserves missing inputs", () => {
-    const source = enrichRiskPositions(
-      generateMockPositions(2, 83, asOf),
+  it("normalizes Volume to additive USD notional and preserves missing inputs", () => {
+    const raw = generateMockPositions(2, 83, asOf).map((position, index) => ({
+      ...position,
+      volume: index === 0 ? 125 : 75,
+    }));
+    const [call, put] = enrichRiskPositions(raw, spots, asOf);
+    const expectedCall =
+      125 * raw[0].contractMultiplier! * spots[raw[0].underlying];
+    const expectedPut =
+      75 * raw[1].contractMultiplier! * spots[raw[1].underlying];
+    expect(metricValue(call, "volume")).toBeCloseTo(expectedCall, 8);
+    expect(aggregateMetric([call, put], "volume")).toBeCloseTo(
+      expectedCall + expectedPut,
+      8
+    );
+    expect(aggregateHeatmapCellMetric([call, put], "volume")).toBeCloseTo(
+      expectedCall + expectedPut,
+      8
+    );
+
+    const [missing] = enrichRiskPositions(
+      [{ ...raw[0], volume: null }],
       spots,
       asOf
     );
-    const call = { ...source[0], volume: 125 };
-    const put = { ...source[1], volume: 75 };
-    expect(metricValue(call, "volume")).toBe(125);
-    expect(aggregateMetric([call, put], "volume")).toBe(200);
-    expect(aggregateHeatmapCellMetric([call, put], "volume")).toBe(200);
-    expect(
-      aggregateHeatmapCellMetric([call, { ...put, volume: null }], "volume")
-    ).toBeNull();
+    expect(metricValue(missing, "volume")).toBeNull();
+    expect(aggregateHeatmapCellMetric([call, missing], "volume")).toBeNull();
+
+    const [zero] = enrichRiskPositions(
+      [{ ...raw[0], volume: 0 }],
+      spots,
+      asOf
+    );
+    expect(metricValue(zero, "volume")).toBe(0);
+
+    const doubledFormula = DEFAULT_FORMULAS.map(formula =>
+      formula.name === "volume_notional_usd"
+        ? {
+            ...formula,
+            expression: "volume * contractMultiplier * underlyingPrice * 2",
+          }
+        : formula
+    );
+    const [custom] = enrichRiskPositions(
+      [{ ...raw[1], volume: 10 }],
+      spots,
+      asOf,
+      doubledFormula
+    );
+    expect(metricValue(custom, "volume")).toBeCloseTo(
+      10 * raw[1].contractMultiplier! * spots[raw[1].underlying] * 2,
+      8
+    );
     expect(formatCompact(1_250, "volume")).toBe("1.3k");
   });
 

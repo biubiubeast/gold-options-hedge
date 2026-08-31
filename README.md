@@ -40,7 +40,7 @@ Render 由 `main` 分支自动部署。公司服务器是独立部署，除非�
 主要 Metric：
 
 - Unit Delta、Total Delta XAU、Gamma XAU、Theta USD/day、Vega USD/vol。
-- Mark IV、Bid IV、Ask IV、Bid Ask IV Spread、Volume。
+- Mark IV、Bid IV、Ask IV、Bid Ask IV Spread、Volume Notional USD。
 - Raw Qty、Notional Size USD、Market Value、UPL、DTE、Distance to Strike、Roll Priority。
 - Bid Dollar Notional、Ask Dollar Notional、Bid+Ask Dollar Notional。
 
@@ -424,7 +424,7 @@ pnpm build
 2. GLD 是美式期权，Black-Scholes 仅作回退和 Model IV 统一近似；可升级为美式模型、利率曲线与波动率曲面。
 3. GLD adjusted contract 仍需要 OCC/券商 contract master；标准 100 股不能覆盖所有公司行动调整合约。
 4. 当前 Dollar Notional 只使用 Best Bid/Ask 一档，不是全深度、滑点或冲击成本。
-5. OI/Volume 保留 provider-native 口径，不应未经换算直接跨 Venue 比较。
+5. OI 保留 provider-native 口径；热力图的 Volume 已按可编辑公式 `volume_notional_usd = volume × contractMultiplier × underlyingPrice` 统一为 Volume Notional USD。GLD 的窗口是当日/交易时段，Bybit 与 Deribit 是最近 24 小时，因此可比较美元规模，但比较时仍须注意时间窗口差异。
 6. Target Option、画线与显示设置主要是浏览器本地状态，不是多人共享的交易任务系统。
 7. xauwhales 目前是页面受限、但不是数据只读角色；生产权限体系应增加 read-only、operator、admin 等服务端 RBAC。
 8. 长期生产建议增加 PostgreSQL、行情快照历史、仓位变更审计、监控告警、定时备份和公司服务器 CI/CD。

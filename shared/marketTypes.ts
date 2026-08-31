@@ -250,6 +250,16 @@ export const DEFAULT_FORMULAS = [
     defaultExpression: "bidDollarNotional + askDollarNotional",
   },
   {
+    name: "volume_notional_usd",
+    category: "valuation",
+    expression: "volume * contractMultiplier * underlyingPrice",
+    description:
+      "成交量美元名义金额 = 数据源原始 Volume × 实际 Contract Multiplier × 当前标的价格。GLD Volume 为当日/交易时段累计合约数；Bybit 与 Deribit 为最近 24 小时成交数量。原始 Volume、合约乘数或 Spot 任一缺失时保持 MISSING。",
+    usedIn:
+      "市场热力图 Volume Notional USD metric、方格/Expiry Hover 与全局/到期日分布统计；用于不同标的统一 USD 量纲比较",
+    defaultExpression: "volume * contractMultiplier * underlyingPrice",
+  },
+  {
     name: "pnl",
     category: "valuation",
     expression: "currentValue - entryCost",

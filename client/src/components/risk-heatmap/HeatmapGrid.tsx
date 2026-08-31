@@ -207,11 +207,11 @@ function TooltipPosition({
         `$${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`,
       ]);
     }
-    if (content.volume) {
+    if (content.volume && position.volumeNotionalUSD !== null) {
       const windowLabel = position.underlying === "GLD" ? "Session" : "24h";
       rows.push([
-        `Volume (${windowLabel})`,
-        formatCompact(position.volume ?? null, "volume"),
+        `Volume Notional USD (${windowLabel})`,
+        `$${formatCompact(position.volumeNotionalUSD, "volume")}`,
       ]);
     }
     if (content.bidAskIv) {

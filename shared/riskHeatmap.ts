@@ -173,6 +173,8 @@ export interface EnrichedRiskPosition extends RiskPosition {
   dte: number;
   /** Signed underlying notional: netQty × contractMultiplier × underlying spot. */
   notionalSizeUSD: number | null;
+  /** Provider Volume normalized to USD underlying notional through the editable formula engine. */
+  volumeNotionalUSD: number | null;
   bidDollarNotional: number | null;
   askDollarNotional: number | null;
   bidAskDollarNotional: number | null;
@@ -273,7 +275,7 @@ export const METRIC_LABELS: Record<HeatmapMetric, string> = {
   modelBidIV: "Model Bid IV",
   modelAskIV: "Model Ask IV",
   modelIVSpread: "Model Bid Ask IV Spread",
-  volume: "Volume",
+  volume: "Volume Notional USD",
   qty: "Raw Qty",
   notionalSize: "Notional Size USD",
   bidDollarNotional: "Bid Dollar Notional",
@@ -386,7 +388,7 @@ export function metricValue(
     case "modelIVSpread":
       return position.modelIVSpread;
     case "volume":
-      return position.volume ?? null;
+      return position.volumeNotionalUSD;
     case "qty":
       return position.netQty;
     case "notionalSize":
@@ -956,6 +958,20 @@ export function enrichRiskPositions(
       position.premiumCurrency === "BTC" || position.premiumCurrency === "ETH"
         ? (ivReferenceSpot ?? (spot > 0 ? spot : null))
         : 1;
+    const rawVolume = finiteOrNull(position.volume);
+    const volumeNotionalUSD =
+      rawVolume !== null && multiplier !== null && spot > 0
+        ? editableFormula(
+            "volume_notional_usd",
+            {
+              volume: rawVolume,
+              contractMultiplier: multiplier,
+              underlyingPrice: spot,
+            },
+            formulas,
+            rawVolume * multiplier * spot
+          )
+        : null;
     const deriveModelIv = (priceValue: number | null) =>
       modelImpliedVolatilityFromPrice({
         price:
@@ -1084,6 +1100,7 @@ export function enrichRiskPositions(
             (spot > 0 && position.contractMultiplier !== null
               ? position.netQty * position.contractMultiplier * spot
               : null)),
+      volumeNotionalUSD,
       bidDollarNotional,
       askDollarNotional,
       bidAskDollarNotional,

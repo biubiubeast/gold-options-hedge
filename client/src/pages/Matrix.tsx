@@ -593,11 +593,33 @@ function ExpiryDetailDialog({
         `${modelIvLabel(average(positions.map(position => position.modelMarkIV)), "modelMarkIV")} / ${modelIvLabel(average(positions.map(position => position.modelBidIV)), "modelBidIV")} / ${modelIvLabel(average(positions.map(position => position.modelAskIV)), "modelAskIV")}`,
       ]
     );
-  if (content.openInterestVolume)
-    summaryRows.push([
-      "OI / Volume",
-      `${formatCompact(sum(positions.map(position => position.openInterest ?? null)))} / ${formatCompact(sum(positions.map(position => position.volume ?? null)))}`,
-    ]);
+  if (content.openInterestVolume) {
+    const openInterest = sum(
+      positions.map(position => position.openInterest ?? null)
+    );
+    const sessionVolumeNotional = sum(
+      positions
+        .filter(position => position.underlying === "GLD")
+        .map(position => position.volumeNotionalUSD)
+    );
+    const rolling24hVolumeNotional = sum(
+      positions
+        .filter(position => position.underlying !== "GLD")
+        .map(position => position.volumeNotionalUSD)
+    );
+    if (openInterest !== null)
+      summaryRows.push(["Open Interest", formatCompact(openInterest)]);
+    if (sessionVolumeNotional !== null)
+      summaryRows.push([
+        "Volume Notional USD (Session)",
+        `$${formatCompact(sessionVolumeNotional, "volume")}`,
+      ]);
+    if (rolling24hVolumeNotional !== null)
+      summaryRows.push([
+        "Volume Notional USD (24h)",
+        `$${formatCompact(rolling24hVolumeNotional, "volume")}`,
+      ]);
+  }
   if (content.netGrossQty)
     summaryRows.push([
       "Net / Gross Qty",
