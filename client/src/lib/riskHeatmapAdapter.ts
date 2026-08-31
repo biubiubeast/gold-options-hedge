@@ -143,8 +143,8 @@ export function buildLiveRiskPositions(args: {
       source: market.source || null,
       dataStatus: fallbackStatus(market),
       positionKind: "held",
-      openInterest: finiteOrNull(position.openInterest),
-      volume: finiteOrNull(position.optionVolume),
+      openInterest: market.openInterest,
+      volume: market.volume,
       availableUSD: null,
       buyingPower: null,
       officialClose:
@@ -190,8 +190,8 @@ type ChainQuote = {
   vega: number;
   timestamp: number;
   source: string;
-  openInterest?: number;
-  volume?: number;
+  openInterest?: number | null;
+  volume?: number | null;
   marketAvailable?: boolean;
   contractMultiplier?: number;
   premiumCurrency?: string;

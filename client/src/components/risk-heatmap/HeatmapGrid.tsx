@@ -207,6 +207,13 @@ function TooltipPosition({
         `$${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`,
       ]);
     }
+    if (content.volume) {
+      const windowLabel = position.underlying === "GLD" ? "Session" : "24h";
+      rows.push([
+        `Volume (${windowLabel})`,
+        formatCompact(position.volume ?? null, "volume"),
+      ]);
+    }
     if (content.bidAskIv) {
       if (ivSource === "model") {
         rows.push([

@@ -1512,6 +1512,7 @@ export default function Matrix() {
     effectiveMetric === "modelBidIV" ||
     effectiveMetric === "modelAskIV" ||
     effectiveMetric === "modelIVSpread" ||
+    effectiveMetric === "volume" ||
     effectiveMetric === "qty" ||
     effectiveMetric === "notionalSize" ||
     effectiveMetric === "bidDollarNotional" ||

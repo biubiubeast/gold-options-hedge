@@ -202,6 +202,19 @@ describe("Cboe GLD full-chain normalization", () => {
       normalizeCboeGldOption({ option: "MISSING" }, Date.now())
     ).toBeNull();
   });
+
+  it("distinguishes genuine zero Volume from a missing provider field", () => {
+    const base = {
+      option: "GLD260821C00400000",
+      bid: 2.1,
+      ask: 2.3,
+      iv: 0.245,
+    };
+    expect(
+      normalizeCboeGldOption({ ...base, volume: 0 }, Date.now())?.volume
+    ).toBe(0);
+    expect(normalizeCboeGldOption(base, Date.now())?.volume).toBeNull();
+  });
 });
 
 describe("implied volatility inversion", () => {
@@ -260,6 +273,7 @@ describe("Deribit inverse option normalization", () => {
       premiumCurrency: "ETH",
       contractMultiplier: 1,
       marketAvailable: true,
+      volume: 15,
     });
     expect(quote.delta).toBeGreaterThan(0);
     expect(quote).toMatchObject({ bidIv: null, askIv: null });
@@ -336,6 +350,7 @@ describe("Deribit inverse option normalization", () => {
       theta: -15.4,
       vega: 21.7,
       timestamp: asOf + 2_000,
+      volume: 2.1,
     });
     expect(quote.ivSpread).toBeCloseTo(0.048, 10);
     expect(quote.source).toContain("native top size / Bid-Ask IV / Greeks");

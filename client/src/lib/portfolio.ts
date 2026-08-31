@@ -59,6 +59,7 @@ export type HeatmapHoverField =
   | "qtyNotional"
   | "markIv"
   | "bidAsk"
+  | "volume"
   | "bidAskIv"
   | "ivSpread"
   | "modelIvStatus"
@@ -392,6 +393,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
       modelBidIV: true,
       modelAskIV: true,
       modelIVSpread: true,
+      volume: true,
       qty: true,
       notionalSize: true,
       bidDollarNotional: true,
@@ -423,6 +425,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     qtyNotional: true,
     markIv: true,
     bidAsk: true,
+    volume: true,
     bidAskIv: true,
     ivSpread: true,
     modelIvStatus: false,
@@ -520,6 +523,8 @@ export type MarketSnapshot = {
   ask1: number;
   bidSize: number | null;
   askSize: number | null;
+  openInterest: number | null;
+  volume: number | null;
   bidIv?: number | null;
   askIv?: number | null;
   modelMarkIv?: number | null;
@@ -559,6 +564,8 @@ type XautTicker = {
   gamma: string;
   theta: string;
   vega: string;
+  openInterest?: string;
+  volume24h?: string;
   timestamp?: number;
 };
 type GldQuote = {
@@ -587,6 +594,8 @@ type GldQuote = {
   gamma: number;
   theta: number;
   vega: number;
+  openInterest?: number | null;
+  volume?: number | null;
   source: string;
   timestamp?: number;
 };
@@ -680,6 +689,8 @@ function importedSnapshot(position: PortfolioPosition): MarketSnapshot | null {
     ask1: finiteImported(position.ask1Price) ?? 0,
     bidSize: null,
     askSize: null,
+    openInterest: finiteImported(position.openInterest),
+    volume: finiteImported(position.optionVolume),
     delta: delta!,
     gamma: gamma!,
     theta: theta!,
@@ -779,6 +790,8 @@ export function getPositionMarketData(args: {
         ask1: numberOf(ticker.ask1Price),
         bidSize: finiteImported(ticker.bid1Size),
         askSize: finiteImported(ticker.ask1Size),
+        openInterest: finiteImported(ticker.openInterest),
+        volume: finiteImported(ticker.volume24h),
         bidIv: numberOf(ticker.bid1Iv) > 0 ? numberOf(ticker.bid1Iv) : null,
         askIv: numberOf(ticker.ask1Iv) > 0 ? numberOf(ticker.ask1Iv) : null,
         ...modelIv,
@@ -827,6 +840,8 @@ export function getPositionMarketData(args: {
         ask1: numberOf(quote.ask1Price),
         bidSize: finiteImported(quote.bid1Size),
         askSize: finiteImported(quote.ask1Size),
+        openInterest: finiteImported(quote.openInterest),
+        volume: finiteImported(quote.volume),
         bidIv: finiteImported(quote.bidIv),
         askIv: finiteImported(quote.askIv),
         ...modelIv,
@@ -876,6 +891,8 @@ export function getPositionMarketData(args: {
         ask1: 0,
         bidSize: null,
         askSize: null,
+        openInterest: null,
+        volume: null,
         ...modelIv,
         delta: result.delta,
         gamma: result.gamma,
@@ -897,6 +914,8 @@ export function getPositionMarketData(args: {
     ask1: 0,
     bidSize: null,
     askSize: null,
+    openInterest: null,
+    volume: null,
     delta: numberOf(position.entryDelta),
     gamma: 0,
     theta: 0,

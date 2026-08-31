@@ -55,10 +55,14 @@ describe("operator display defaults", () => {
       true
     );
     expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapHoverContent).toMatchObject({
+      volume: true,
       modelIvStatus: false,
       ivReferenceSpot: false,
       ivReferenceSource: false,
     });
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapFilterOptions.metric.volume).toBe(
+      true
+    );
   });
 
   it("keeps heatmap click-through detail dialogs disabled by default", () => {

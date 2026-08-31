@@ -30,6 +30,7 @@ export type HeatmapMetric =
   | "modelBidIV"
   | "modelAskIV"
   | "modelIVSpread"
+  | "volume"
   | "qty"
   | "notionalSize"
   | "bidDollarNotional"
@@ -272,6 +273,7 @@ export const METRIC_LABELS: Record<HeatmapMetric, string> = {
   modelBidIV: "Model Bid IV",
   modelAskIV: "Model Ask IV",
   modelIVSpread: "Model Bid Ask IV Spread",
+  volume: "Volume",
   qty: "Raw Qty",
   notionalSize: "Notional Size USD",
   bidDollarNotional: "Bid Dollar Notional",
@@ -383,6 +385,8 @@ export function metricValue(
       return position.modelAskIV;
     case "modelIVSpread":
       return position.modelIVSpread;
+    case "volume":
+      return position.volume ?? null;
     case "qty":
       return position.netQty;
     case "notionalSize":
@@ -1263,7 +1267,7 @@ export function formatCompact(
   if (metric === "DTE") return `${Math.round(value)}d`;
   if (metric === "rollPriority") return `${value.toFixed(0)}`;
   const absolute = Math.abs(value);
-  const sign = value < 0 ? "−" : value > 0 ? "+" : "";
+  const sign = value < 0 ? "−" : value > 0 && metric !== "volume" ? "+" : "";
   if (absolute >= 1_000_000)
     return `${sign}${(absolute / 1_000_000).toFixed(1)}m`;
   if (absolute >= 1_000) return `${sign}${(absolute / 1_000).toFixed(1)}k`;

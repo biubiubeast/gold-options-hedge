@@ -312,6 +312,11 @@ const hoverContentLabels: Array<
   ["qtyNotional", "Qty / Notional Size USD", "持仓数量和标的名义规模"],
   ["markIv", "Mark / Mark IV", "Mark 价格与当前 IV Source 的 Mark IV"],
   ["bidAsk", "Bid / Ask", "盘口价格"],
+  [
+    "volume",
+    "Volume",
+    "成交量：GLD 为当日/交易时段累计，Bybit 与 Deribit 为最近 24 小时",
+  ],
   ["bidAskIv", "Bid / Ask IV", "当前 IV Source 的 Bid / Ask IV"],
   ["ivSpread", "Bid Ask IV Spread", "当前 IV Source 的 Ask IV − Bid IV"],
   ["modelIvStatus", "IV Status", "Model IV 计算状态；默认隐藏"],

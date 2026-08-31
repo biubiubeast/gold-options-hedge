@@ -63,6 +63,23 @@ describe("institutional risk heatmap acceptance", () => {
     expect(formatCompact(null, "unitDelta")).toBe("MISSING");
   });
 
+  it("treats Volume as an additive market metric and preserves missing inputs", () => {
+    const source = enrichRiskPositions(
+      generateMockPositions(2, 83, asOf),
+      spots,
+      asOf
+    );
+    const call = { ...source[0], volume: 125 };
+    const put = { ...source[1], volume: 75 };
+    expect(metricValue(call, "volume")).toBe(125);
+    expect(aggregateMetric([call, put], "volume")).toBe(200);
+    expect(aggregateHeatmapCellMetric([call, put], "volume")).toBe(200);
+    expect(
+      aggregateHeatmapCellMetric([call, { ...put, volume: null }], "volume")
+    ).toBeNull();
+    expect(formatCompact(1_250, "volume")).toBe("1.3k");
+  });
+
   it("generates deterministic 100/200-position datasets with required edge cases", () => {
     const hundred = generateMockPositions(100, 7, asOf);
     const twoHundred = generateMockPositions(200, 7, asOf);

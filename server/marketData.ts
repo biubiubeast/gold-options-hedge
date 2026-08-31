@@ -89,8 +89,8 @@ export interface GldOptionQuote {
     | "MarketData.app / OPRA"
     | "Tradier / ORATS"
     | "Cboe delayed options / OPRA";
-  openInterest?: number;
-  volume?: number;
+  openInterest?: number | null;
+  volume?: number | null;
   tradeable?: boolean;
   marketAvailable?: boolean;
 }
@@ -261,6 +261,14 @@ function toNumber(value: unknown): number {
   const parsed =
     typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Preserve a genuine zero while keeping an absent provider field MISSING. */
+function optionalNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed =
+    typeof value === "number" ? value : Number.parseFloat(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 const MONTHS: Record<string, string> = {
@@ -934,8 +942,8 @@ async function getBybitOptionChain(
           vega: ticker ? toNumber(ticker.vega) : 0,
           timestamp: quoteTimestamp,
           source: "Bybit V5 realtime options" as const,
-          openInterest: ticker ? toNumber(ticker.openInterest) : 0,
-          volume: ticker ? toNumber(ticker.volume24h) : 0,
+          openInterest: ticker ? optionalNumber(ticker.openInterest) : null,
+          volume: ticker ? optionalNumber(ticker.volume24h) : null,
           tradeable: true,
           marketAvailable: Boolean(ticker),
         });
@@ -1129,8 +1137,10 @@ export function normalizeDeribitOption(
       ? `Deribit WebSocket ticker + REST summary · native top size / Bid-Ask IV / Greeks · premium ${instrument.quote_currency}`
       : `Deribit REST summary fallback · top size unavailable · native Mark IV · model Greeks · premium ${instrument.quote_currency}`,
     openInterest:
-      toNumber(ticker?.open_interest) || toNumber(summary?.open_interest),
-    volume: toNumber(ticker?.stats?.volume) || toNumber(summary?.volume),
+      optionalNumber(ticker?.open_interest) ??
+      optionalNumber(summary?.open_interest),
+    volume:
+      optionalNumber(ticker?.stats?.volume) ?? optionalNumber(summary?.volume),
     tradeable: instrument.is_active && instrument.state === "open",
     marketAvailable,
     contractMultiplier: toNumber(instrument.contract_size) || 1,
@@ -1494,8 +1504,8 @@ export function normalizeMarketDataOption(
     gamma: toNumber(first(data.gamma)),
     theta: toNumber(first(data.theta)),
     vega: toNumber(first(data.vega)),
-    openInterest: toNumber(first(data.openInterest)),
-    volume: toNumber(first(data.volume)),
+    openInterest: optionalNumber(first(data.openInterest)),
+    volume: optionalNumber(first(data.volume)),
     tradeable: true,
     marketAvailable: true,
     timestamp,
@@ -1602,8 +1612,8 @@ export function normalizeTradierOption(
     gamma: toNumber(greeks.gamma),
     theta: toNumber(greeks.theta),
     vega: toNumber(greeks.vega),
-    openInterest: toNumber(raw.open_interest ?? raw.openInterest),
-    volume: toNumber(raw.volume),
+    openInterest: optionalNumber(raw.open_interest ?? raw.openInterest),
+    volume: optionalNumber(raw.volume),
     tradeable: true,
     marketAvailable: markPrice > 0,
     timestamp,
@@ -1678,8 +1688,8 @@ export function normalizeCboeGldOption(
     vega: toNumber(raw.vega),
     timestamp,
     source: "Cboe delayed options / OPRA",
-    openInterest: toNumber(raw.open_interest),
-    volume: toNumber(raw.volume),
+    openInterest: optionalNumber(raw.open_interest),
+    volume: optionalNumber(raw.volume),
     tradeable: true,
   };
 }

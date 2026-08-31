@@ -1,6 +1,6 @@
 # 期权行情字段完整性与 USD 量纲审计
 
-审计日期：2026-08-26（Asia/Hong_Kong）
+审计日期：2026-08-31（Asia/Hong_Kong）
 
 ## 结论摘要
 
@@ -8,6 +8,7 @@
 2. Deribit 权利金以 BTC 或 ETH 计价。网站保留交易所原始 Price，同时使用同步 `underlying_price` 转换 USD；Bid/Ask Dollar Notional 不再把 BTC/ETH 权利金误当成美元。
 3. MarketData.app 与 Tradier 适配器原先已经读取 Price、Size、IV 和 Greeks，但漏写 OI/Volume 到统一结构。本次已修复，并增加单元测试。
 4. Bybit XAUT/BTC/ETH 与 Cboe GLD 的重要一级行情字段没有发现新的代码漏映射；它们仍有各自的数据源边界，必须由 Source、As-of、Market/Model IV 和 MISSING 状态明确表达。
+5. `Volume` 已接入市场热力图 Metric、颜色尺度、全局/Expiry 分布统计和 Market Hover。Call+Put 同格时求和；任一合约 Volume 缺失时整格不着色，真实 0 则保留为 0，不再把缺失静默转换为 0。
 
 ## Deribit 最可靠读取架构
 
@@ -57,6 +58,19 @@ Bid Dollar Notional = 0.01 × 2 × 1 × 80,000 = 1,600 USD
 
 ## 实时抽样验证
 
+### Volume 覆盖率（2026-08-31）
+
+| 市场          | 返回合约 | Volume 字段存在 | Volume > 0 | Volume = 0 | 窗口/口径                      |
+| ------------- | -------: | --------------: | ---------: | ---------: | ------------------------------ |
+| GLD / Cboe    |    7,972 |           7,972 |      3,218 |      4,754 | 当日/当前交易时段累计、delayed |
+| XAUT / Bybit  |      444 |             444 |        151 |        293 | `volume24h`，数据源原生数量    |
+| BTC / Bybit   |      770 |             770 |        448 |        322 | `volume24h`，数据源原生数量    |
+| ETH / Bybit   |      672 |             672 |        380 |        292 | `volume24h`，数据源原生数量    |
+| BTC / Deribit |    1,026 |           1,026 |        493 |        533 | ticker/summary 最近 24 小时    |
+| ETH / Deribit |      882 |             882 |        398 |        484 | ticker/summary 最近 24 小时    |
+
+以上为公共接口的一次瞬时覆盖率检查，并不是固定市场统计。`0` 表示数据源明确返回零成交；字段为空、缺失或不可解析才标记 `MISSING`。GLD 样本 As-of 为 `2026-08-31 05:16:50`（Cboe 原始时间字符串）。
+
 以下数字是 2026-08-26 的一次公共接口冷启动抽样，会随上市合约和盘口变化：
 
 | 来源        | 合约数 | WebSocket ticker 覆盖 | 非空 Bid Size | 非空 Ask Size | 非空 Market Bid IV | 非空 Market Ask IV |
@@ -101,6 +115,13 @@ Bybit 公共接口抽样的 XAUT、BTC、ETH ticker 都包含 `bid1Price/bid1Siz
 ### 3. OI / Volume 尚未跨交易所统一单位
 
 OI 和 Volume 保留 provider-native 口径；Bybit 是 ticker 的 Open Interest/24h Volume，Deribit 是 ticker stats / summary，GLD 是 OPRA/Cboe 合约数量。它们适合在同一 venue 内排序，不应直接当成跨 venue 的 USD 深度。若要横向比较，应新增 `OI × contract size × spot`、`Volume × contract size × spot` 的独立 USD 指标，并显示窗口（session/24h）和来源。
+
+当前热力图的 `Volume` 因此遵守以下规则：
+
+- 选择单一 Underlying/Venue 时可用于同市场横截面排序与着色；
+- Combined Call+Put cell 使用两腿 Volume 之和；
+- Expiry 与左上角统计使用当前筛选后的 Min/P25/Median/Average/P75/Max；
+- `ALL MARKETS` 下的原始 Volume 不代表已统一量纲，不能直接解释为跨市场流动性排名。
 
 ### 4. GLD adjusted contract deliverable
 
