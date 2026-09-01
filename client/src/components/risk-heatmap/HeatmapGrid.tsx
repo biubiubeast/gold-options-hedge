@@ -17,6 +17,7 @@ import {
   expiryHeldMetricTotal,
   metricDistribution,
   metricValue,
+  isMetricValueInStatisticalSample,
   nearestStrikeLevels,
   positionLabel,
   spotRangeState,
@@ -27,6 +28,7 @@ import {
   type HeatmapMetric,
   type IvValueSource,
   type MoneynessFilter,
+  type StatisticalSampleRange,
 } from "@shared/riskHeatmap";
 import {
   cloneElement,
@@ -59,6 +61,7 @@ type Props = {
   expiries: string[];
   strikes: number[];
   metric: HeatmapMetric;
+  statisticalSampleRange: StatisticalSampleRange | null;
   ivSource: IvValueSource;
   scale: HeatScale;
   importanceCutoff: number;
@@ -124,6 +127,11 @@ const modelIvLabel = (
   value: number | null,
   metric: "modelMarkIV" | "modelBidIV" | "modelAskIV" | "modelIVSpread"
 ) => formatCompact(value, metric);
+const statisticalSampleRangeLabel = (
+  range: StatisticalSampleRange,
+  metric: HeatmapMetric
+) =>
+  `${range.lowerExclusive === null ? "−∞" : formatCompact(range.lowerExclusive, metric)} < value < ${range.upperExclusive === null ? "+∞" : formatCompact(range.upperExclusive, metric)}`;
 
 function TooltipPosition({
   position,
@@ -312,6 +320,7 @@ function ExpiryTooltip({
   expiry,
   positions,
   metric,
+  sampleRange,
   detailEnabled,
   onSelectExpiry,
   children,
@@ -319,11 +328,12 @@ function ExpiryTooltip({
   expiry: string;
   positions: EnrichedRiskPosition[];
   metric: HeatmapMetric;
+  sampleRange: StatisticalSampleRange | null;
   detailEnabled: boolean;
   onSelectExpiry: Props["onSelectExpiry"];
   children: ReactElement<{ onClick?: MouseEventHandler }>;
 }) {
-  const distribution = metricDistribution(positions, metric);
+  const distribution = metricDistribution(positions, metric, sampleRange);
   const heldTotal = expiryHeldMetricTotal(positions, metric);
   const heldTotalValue =
     heldTotal === null
@@ -401,11 +411,16 @@ function ExpiryTooltip({
         )}
         <div className="mt-1 flex justify-between text-[9px] text-muted-foreground">
           <span>
-            Valid {distribution.validCount} · Missing{" "}
-            {distribution.missingCount}
+            Valid {distribution.validCount} · Excluded{" "}
+            {distribution.excludedCount} · Missing {distribution.missingCount}
           </span>
           {detailEnabled && <span>点击查看全面数据</span>}
         </div>
+        {sampleRange && (
+          <p className="mt-1 border-t border-border/50 pt-1 font-mono text-[8px] text-violet-300">
+            STAT RANGE · {statisticalSampleRangeLabel(sampleRange, metric)}
+          </p>
+        )}
       </TooltipContent>
     </Tooltip>
   );
@@ -414,18 +429,20 @@ function ExpiryTooltip({
 function HeatmapScopeTooltip({
   positions,
   metric,
+  sampleRange,
   moneyness,
   label,
 }: {
   positions: EnrichedRiskPosition[];
   metric: HeatmapMetric;
+  sampleRange: StatisticalSampleRange | null;
   moneyness: MoneynessFilter;
   label: string;
 }) {
   const [open, setOpen] = useState(false);
   const distribution = useMemo(
-    () => metricDistribution(positions, metric),
-    [metric, positions]
+    () => metricDistribution(positions, metric, sampleRange),
+    [metric, positions, sampleRange]
   );
   const markets = useMemo(
     () => [
@@ -527,10 +544,15 @@ function HeatmapScopeTooltip({
         <div className="mt-1 flex items-center justify-between text-[9px] text-muted-foreground">
           <span>{eligibilityLabel}</span>
           <span>
-            Valid {distribution.validCount} · Missing{" "}
-            {distribution.missingCount}
+            Valid {distribution.validCount} · Excluded{" "}
+            {distribution.excludedCount} · Missing {distribution.missingCount}
           </span>
         </div>
+        {sampleRange && (
+          <p className="mt-1 border-t border-border/50 pt-1 font-mono text-[8px] text-violet-300">
+            STAT RANGE · {statisticalSampleRangeLabel(sampleRange, metric)}
+          </p>
+        )}
       </TooltipContent>
     </Tooltip>
   );
@@ -541,6 +563,7 @@ export function HeatmapGrid({
   expiries,
   strikes,
   metric,
+  statisticalSampleRange,
   ivSource,
   scale,
   importanceCutoff,
@@ -695,6 +718,7 @@ export function HeatmapGrid({
           <HeatmapScopeTooltip
             positions={scopePositions}
             metric={metric}
+            sampleRange={statisticalSampleRange}
             moneyness={moneyness}
             label={transpose ? "EXP / STRIKE" : "STRIKE / EXP"}
           />
@@ -755,6 +779,7 @@ export function HeatmapGrid({
                   .filter(cell => cell.expiry === String(column))
                   .flatMap(cell => cell.positions)}
                 metric={metric}
+                sampleRange={statisticalSampleRange}
                 detailEnabled={expiryDetailEnabled}
                 onSelectExpiry={onSelectExpiry}
               >
@@ -813,6 +838,7 @@ export function HeatmapGrid({
                   .filter(cell => cell.expiry === String(row))
                   .flatMap(cell => cell.positions)}
                 metric={metric}
+                sampleRange={statisticalSampleRange}
                 detailEnabled={expiryDetailEnabled}
                 onSelectExpiry={onSelectExpiry}
               >
@@ -1046,6 +1072,17 @@ export function HeatmapGrid({
                               : formatCompact(cell.value, metric)}
                         </strong>
                       </div>
+                      {cell.value !== null &&
+                        statisticalSampleRange &&
+                        !isMetricValueInStatisticalSample(
+                          cell.value,
+                          statisticalSampleRange
+                        ) && (
+                          <div className="mt-1 border border-violet-400/40 bg-violet-400/10 px-2 py-1 text-[9px] text-violet-200">
+                            Outside Statistical Range · excluded from
+                            distribution and automatic scale sample
+                          </div>
+                        )}
                       <div className="mt-1 space-y-2">
                         {topPositions.slice(0, 5).map(position => (
                           <div key={position.id}>

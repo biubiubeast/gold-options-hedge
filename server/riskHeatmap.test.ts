@@ -25,6 +25,7 @@ import {
   resolveIvMetric,
   isIvSelectorMetric,
   isModelIvMetric,
+  isMetricValueInStatisticalSample,
   spotRangeState,
   strikeDistanceFromSpot,
 } from "../shared/riskHeatmap";
@@ -446,11 +447,46 @@ describe("institutional risk heatmap acceptance", () => {
       median: 0.4,
       max: 0.7,
       validCount: 2,
+      excludedCount: 0,
       missingCount: 1,
     });
     expect(distribution.p25).toBeCloseTo(0.25);
     expect(distribution.p75).toBeCloseTo(0.55);
     expect(distribution.average).toBeCloseTo(0.4);
+  });
+
+  it("filters statistical samples with strict per-metric bounds and separates excluded from missing", () => {
+    const source = enrichRiskPositions(
+      generateMockPositions(5, 149, asOf),
+      spots,
+      asOf
+    );
+    const positions = [
+      { ...source[0], unitDelta: -0.2 },
+      { ...source[1], unitDelta: 0 },
+      { ...source[2], unitDelta: 0.25 },
+      { ...source[3], unitDelta: 0.8 },
+      { ...source[4], unitDelta: null },
+    ];
+    const range = { lowerExclusive: 0, upperExclusive: 0.8 };
+    const distribution = metricDistribution(positions, "unitDelta", range);
+
+    expect(distribution).toMatchObject({
+      min: 0.25,
+      p25: 0.25,
+      median: 0.25,
+      average: 0.25,
+      p75: 0.25,
+      max: 0.25,
+      validCount: 1,
+      excludedCount: 3,
+      missingCount: 1,
+    });
+    expect(isMetricValueInStatisticalSample(0, range)).toBe(false);
+    expect(isMetricValueInStatisticalSample(0.8, range)).toBe(false);
+    expect(isMetricValueInStatisticalSample(0.25, range)).toBe(true);
+    expect(isMetricValueInStatisticalSample(null, range)).toBe(false);
+    expect(isMetricValueInStatisticalSample(-0.2, null)).toBe(true);
   });
 
   it("shows active expiries by default and keeps expired contracts behind the explicit audit filter", () => {

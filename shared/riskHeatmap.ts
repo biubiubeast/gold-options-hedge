@@ -201,7 +201,17 @@ export interface MetricDistribution {
   p75: number | null;
   max: number | null;
   validCount: number;
+  excludedCount: number;
   missingCount: number;
+}
+
+/**
+ * Optional limits for the values used by heatmap statistics and automatic
+ * colour scaling. Bounds are deliberately exclusive: lower < value < upper.
+ */
+export interface StatisticalSampleRange {
+  lowerExclusive: number | null;
+  upperExclusive: number | null;
 }
 
 export interface HeatScale {
@@ -487,16 +497,19 @@ export function aggregateHeatmapCellMetric(
 /** Distribution of the currently selected heatmap metric for an Expiry. */
 export function metricDistribution(
   positions: EnrichedRiskPosition[],
-  metric: HeatmapMetric
+  metric: HeatmapMetric,
+  sampleRange: StatisticalSampleRange | null = null
 ): MetricDistribution {
   const eligible = HELD_ONLY_HEATMAP_METRICS.has(metric)
     ? positions.filter(position => position.positionKind !== "listed")
     : positions;
-  const values = eligible
+  const finiteValues = eligible
     .map(position => metricValue(position, metric))
     .filter(
       (value): value is number => value !== null && Number.isFinite(value)
-    )
+    );
+  const values = finiteValues
+    .filter(value => isMetricValueInStatisticalSample(value, sampleRange))
     .sort((left, right) => left - right);
   return {
     min: values.length ? values[0] : null,
@@ -508,8 +521,29 @@ export function metricDistribution(
     p75: values.length ? percentile(values, 0.75) : null,
     max: values.length ? values[values.length - 1] : null,
     validCount: values.length,
-    missingCount: eligible.length - values.length,
+    excludedCount: finiteValues.length - values.length,
+    missingCount: eligible.length - finiteValues.length,
   };
+}
+
+/** Missing values are not part of the sample; finite values pass when no range is active. */
+export function isMetricValueInStatisticalSample(
+  value: number | null,
+  sampleRange: StatisticalSampleRange | null = null
+): value is number {
+  if (value === null || !Number.isFinite(value)) return false;
+  if (!sampleRange) return true;
+  if (
+    sampleRange.lowerExclusive !== null &&
+    value <= sampleRange.lowerExclusive
+  )
+    return false;
+  if (
+    sampleRange.upperExclusive !== null &&
+    value >= sampleRange.upperExclusive
+  )
+    return false;
+  return true;
 }
 
 export type ExpiryHeldMetricTotal = {

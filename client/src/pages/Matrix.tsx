@@ -24,6 +24,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { trpc } from "@/lib/trpc";
 import {
   DEFAULT_HEATMAP_VIEW,
@@ -73,6 +78,7 @@ import {
   formatStrike,
   generateMockPositions,
   isIvSelectorMetric,
+  isMetricValueInStatisticalSample,
   isModelIvMetric,
   metricSelectorLabel,
   metricValue,
@@ -93,6 +99,7 @@ import {
   type IvValueSource,
   type MoneynessFilter,
   type RiskUnderlying,
+  type StatisticalSampleRange,
 } from "@shared/riskHeatmap";
 import {
   ArrowLeftRight,
@@ -114,8 +121,10 @@ type DatasetMode = "chain" | "live" | "mock100" | "mock200";
 type SelectOption = { value: string; label: string };
 type MetricRange = { min: number; max: number };
 type ExpirySelection = { expiry: string; positions: EnrichedRiskPosition[] };
+type StatisticalSampleRangeStore = Record<string, StatisticalSampleRange>;
 
 const RANGE_STORAGE_KEY = "heatmap-metric-custom-ranges-v1";
+const STAT_SAMPLE_STORAGE_KEY = "heatmap-statistical-sample-ranges-v1";
 const RISK_UNDERLYINGS: RiskUnderlying[] = ["GLD", "XAUT", "BTC", "ETH"];
 const MARKET_LABELS: Record<HeatmapUnderlyingSelection, string> = {
   GLD: "GLD/USD-OPRA",
@@ -137,6 +146,75 @@ const percentageMetrics = new Set<HeatmapMetric>([
   "modelIVSpread",
   "distanceToStrike",
 ]);
+
+function statisticalSampleScopeKey(
+  underlying: HeatmapUnderlyingSelection,
+  metric: HeatmapMetric
+) {
+  return `${underlying}|${metric}`;
+}
+
+function parseStatisticalSampleRanges(
+  serialized: string | null
+): StatisticalSampleRangeStore {
+  if (!serialized) return {};
+  try {
+    const parsed = JSON.parse(serialized) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return {};
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([key, value]) => {
+        if (!value || typeof value !== "object" || Array.isArray(value))
+          return [];
+        const candidate = value as Partial<StatisticalSampleRange>;
+        const lower = candidate.lowerExclusive;
+        const upper = candidate.upperExclusive;
+        const validLower =
+          lower === null ||
+          (typeof lower === "number" && Number.isFinite(lower));
+        const validUpper =
+          upper === null ||
+          (typeof upper === "number" && Number.isFinite(upper));
+        if (
+          !validLower ||
+          !validUpper ||
+          (typeof lower === "number" &&
+            typeof upper === "number" &&
+            upper <= lower)
+        )
+          return [];
+        if (lower === null && upper === null) return [];
+        return [
+          [
+            key,
+            {
+              lowerExclusive: lower ?? null,
+              upperExclusive: upper ?? null,
+            },
+          ],
+        ];
+      })
+    );
+  } catch {
+    return {};
+  }
+}
+
+function statisticalSampleRangeLabel(
+  range: StatisticalSampleRange | null,
+  metric: HeatmapMetric
+) {
+  if (!range) return "OFF";
+  const lower =
+    range.lowerExclusive === null
+      ? "−∞"
+      : formatCompact(range.lowerExclusive, metric);
+  const upper =
+    range.upperExclusive === null
+      ? "+∞"
+      : formatCompact(range.upperExclusive, metric);
+  return `${lower} < value < ${upper}`;
+}
 
 const statusSeverity: Record<DataStatus, number> = {
   LIVE: 0,
@@ -527,11 +605,13 @@ function PositionDetailDialog({
 function ExpiryDetailDialog({
   selection,
   metric,
+  sampleRange,
   content,
   onClose,
 }: {
   selection: ExpirySelection | null;
   metric: HeatmapMetric;
+  sampleRange: StatisticalSampleRange | null;
   content: PortfolioSettings["heatmapExpiryHoverContent"];
   onClose: () => void;
 }) {
@@ -554,8 +634,12 @@ function ExpiryDetailDialog({
       ? numbers.reduce((total, value) => total + value, 0) / numbers.length
       : null;
   };
-  const selectedMetric = metricDistribution(positions, metric);
-  const unitDelta = metricDistribution(positions, "unitDelta");
+  const selectedMetric = metricDistribution(positions, metric, sampleRange);
+  const unitDelta = metricDistribution(
+    positions,
+    "unitDelta",
+    metric === "unitDelta" ? sampleRange : null
+  );
   const latestQuote =
     positions
       .map(position => position.quoteTime)
@@ -853,7 +937,12 @@ function ExpiryDetailDialog({
         </div>
         <p className="text-[9px] text-muted-foreground">
           Selected Metric: {selectedMetric.validCount} valid ·{" "}
-          {selectedMetric.missingCount} missing。MISSING 不会静默按 0 处理。
+          {selectedMetric.excludedCount} excluded ·{" "}
+          {selectedMetric.missingCount} missing
+          {sampleRange
+            ? ` · Range ${statisticalSampleRangeLabel(sampleRange, metric)}`
+            : ""}
+          。MISSING 不会静默按 0 处理。
         </p>
       </DialogContent>
     </Dialog>
@@ -940,6 +1029,21 @@ export default function Matrix() {
   const [rangeMinDraft, setRangeMinDraft] = useState("");
   const [rangeMaxDraft, setRangeMaxDraft] = useState("");
   const [rangeError, setRangeError] = useState("");
+  const [statisticalSampleRanges, setStatisticalSampleRanges] =
+    useState<StatisticalSampleRangeStore>(() =>
+      parseStatisticalSampleRanges(
+        localStorage.getItem(STAT_SAMPLE_STORAGE_KEY)
+      )
+    );
+  const statisticalSampleScope = statisticalSampleScopeKey(
+    underlying,
+    effectiveMetric
+  );
+  const activeStatisticalSampleRange =
+    statisticalSampleRanges[statisticalSampleScope] ?? null;
+  const [statSampleLowerDraft, setStatSampleLowerDraft] = useState("");
+  const [statSampleUpperDraft, setStatSampleUpperDraft] = useState("");
+  const [statSampleError, setStatSampleError] = useState("");
   const [nativeFullscreen, setNativeFullscreen] = useState(false);
   const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
   const isFullscreen = nativeFullscreen || pseudoFullscreen;
@@ -1356,6 +1460,12 @@ export default function Matrix() {
   }, [customRanges]);
   useEffect(() => {
     localStorage.setItem(
+      STAT_SAMPLE_STORAGE_KEY,
+      JSON.stringify(statisticalSampleRanges)
+    );
+  }, [statisticalSampleRanges]);
+  useEffect(() => {
+    localStorage.setItem(
       TARGET_OPTION_STORAGE_KEY,
       JSON.stringify([...targetOptionKeys].sort())
     );
@@ -1367,6 +1477,22 @@ export default function Matrix() {
     setRangeMaxDraft(saved ? String(saved.max * factor) : "");
     setRangeError("");
   }, [customRanges, effectiveMetric]);
+  useEffect(() => {
+    const factor = percentageMetrics.has(effectiveMetric) ? 100 : 1;
+    setStatSampleLowerDraft(
+      activeStatisticalSampleRange?.lowerExclusive === null ||
+        activeStatisticalSampleRange?.lowerExclusive === undefined
+        ? ""
+        : String(activeStatisticalSampleRange.lowerExclusive * factor)
+    );
+    setStatSampleUpperDraft(
+      activeStatisticalSampleRange?.upperExclusive === null ||
+        activeStatisticalSampleRange?.upperExclusive === undefined
+        ? ""
+        : String(activeStatisticalSampleRange.upperExclusive * factor)
+    );
+    setStatSampleError("");
+  }, [activeStatisticalSampleRange, effectiveMetric, statisticalSampleScope]);
   useEffect(() => {
     const syncFullscreen = () => {
       const active = document.fullscreenElement !== null;
@@ -1481,6 +1607,57 @@ export default function Matrix() {
       return next;
     });
   };
+  const applyStatisticalSampleRange = () => {
+    const factor = percentageMetrics.has(effectiveMetric) ? 100 : 1;
+    const parseBound = (draft: string) => {
+      if (!draft.trim()) return null;
+      const value = Number(draft) / factor;
+      return Number.isFinite(value) ? value : Number.NaN;
+    };
+    const lowerExclusive = parseBound(statSampleLowerDraft);
+    const upperExclusive = parseBound(statSampleUpperDraft);
+    if (Number.isNaN(lowerExclusive) || Number.isNaN(upperExclusive)) {
+      setStatSampleError("请输入有效数字，留空表示不设限");
+      return;
+    }
+    if (
+      lowerExclusive !== null &&
+      upperExclusive !== null &&
+      upperExclusive <= lowerExclusive
+    ) {
+      setStatSampleError("上限必须大于下限");
+      return;
+    }
+    setStatisticalSampleRanges(current => {
+      const next = { ...current };
+      if (lowerExclusive === null && upperExclusive === null) {
+        delete next[statisticalSampleScope];
+      } else {
+        next[statisticalSampleScope] = {
+          lowerExclusive,
+          upperExclusive,
+        };
+      }
+      return next;
+    });
+    setStatSampleError("");
+  };
+  const resetCurrentStatisticalSampleRange = () => {
+    setStatisticalSampleRanges(current => {
+      const next = { ...current };
+      delete next[statisticalSampleScope];
+      return next;
+    });
+    setStatSampleLowerDraft("");
+    setStatSampleUpperDraft("");
+    setStatSampleError("");
+  };
+  const resetAllStatisticalSampleRanges = () => {
+    setStatisticalSampleRanges({});
+    setStatSampleLowerDraft("");
+    setStatSampleUpperDraft("");
+    setStatSampleError("");
+  };
 
   const { cells, expiries, strikes } = useMemo(() => {
     const grouped = new Map<string, EnrichedRiskPosition[]>();
@@ -1557,7 +1734,12 @@ export default function Matrix() {
       return null;
     const values = cells
       .filter(
-        cell => cell.held && cell.value !== null && Number.isFinite(cell.value)
+        cell =>
+          cell.held &&
+          isMetricValueInStatisticalSample(
+            cell.value,
+            activeStatisticalSampleRange
+          )
       )
       .map(cell => Math.abs(cell.value!));
     if (!values.length) return null;
@@ -1566,10 +1748,16 @@ export default function Matrix() {
       max: Math.max(...values),
       basis: "held" as const,
     };
-  }, [activeCustomRange, cells, effectiveMetric]);
+  }, [activeCustomRange, activeStatisticalSampleRange, cells, effectiveMetric]);
   const currentP25P75Range = useMemo(() => {
     const values = cells.flatMap(cell => {
-      if (cell.value === null || !Number.isFinite(cell.value)) return [];
+      if (
+        !isMetricValueInStatisticalSample(
+          cell.value,
+          activeStatisticalSampleRange
+        )
+      )
+        return [];
       return [sequentialMagnitude ? Math.abs(cell.value) : cell.value];
     });
     if (!values.length) return null;
@@ -1579,7 +1767,7 @@ export default function Matrix() {
     const max =
       rawMax > min ? rawMax : min + Math.max(Math.abs(min) * 0.01, 1e-9);
     return { min, max };
-  }, [cells, sequentialMagnitude]);
+  }, [activeStatisticalSampleRange, cells, sequentialMagnitude]);
   useEffect(() => {
     if (
       underlying !== "GLD" ||
@@ -1608,7 +1796,10 @@ export default function Matrix() {
     () =>
       buildHeatScale(
         cells.map(cell =>
-          cell.value === null
+          !isMetricValueInStatisticalSample(
+            cell.value,
+            activeStatisticalSampleRange
+          )
             ? null
             : sequentialMagnitude
               ? Math.abs(cell.value)
@@ -1622,6 +1813,7 @@ export default function Matrix() {
       ),
     [
       activeCustomRange,
+      activeStatisticalSampleRange,
       cells,
       effectiveMetric,
       heldOnlyAutoRange,
@@ -1856,259 +2048,377 @@ export default function Matrix() {
         <DecisionCards cards={cards} onLocate={locateCell} />
       )}
 
-      {Object.values(visibleFilters).some(Boolean) && (
-        <div className="flex min-h-7 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1 py-0.5">
-          {visibleFilters.dataset && (
-            <NativeSelect
-              className="min-w-[130px] flex-1"
-              label="DATA"
-              value={dataset}
-              onChange={value => setDataset(value as DatasetMode)}
-              options={[
-                { value: "live", label: "LIVE / IMPORTED" },
-                { value: "chain", label: "FULL OPTION CHAIN" },
-                { value: "mock100", label: "MOCK 100" },
-                { value: "mock200", label: "MOCK 200" },
-              ].filter(
-                option => enabledOptions.dataset[option.value as DatasetMode]
-              )}
-            />
-          )}
-          {visibleFilters.underlying && (
-            <NativeSelect
-              className="w-[230px] flex-none"
-              label="UNDERLYING"
-              value={underlying}
-              onChange={value =>
-                setUnderlying(value as HeatmapUnderlyingSelection)
-              }
-              options={(
-                Object.entries(MARKET_LABELS) as Array<
-                  [HeatmapUnderlyingSelection, string]
-                >
-              )
-                .map(([value, label]) => ({ value, label }))
-                .filter(option => enabledOptions.underlying[option.value])}
-            />
-          )}
-          {visibleFilters.venue && (
-            <NativeSelect
-              className="min-w-[100px] flex-1"
-              label="VENUE"
-              value={venue}
-              onChange={setVenue}
-              options={[
-                { value: "all", label: "ALL" },
-                ...filterOptions.venue.map(value => ({ value, label: value })),
-              ]}
-            />
-          )}
-          {visibleFilters.broker && (
-            <NativeSelect
-              className="min-w-[100px] flex-1"
-              label="BROKER"
-              value={broker}
-              onChange={setBroker}
-              options={[
-                { value: "all", label: "ALL" },
-                ...filterOptions.broker.map(value => ({ value, label: value })),
-              ]}
-            />
-          )}
-          {visibleFilters.account && (
-            <NativeSelect
-              className="min-w-[110px] flex-1"
-              label="ACCOUNT"
-              value={account}
-              onChange={setAccount}
-              options={[
-                { value: "all", label: "ALL" },
-                ...filterOptions.account.map(value => ({
-                  value,
-                  label: value,
-                })),
-              ]}
-            />
-          )}
-          {visibleFilters.callPut && (
-            <NativeSelect
-              className="w-[112px] flex-none"
-              label="C/P"
-              value={callPut}
-              onChange={value => setCallPut(value as typeof callPut)}
-              options={[
-                { value: "call", label: "CALL" },
-                { value: "put", label: "PUT" },
-                { value: "combined", label: "CALL + PUT" },
-              ].filter(
-                option =>
-                  enabledOptions.callPut[
-                    option.value as keyof typeof enabledOptions.callPut
-                  ] &&
-                  (option.value !== "combined" || moneyness === "otm")
-              )}
-            />
-          )}
-          {visibleFilters.expiryBucket && (
-            <NativeSelect
-              className="min-w-[90px] flex-1"
-              label="DTE"
-              value={expiryBucket}
-              onChange={value => setExpiryBucket(value as ExpiryBucket)}
-              options={[
-                { value: "all", label: "ALL" },
-                { value: "expired", label: "EXP" },
-                { value: "0-2", label: "0–2" },
-                { value: "3-7", label: "3–7" },
-                { value: "8-30", label: "8–30" },
-                { value: "31+", label: "31+" },
-              ].filter(
-                option =>
-                  enabledOptions.expiryBucket[option.value as ExpiryBucket]
-              )}
-            />
-          )}
-          {visibleFilters.status && (
-            <NativeSelect
-              className="min-w-[100px] flex-1"
-              label="STATUS"
-              value={status}
-              onChange={value => setStatus(value as typeof status)}
-              options={[
-                { value: "all", label: "ALL" },
-                ...(
-                  ["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]
-                ).map(value => ({ value, label: value })),
-              ].filter(
-                option =>
-                  enabledOptions.status[
-                    option.value as keyof typeof enabledOptions.status
-                  ]
-              )}
-            />
-          )}
-          {visibleFilters.metric && (
-            <NativeSelect
-              label="METRIC"
-              value={metric}
-              onChange={value => setMetric(value as HeatmapMetric)}
-              options={metricOptions.map(([value, label]) => ({
+      <div className="flex min-h-7 shrink-0 flex-wrap items-center gap-1 border border-border/60 bg-card/35 px-1 py-0.5">
+        {visibleFilters.dataset && (
+          <NativeSelect
+            className="min-w-[130px] flex-1"
+            label="DATA"
+            value={dataset}
+            onChange={value => setDataset(value as DatasetMode)}
+            options={[
+              { value: "live", label: "LIVE / IMPORTED" },
+              { value: "chain", label: "FULL OPTION CHAIN" },
+              { value: "mock100", label: "MOCK 100" },
+              { value: "mock200", label: "MOCK 200" },
+            ].filter(
+              option => enabledOptions.dataset[option.value as DatasetMode]
+            )}
+          />
+        )}
+        {visibleFilters.underlying && (
+          <NativeSelect
+            className="w-[230px] flex-none"
+            label="UNDERLYING"
+            value={underlying}
+            onChange={value =>
+              setUnderlying(value as HeatmapUnderlyingSelection)
+            }
+            options={(
+              Object.entries(MARKET_LABELS) as Array<
+                [HeatmapUnderlyingSelection, string]
+              >
+            )
+              .map(([value, label]) => ({ value, label }))
+              .filter(option => enabledOptions.underlying[option.value])}
+          />
+        )}
+        {visibleFilters.venue && (
+          <NativeSelect
+            className="min-w-[100px] flex-1"
+            label="VENUE"
+            value={venue}
+            onChange={setVenue}
+            options={[
+              { value: "all", label: "ALL" },
+              ...filterOptions.venue.map(value => ({ value, label: value })),
+            ]}
+          />
+        )}
+        {visibleFilters.broker && (
+          <NativeSelect
+            className="min-w-[100px] flex-1"
+            label="BROKER"
+            value={broker}
+            onChange={setBroker}
+            options={[
+              { value: "all", label: "ALL" },
+              ...filterOptions.broker.map(value => ({ value, label: value })),
+            ]}
+          />
+        )}
+        {visibleFilters.account && (
+          <NativeSelect
+            className="min-w-[110px] flex-1"
+            label="ACCOUNT"
+            value={account}
+            onChange={setAccount}
+            options={[
+              { value: "all", label: "ALL" },
+              ...filterOptions.account.map(value => ({
                 value,
-                label,
-              }))}
-            />
-          )}
-          {visibleFilters.metric && isIvSelectorMetric(metric) && (
-            <NativeSelect
-              className="w-[112px] flex-none"
-              label="IV SOURCE"
-              value={ivSource}
-              onChange={value => setIvSource(value as IvValueSource)}
-              options={
-                underlying === "GLD"
-                  ? [{ value: "model", label: "MODEL" }]
-                  : [
-                      { value: "market", label: "MARKET" },
-                      { value: "model", label: "MODEL" },
-                    ]
-              }
-            />
-          )}
-          {visibleFilters.moneyness && (
-            <NativeSelect
-              className="w-[105px] flex-none"
-              label="ITM/OTM"
-              value={moneyness}
-              onChange={value => setMoneyness(value as MoneynessFilter)}
-              options={[
-                { value: "all", label: "ALL" },
-                { value: "itm", label: "ITM" },
-                { value: "otm", label: "OTM" },
-              ].filter(
-                option =>
-                  enabledOptions.moneyness[option.value as MoneynessFilter]
-              )}
-            />
-          )}
-          {visibleFilters.label && (
-            <NativeSelect
-              label="LABEL"
-              value={labelMode}
-              onChange={value => setLabelMode(value as CellLabelMode)}
-              options={[
-                { value: "none", label: "NONE" },
-                { value: "held", label: "POSITION METRIC" },
-                { value: "top", label: "TOP 15%" },
-                { value: "bottom", label: "BOTTOM 15%" },
-                { value: "all", label: "ALL" },
-              ].filter(
-                option =>
-                  enabledOptions.label[
-                    option.value as keyof typeof enabledOptions.label
+                label: value,
+              })),
+            ]}
+          />
+        )}
+        {visibleFilters.callPut && (
+          <NativeSelect
+            className="w-[112px] flex-none"
+            label="C/P"
+            value={callPut}
+            onChange={value => setCallPut(value as typeof callPut)}
+            options={[
+              { value: "call", label: "CALL" },
+              { value: "put", label: "PUT" },
+              { value: "combined", label: "CALL + PUT" },
+            ].filter(
+              option =>
+                enabledOptions.callPut[
+                  option.value as keyof typeof enabledOptions.callPut
+                ] &&
+                (option.value !== "combined" || moneyness === "otm")
+            )}
+          />
+        )}
+        {visibleFilters.expiryBucket && (
+          <NativeSelect
+            className="min-w-[90px] flex-1"
+            label="DTE"
+            value={expiryBucket}
+            onChange={value => setExpiryBucket(value as ExpiryBucket)}
+            options={[
+              { value: "all", label: "ALL" },
+              { value: "expired", label: "EXP" },
+              { value: "0-2", label: "0–2" },
+              { value: "3-7", label: "3–7" },
+              { value: "8-30", label: "8–30" },
+              { value: "31+", label: "31+" },
+            ].filter(
+              option =>
+                enabledOptions.expiryBucket[option.value as ExpiryBucket]
+            )}
+          />
+        )}
+        {visibleFilters.status && (
+          <NativeSelect
+            className="min-w-[100px] flex-1"
+            label="STATUS"
+            value={status}
+            onChange={value => setStatus(value as typeof status)}
+            options={[
+              { value: "all", label: "ALL" },
+              ...(
+                ["LIVE", "STALE", "WARN", "MISSING", "FAIL"] as DataStatus[]
+              ).map(value => ({ value, label: value })),
+            ].filter(
+              option =>
+                enabledOptions.status[
+                  option.value as keyof typeof enabledOptions.status
+                ]
+            )}
+          />
+        )}
+        {visibleFilters.metric && (
+          <NativeSelect
+            label="METRIC"
+            value={metric}
+            onChange={value => setMetric(value as HeatmapMetric)}
+            options={metricOptions.map(([value, label]) => ({
+              value,
+              label,
+            }))}
+          />
+        )}
+        {visibleFilters.metric && isIvSelectorMetric(metric) && (
+          <NativeSelect
+            className="w-[112px] flex-none"
+            label="IV SOURCE"
+            value={ivSource}
+            onChange={value => setIvSource(value as IvValueSource)}
+            options={
+              underlying === "GLD"
+                ? [{ value: "model", label: "MODEL" }]
+                : [
+                    { value: "market", label: "MARKET" },
+                    { value: "model", label: "MODEL" },
                   ]
-              )}
-            />
-          )}
-          {visibleFilters.hover && (
-            <NativeSelect
-              label="HOVER"
-              value={hoverPreset}
-              onChange={value => setHoverPreset(value as HoverDataPreset)}
-              options={[
-                { value: "risk", label: "RISK" },
-                { value: "market", label: "MARKET" },
-                { value: "pnl", label: "PNL" },
-                { value: "all", label: "ALL" },
-              ].filter(
-                option =>
-                  enabledOptions.hover[
-                    option.value as keyof typeof enabledOptions.hover
-                  ]
-              )}
-            />
-          )}
-          {visibleFilters.targetOption && (
-            <div
-              className="flex h-6 items-center border border-border/70 text-[8px] text-muted-foreground"
-              aria-label="Target Option selection controls"
+            }
+          />
+        )}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label="Statistical sample filter"
+              title={`统计样本范围：${statisticalSampleRangeLabel(activeStatisticalSampleRange, effectiveMetric)}`}
+              className={`h-6 whitespace-nowrap border px-1.5 text-[8px] ${activeStatisticalSampleRange ? "border-violet-400/70 bg-violet-400/10 text-violet-200" : "border-border/70 text-muted-foreground hover:text-foreground"}`}
             >
-              <span className="px-1 whitespace-nowrap">TARGET OPTION</span>
+              STAT SAMPLE · {activeStatisticalSampleRange ? "ON" : "OFF"}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            sideOffset={5}
+            className="z-[140] w-[340px] rounded-none border-border bg-popover p-3 text-popover-foreground"
+          >
+            <div className="border-b border-border/60 pb-2">
+              <div className="flex items-center justify-between gap-3">
+                <strong className="text-[11px] tracking-wide">
+                  STATISTICAL SAMPLE
+                </strong>
+                <span
+                  className={`font-mono text-[9px] ${activeStatisticalSampleRange ? "text-violet-300" : "text-muted-foreground"}`}
+                >
+                  {activeStatisticalSampleRange ? "ACTIVE" : "OFF"}
+                </span>
+              </div>
+              <p className="mt-1 truncate font-mono text-[9px] text-muted-foreground">
+                {MARKET_LABELS[underlying]}
+              </p>
+              <p className="truncate font-mono text-[9px] text-primary">
+                {metricSelectorLabel(
+                  metric,
+                  selectedRiskUnderlying(underlying)
+                )}
+                {isIvSelectorMetric(metric)
+                  ? ` · ${ivSource.toUpperCase()}`
+                  : ""}
+              </p>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <label className="border border-border/70 p-1.5 text-[8px] text-muted-foreground">
+                <span>
+                  EXCLUDE ≤ X
+                  {percentageMetrics.has(effectiveMetric) ? " (%)" : ""}
+                </span>
+                <input
+                  aria-label="Exclude statistical values less than or equal to"
+                  inputMode="decimal"
+                  value={statSampleLowerDraft}
+                  onChange={event =>
+                    setStatSampleLowerDraft(event.target.value)
+                  }
+                  placeholder="UNBOUNDED"
+                  className="mt-1 h-6 w-full border-t border-border/50 bg-transparent text-right font-mono text-[11px] text-foreground outline-none"
+                />
+              </label>
+              <label className="border border-border/70 p-1.5 text-[8px] text-muted-foreground">
+                <span>
+                  EXCLUDE ≥ Y
+                  {percentageMetrics.has(effectiveMetric) ? " (%)" : ""}
+                </span>
+                <input
+                  aria-label="Exclude statistical values greater than or equal to"
+                  inputMode="decimal"
+                  value={statSampleUpperDraft}
+                  onChange={event =>
+                    setStatSampleUpperDraft(event.target.value)
+                  }
+                  placeholder="UNBOUNDED"
+                  className="mt-1 h-6 w-full border-t border-border/50 bg-transparent text-right font-mono text-[11px] text-foreground outline-none"
+                />
+              </label>
+            </div>
+            <div className="mt-2 border border-border/60 bg-background/45 px-2 py-1.5 text-[9px]">
+              <span className="text-muted-foreground">Effective range </span>
+              <strong className="float-right font-mono text-foreground">
+                {statisticalSampleRangeLabel(
+                  activeStatisticalSampleRange,
+                  effectiveMetric
+                )}
+              </strong>
+            </div>
+            <p className="mt-2 text-[8px] leading-relaxed text-muted-foreground">
+              仅影响 Min / P25 / Median / Average / P75 / Max、Rescale
+              与自动色标样本。合约方格和 Hover 原始值保持不变。
+            </p>
+            {statSampleError && (
+              <p role="alert" className="mt-1 text-[9px] text-red-300">
+                {statSampleError}
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap gap-1">
               <button
                 type="button"
-                aria-label="Select Target Options"
-                aria-pressed={targetMode === "add"}
-                title="点击 + 后，再点击热力图方格以选中；再次点击 + 退出"
-                onClick={() =>
-                  setTargetMode(current => (current === "add" ? "idle" : "add"))
-                }
-                className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "add" ? "bg-violet-400/20 text-violet-300" : "hover:text-foreground"}`}
+                onClick={applyStatisticalSampleRange}
+                className="h-6 border border-violet-400/70 bg-violet-400/10 px-2 text-[8px] text-violet-200"
               >
-                <Plus className="h-3 w-3" />
+                Apply
               </button>
-              <span
-                className={`min-w-7 px-1 text-center font-mono ${activeTargetCellKeys.size ? "text-violet-300" : ""}`}
-                title={`${targetOptionKeys.size} saved targets across all views`}
-              >
-                {activeTargetCellKeys.size}
-              </span>
               <button
                 type="button"
-                aria-label="Unselect Target Options"
-                aria-pressed={targetMode === "remove"}
-                title="点击 − 后，再点击紫色细边框方格以取消选中；再次点击 − 退出"
-                onClick={() =>
-                  setTargetMode(current =>
-                    current === "remove" ? "idle" : "remove"
-                  )
-                }
-                className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "remove" ? "bg-rose-400/20 text-rose-300" : "hover:text-foreground"}`}
+                onClick={resetCurrentStatisticalSampleRange}
+                className="h-6 border border-border px-2 text-[8px] text-muted-foreground hover:text-foreground"
               >
-                <Minus className="h-3 w-3" />
+                Reset Current
+              </button>
+              <button
+                type="button"
+                onClick={resetAllStatisticalSampleRanges}
+                className="h-6 border border-border px-2 text-[8px] text-muted-foreground hover:text-foreground"
+              >
+                Reset All
               </button>
             </div>
-          )}
-        </div>
-      )}
+            <p className="mt-2 text-[8px] text-muted-foreground/80">
+              此范围只保存在当前浏览器，并按市场＋Metric＋IV Source 独立记录。
+            </p>
+          </PopoverContent>
+        </Popover>
+        {visibleFilters.moneyness && (
+          <NativeSelect
+            className="w-[105px] flex-none"
+            label="ITM/OTM"
+            value={moneyness}
+            onChange={value => setMoneyness(value as MoneynessFilter)}
+            options={[
+              { value: "all", label: "ALL" },
+              { value: "itm", label: "ITM" },
+              { value: "otm", label: "OTM" },
+            ].filter(
+              option =>
+                enabledOptions.moneyness[option.value as MoneynessFilter]
+            )}
+          />
+        )}
+        {visibleFilters.label && (
+          <NativeSelect
+            label="LABEL"
+            value={labelMode}
+            onChange={value => setLabelMode(value as CellLabelMode)}
+            options={[
+              { value: "none", label: "NONE" },
+              { value: "held", label: "POSITION METRIC" },
+              { value: "top", label: "TOP 15%" },
+              { value: "bottom", label: "BOTTOM 15%" },
+              { value: "all", label: "ALL" },
+            ].filter(
+              option =>
+                enabledOptions.label[
+                  option.value as keyof typeof enabledOptions.label
+                ]
+            )}
+          />
+        )}
+        {visibleFilters.hover && (
+          <NativeSelect
+            label="HOVER"
+            value={hoverPreset}
+            onChange={value => setHoverPreset(value as HoverDataPreset)}
+            options={[
+              { value: "risk", label: "RISK" },
+              { value: "market", label: "MARKET" },
+              { value: "pnl", label: "PNL" },
+              { value: "all", label: "ALL" },
+            ].filter(
+              option =>
+                enabledOptions.hover[
+                  option.value as keyof typeof enabledOptions.hover
+                ]
+            )}
+          />
+        )}
+        {visibleFilters.targetOption && (
+          <div
+            className="flex h-6 items-center border border-border/70 text-[8px] text-muted-foreground"
+            aria-label="Target Option selection controls"
+          >
+            <span className="px-1 whitespace-nowrap">TARGET OPTION</span>
+            <button
+              type="button"
+              aria-label="Select Target Options"
+              aria-pressed={targetMode === "add"}
+              title="点击 + 后，再点击热力图方格以选中；再次点击 + 退出"
+              onClick={() =>
+                setTargetMode(current => (current === "add" ? "idle" : "add"))
+              }
+              className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "add" ? "bg-violet-400/20 text-violet-300" : "hover:text-foreground"}`}
+            >
+              <Plus className="h-3 w-3" />
+            </button>
+            <span
+              className={`min-w-7 px-1 text-center font-mono ${activeTargetCellKeys.size ? "text-violet-300" : ""}`}
+              title={`${targetOptionKeys.size} saved targets across all views`}
+            >
+              {activeTargetCellKeys.size}
+            </span>
+            <button
+              type="button"
+              aria-label="Unselect Target Options"
+              aria-pressed={targetMode === "remove"}
+              title="点击 − 后，再点击紫色细边框方格以取消选中；再次点击 − 退出"
+              onClick={() =>
+                setTargetMode(current =>
+                  current === "remove" ? "idle" : "remove"
+                )
+              }
+              className={`flex h-full w-6 items-center justify-center border-l border-border/70 ${targetMode === "remove" ? "bg-rose-400/20 text-rose-300" : "hover:text-foreground"}`}
+            >
+              <Minus className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+      </div>
 
       {Object.entries(visibleFilters).some(
         ([key, visible]) =>
@@ -2468,6 +2778,7 @@ export default function Matrix() {
           expiries={expiries}
           strikes={strikes}
           metric={effectiveMetric}
+          statisticalSampleRange={activeStatisticalSampleRange}
           ivSource={ivSource}
           scale={scale}
           importanceCutoff={importanceCutoff}
@@ -2522,6 +2833,7 @@ export default function Matrix() {
       <ExpiryDetailDialog
         selection={selectedExpiry}
         metric={effectiveMetric}
+        sampleRange={activeStatisticalSampleRange}
         content={settings.heatmapExpiryHoverContent}
         onClose={() => setSelectedExpiry(null)}
       />
