@@ -2189,31 +2189,16 @@ export default function Matrix() {
             }))}
           />
         )}
-        {visibleFilters.metric && isIvSelectorMetric(metric) && (
-          <NativeSelect
-            className="w-[112px] flex-none"
-            label="IV SOURCE"
-            value={ivSource}
-            onChange={value => setIvSource(value as IvValueSource)}
-            options={
-              underlying === "GLD"
-                ? [{ value: "model", label: "MODEL" }]
-                : [
-                    { value: "market", label: "MARKET" },
-                    { value: "model", label: "MODEL" },
-                  ]
-            }
-          />
-        )}
         <Popover>
           <PopoverTrigger asChild>
             <button
               type="button"
-              aria-label="Statistical sample filter"
+              data-testid="stat-control-trigger"
+              aria-label="Statistical control filter"
               title={`统计样本范围：${statisticalSampleRangeLabel(activeStatisticalSampleRange, effectiveMetric)}`}
               className={`h-6 whitespace-nowrap border px-1.5 text-[8px] ${activeStatisticalSampleRange ? "border-violet-400/70 bg-violet-400/10 text-violet-200" : "border-border/70 text-muted-foreground hover:text-foreground"}`}
             >
-              STAT SAMPLE · {activeStatisticalSampleRange ? "ON" : "OFF"}
+              STAT CONTROL · {activeStatisticalSampleRange ? "ON" : "OFF"}
             </button>
           </PopoverTrigger>
           <PopoverContent
@@ -2224,7 +2209,7 @@ export default function Matrix() {
             <div className="border-b border-border/60 pb-2">
               <div className="flex items-center justify-between gap-3">
                 <strong className="text-[11px] tracking-wide">
-                  STATISTICAL SAMPLE
+                  STAT CONTROL
                 </strong>
                 <span
                   className={`font-mono text-[9px] ${activeStatisticalSampleRange ? "text-violet-300" : "text-muted-foreground"}`}
@@ -2325,6 +2310,22 @@ export default function Matrix() {
             </p>
           </PopoverContent>
         </Popover>
+        {visibleFilters.metric && isIvSelectorMetric(metric) && (
+          <NativeSelect
+            className="w-[112px] flex-none"
+            label="IV SOURCE"
+            value={ivSource}
+            onChange={value => setIvSource(value as IvValueSource)}
+            options={
+              underlying === "GLD"
+                ? [{ value: "model", label: "MODEL" }]
+                : [
+                    { value: "market", label: "MARKET" },
+                    { value: "model", label: "MODEL" },
+                  ]
+            }
+          />
+        )}
         {visibleFilters.moneyness && (
           <NativeSelect
             className="w-[105px] flex-none"

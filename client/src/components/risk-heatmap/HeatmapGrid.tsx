@@ -418,7 +418,8 @@ function ExpiryTooltip({
         </div>
         {sampleRange && (
           <p className="mt-1 border-t border-border/50 pt-1 font-mono text-[8px] text-violet-300">
-            STAT RANGE · {statisticalSampleRangeLabel(sampleRange, metric)}
+            STAT CONTROL RANGE ·{" "}
+            {statisticalSampleRangeLabel(sampleRange, metric)}
           </p>
         )}
       </TooltipContent>
@@ -550,7 +551,8 @@ function HeatmapScopeTooltip({
         </div>
         {sampleRange && (
           <p className="mt-1 border-t border-border/50 pt-1 font-mono text-[8px] text-violet-300">
-            STAT RANGE · {statisticalSampleRangeLabel(sampleRange, metric)}
+            STAT CONTROL RANGE ·{" "}
+            {statisticalSampleRangeLabel(sampleRange, metric)}
           </p>
         )}
       </TooltipContent>
