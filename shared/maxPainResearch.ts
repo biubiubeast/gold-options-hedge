@@ -34,7 +34,20 @@ export interface IntradayMaxPainPoint {
 export interface GammaStrikeBook {
   maturity: string;
   product: OptionProduct;
-  strikes: Array<{ strike: number; callOi: number; putOi: number }>;
+  strikes: StrikeOi[];
+}
+
+/** One on-demand historical OI snapshot with every expiry/strike book. */
+export interface SignalPlusStrikeSnapshotResponse {
+  date: string;
+  hourUtc: ObservationHour;
+  timestamp: number;
+  provider: "SignalPlus";
+  providerHost: string;
+  sourceTimestamp: number;
+  books: GammaStrikeBook[];
+  points: IntradayMaxPainPoint[];
+  warnings: string[];
 }
 
 export interface SignalPlusDayResponse {
@@ -108,7 +121,25 @@ export interface BacktestSummary {
   spearmanGapVsForwardReturn?: number;
 }
 
-type StrikeOi = { strike: number; callOi: number; putOi: number };
+export type StrikeOi = { strike: number; callOi: number; putOi: number };
+
+/** Merge several expiry books at strike level before calculating Max Pain. */
+export function mergeStrikeBooks(books: GammaStrikeBook[]): StrikeOi[] {
+  const merged = new Map<number, StrikeOi>();
+  for (const book of books) {
+    for (const source of book.strikes) {
+      const row = merged.get(source.strike) ?? {
+        strike: source.strike,
+        callOi: 0,
+        putOi: 0,
+      };
+      row.callOi += source.callOi;
+      row.putOi += source.putOi;
+      merged.set(source.strike, row);
+    }
+  }
+  return [...merged.values()].sort((left, right) => left.strike - right.strike);
+}
 
 /** Calculate the complete payout curve and keep the lower strike on a tie. */
 export function calculateMaxPain(strikes: StrikeOi[]) {

@@ -30,9 +30,10 @@ describe("operator display defaults", () => {
     });
   });
 
-  it("defaults Max Pain to the chart and details without advanced research modules", () => {
+  it("defaults Max Pain to core charts and details without advanced modules", () => {
     expect(DEFAULT_PORTFOLIO_SETTINGS.maxPainVisibleSections).toEqual({
       chart: true,
+      oiDistribution: true,
       details: true,
       backtest: false,
       gammaZone: false,

@@ -10,6 +10,7 @@ import {
   type ResearchKline,
   type ResearchKlineInterval,
   type SignalPlusDayResponse,
+  type SignalPlusStrikeSnapshotResponse,
 } from "@shared/maxPainResearch";
 
 const SIGNALPLUS_PRIMARY = "https://mizar-gateway.signalplus.com";
@@ -47,6 +48,10 @@ interface ParsedOption {
 const dayCache = new Map<
   string,
   { expiresAt: number; value: SignalPlusDayResponse }
+>();
+const strikeSnapshotCache = new Map<
+  string,
+  { expiresAt: number; value: SignalPlusStrikeSnapshotResponse }
 >();
 const marketCache = new Map<
   string,
@@ -159,7 +164,7 @@ async function requestSnapshot(host: string, timestamp: number) {
   return [...latest.values()];
 }
 
-function toBooks(options: ParsedOption[]): GammaStrikeBook[] {
+export function buildStrikeBooks(options: ParsedOption[]): GammaStrikeBook[] {
   const base = new Map<
     string,
     Map<number, { strike: number; callOi: number; putOi: number }>
@@ -239,6 +244,69 @@ async function fetchObservation(timestamp: number) {
   }
 }
 
+/**
+ * Load one historical observation on demand. Keeping these larger strike books
+ * out of the multi-day response prevents a 90-day page from downloading all
+ * six raw OI surfaces before the user chooses a snapshot.
+ */
+export async function fetchSignalPlusStrikeSnapshot(
+  date: string,
+  hourUtc: ObservationHour
+): Promise<SignalPlusStrikeSnapshotResponse> {
+  assertIsoDate(date);
+  if (!OBSERVATION_HOURS.includes(hourUtc))
+    throw new Error(`不支持的 UTC 观察时点：${hourUtc}`);
+  if (date < SIGNALPLUS_EARLIEST_VERIFIED_DATE) {
+    throw new Error(
+      `SignalPlus 生产端点已验证的最早可用日期为 ${SIGNALPLUS_EARLIEST_VERIFIED_DATE}`
+    );
+  }
+  const timestamp = Date.parse(
+    `${date}T${String(hourUtc).padStart(2, "0")}:00:00Z`
+  );
+  if (timestamp > Date.now()) throw new Error("所选 UTC 观察时点尚未发生");
+  const key = `${date}|${hourUtc}`;
+  const cached = strikeSnapshotCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const observation = await fetchObservation(timestamp);
+  if (!observation.options.length)
+    throw new Error("该时点前 30 分钟内没有可用的 BTC 期权 OI 记录");
+  const books = buildStrikeBooks(observation.options);
+  const sourceTimestamp = Math.max(
+    ...observation.options.map(option => option.timestamp)
+  );
+  const points = books.flatMap(book => {
+    const point = calculateIntradayPoint(
+      timestamp,
+      book.maturity,
+      book.product,
+      book.strikes,
+      sourceTimestamp
+    );
+    return point ? [point] : [];
+  });
+  const value: SignalPlusStrikeSnapshotResponse = {
+    date,
+    hourUtc,
+    timestamp,
+    provider: "SignalPlus",
+    providerHost: observation.host,
+    sourceTimestamp,
+    books,
+    points,
+    warnings: [
+      "逐 Strike OI 为观察时点前 30 分钟内每份合约的最后记录，不包含未来数据。",
+      "接口没有 exchange 字段；Deribit 风格合约名不能单独证明交易所归属。",
+    ],
+  };
+  strikeSnapshotCache.set(key, {
+    expiresAt: Date.now() + DAY_CACHE_TTL_MS,
+    value,
+  });
+  return value;
+}
+
 /** Fetch all six UTC observations for a day and calculate every expiry/product. */
 export async function fetchSignalPlusDay(
   date: string
@@ -258,8 +326,20 @@ export async function fetchSignalPlusDay(
         `${date}T${String(hour).padStart(2, "0")}:00:00Z`
       );
       if (timestamp > Date.now())
-        return { hour, timestamp, options: [], host: SIGNALPLUS_PRIMARY };
-      return { hour, timestamp, ...(await fetchObservation(timestamp)) };
+        return { hour, snapshot: undefined, error: "观察时点尚未发生" };
+      try {
+        return {
+          hour,
+          snapshot: await fetchSignalPlusStrikeSnapshot(date, hour),
+          error: undefined,
+        };
+      } catch (error) {
+        return {
+          hour,
+          snapshot: undefined,
+          error: error instanceof Error ? error.message : "读取失败",
+        };
+      }
     })
   );
 
@@ -267,38 +347,39 @@ export async function fetchSignalPlusDay(
   let gammaBooksAtZero: GammaStrikeBook[] = [];
   const missingHours: ObservationHour[] = [];
   const hosts = new Set<string>();
+  const observationWarnings: string[] = [];
   for (const result of results) {
-    hosts.add(result.host);
-    if (!result.options.length) {
+    if (!result.snapshot) {
       missingHours.push(result.hour);
+      if (result.error !== "观察时点尚未发生")
+        observationWarnings.push(
+          `${String(result.hour).padStart(2, "0")}:00 ${result.error}`
+        );
       continue;
     }
-    const books = toBooks(result.options);
+    hosts.add(result.snapshot.providerHost);
+    const books = result.snapshot.books;
     if (result.hour === 0) gammaBooksAtZero = books;
-    const sourceTimestamp = Math.max(
-      ...result.options.map(option => option.timestamp)
-    );
-    for (const book of books) {
-      const point = calculateIntradayPoint(
-        result.timestamp,
-        book.maturity,
-        book.product,
-        book.strikes,
-        sourceTimestamp
-      );
-      if (point) points.push(point);
-    }
+    points.push(...result.snapshot.points);
   }
+  if (!points.length && observationWarnings.length)
+    throw new Error(`六个观察时点均不可用：${observationWarnings.join("；")}`);
   const value: SignalPlusDayResponse = {
     date,
     provider: "SignalPlus",
-    providerHost: hosts.size === 1 ? [...hosts][0] : [...hosts].join(", "),
+    providerHost:
+      hosts.size === 1
+        ? [...hosts][0]
+        : hosts.size
+          ? [...hosts].join(", ")
+          : SIGNALPLUS_PRIMARY,
     points,
     gammaBooksAtZero,
     missingHours,
     warnings: [
       "SignalPlus 没有公开历史保留 SLA；2023-05-05 是项目实测边界，不是供应商承诺。",
       "每个观察时点使用该时点前 30 分钟内每份合约的最后记录，不包含未来数据。",
+      ...observationWarnings,
     ],
   };
   dayCache.set(date, { expiresAt: Date.now() + DAY_CACHE_TTL_MS, value });

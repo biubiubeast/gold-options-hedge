@@ -218,6 +218,7 @@ export type PortfolioSettings = {
   };
   maxPainVisibleSections: {
     chart: boolean;
+    oiDistribution: boolean;
     details: boolean;
     backtest: boolean;
     gammaZone: boolean;
@@ -336,6 +337,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   },
   maxPainVisibleSections: {
     chart: true,
+    oiDistribution: true,
     details: true,
     backtest: false,
     gammaZone: false,

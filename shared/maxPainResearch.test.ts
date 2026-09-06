@@ -4,6 +4,7 @@ import {
   calculateGrossGammaZone,
   calculateIntradayPoint,
   calculateMaxPain,
+  mergeStrikeBooks,
   selectIntradayExpiry,
   type IntradayMaxPainPoint,
   type ResearchKline,
@@ -26,6 +27,29 @@ describe("BTC Max Pain research", () => {
       { strike: 110, callOi: 0, putOi: 20 },
     ]);
     expect(result?.maxPain).toBe(100);
+  });
+
+  it("merges multiple expiries by strike without losing call/put sides", () => {
+    expect(
+      mergeStrikeBooks([
+        {
+          maturity: "2026-08-28",
+          product: "combined",
+          strikes: [{ strike: 100, callOi: 2, putOi: 3 }],
+        },
+        {
+          maturity: "2026-09-04",
+          product: "combined",
+          strikes: [
+            { strike: 100, callOi: 5, putOi: 7 },
+            { strike: 110, callOi: 1, putOi: 4 },
+          ],
+        },
+      ])
+    ).toEqual([
+      { strike: 100, callOi: 7, putOi: 10 },
+      { strike: 110, callOi: 1, putOi: 4 },
+    ]);
   });
 
   it("selects the nearest valid weekly expiry per observation", () => {

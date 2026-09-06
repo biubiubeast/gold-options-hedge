@@ -193,9 +193,18 @@ const maxPainSectionLabels: Array<
   [keyof PortfolioSettings["maxPainVisibleSections"], string, string]
 > = [
   ["chart", "K线与 Max Pain 图", "BTC K线和六时点蓝线；默认显示"],
+  [
+    "oiDistribution",
+    "OI By Strike",
+    "Deribit 实时与 SignalPlus 历史逐 Strike OI / Max Pain；默认显示",
+  ],
   ["details", "六时点明细", "各时点 Max Pain、Call/Put OI 与 Notional"],
   ["backtest", "吸引力回测", "前后 24 小时命中率、收敛度与相关系数；默认隐藏"],
-  ["gammaZone", "Gamma 密集区", "每日 00:00 的毛 Gamma 代理区、表格与图层；默认隐藏"],
+  [
+    "gammaZone",
+    "Gamma 密集区",
+    "每日 00:00 的毛 Gamma 代理区、表格与图层；默认隐藏",
+  ],
   ["methodology", "方法与边界", "数据范围、归属限制与模型风险说明"],
 ];
 

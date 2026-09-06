@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateHourlyKlines,
+  buildStrikeBooks,
   parseSignalPlusOption,
 } from "./maxPainResearchService";
 import type { ResearchKline } from "@shared/maxPainResearch";
@@ -28,6 +29,28 @@ describe("Max Pain data adapters", () => {
         ts: 1,
       })
     ).toMatchObject({ side: "put", product: "linear" });
+  });
+
+  it("builds inverse, linear and strike-level combined expiry books", () => {
+    const rows = [
+      parseSignalPlusOption({
+        instrument_name: "BTC-29AUG26-90000-C",
+        type: "OPTION",
+        open_interest: 12.5,
+        ts: 1,
+      }),
+      parseSignalPlusOption({
+        instrument_name: "BTC_USDC-29AUG26-90000-P",
+        type: "OPTION",
+        open_interest: 3,
+        ts: 1,
+      }),
+    ].filter(row => row !== null);
+    const books = buildStrikeBooks(rows);
+    expect(books).toHaveLength(3);
+    expect(books.find(book => book.product === "combined")?.strikes).toEqual([
+      { strike: 90_000, callOi: 12.5, putOi: 3 },
+    ]);
   });
 
   it("aggregates provider-neutral hourly candles on UTC boundaries", () => {

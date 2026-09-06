@@ -47,6 +47,7 @@ import { createAuthSession, revokeAuthToken } from "./auth";
 import {
   fetchResearchMarketHistory,
   fetchSignalPlusDay,
+  fetchSignalPlusStrikeSnapshot,
   getMaxPainCoverage,
 } from "./maxPainResearchService";
 
@@ -468,6 +469,23 @@ export const appRouter = router({
     intradayDay: protectedProcedure
       .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
       .query(({ input }) => fetchSignalPlusDay(input.date)),
+    strikeSnapshot: protectedProcedure
+      .input(
+        z.object({
+          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          hourUtc: z.union([
+            z.literal(0),
+            z.literal(4),
+            z.literal(8),
+            z.literal(12),
+            z.literal(16),
+            z.literal(20),
+          ]),
+        })
+      )
+      .query(({ input }) =>
+        fetchSignalPlusStrikeSnapshot(input.date, input.hourUtc)
+      ),
     marketHistory: protectedProcedure
       .input(
         z.object({
