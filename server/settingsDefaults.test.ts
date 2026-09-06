@@ -30,12 +30,12 @@ describe("operator display defaults", () => {
     });
   });
 
-  it("shows every Max Pain research section to the admin by default", () => {
+  it("defaults Max Pain to the chart and details without advanced research modules", () => {
     expect(DEFAULT_PORTFOLIO_SETTINGS.maxPainVisibleSections).toEqual({
       chart: true,
       details: true,
-      backtest: true,
-      gammaZone: true,
+      backtest: false,
+      gammaZone: false,
       methodology: true,
     });
   });

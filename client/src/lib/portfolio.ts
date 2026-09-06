@@ -337,8 +337,8 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   maxPainVisibleSections: {
     chart: true,
     details: true,
-    backtest: true,
-    gammaZone: true,
+    backtest: false,
+    gammaZone: false,
     methodology: true,
   },
   heatmapClickActions: {
