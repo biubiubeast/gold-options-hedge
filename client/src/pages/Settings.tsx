@@ -133,6 +133,7 @@ const pageEntryLabels: Array<
     "TradingView K线图",
     "xauadmin 导航默认显示；图表进入页面后才加载",
   ],
+  ["maxPain", "BTC 最大痛点", "历史 OI、K线、Gamma 代理与回测"],
   ["formulas", "公式管理", "公式说明、编辑与恢复"],
   ["dataSources", "数据来源", "行情 API 与延迟说明"],
   ["settings", "设置", "仅 xauadmin 可访问"],
@@ -147,6 +148,7 @@ const viewerPageLabels: Array<[ViewerPage, string, string]> = [
     "TradingView K线图",
     "默认允许 xauwhales 使用；可在此单独关闭",
   ],
+  ["maxPain", "BTC 最大痛点", "默认不允许；可在此单独开放研究页"],
   ["formulas", "公式管理", "默认不允许；公式编辑仍仅管理员可操作"],
   ["dataSources", "数据来源", "默认不允许"],
 ];
@@ -185,6 +187,16 @@ const heatmapSectionLabels: Array<
     "完整期权链合约数",
     "在顶部显示 Call + Put、筛选前的原始期权链合约数；默认隐藏",
   ],
+];
+
+const maxPainSectionLabels: Array<
+  [keyof PortfolioSettings["maxPainVisibleSections"], string, string]
+> = [
+  ["chart", "K线与 Max Pain 图", "BTC K线、六时点蓝线及可选 Gamma 区间"],
+  ["details", "六时点明细", "各时点 Max Pain、Call/Put OI 与 Notional"],
+  ["backtest", "吸引力回测", "前后 24 小时命中率、收敛度与相关系数"],
+  ["gammaZone", "Gamma 密集区", "每日 00:00 的毛 Gamma 代理区与图层"],
+  ["methodology", "方法与边界", "数据范围、归属限制与模型风险说明"],
 ];
 
 const fixedOptionGroups = [
@@ -1013,6 +1025,55 @@ export default function Settings() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Eye className="h-4 w-4 text-primary" />
+            BTC 最大痛点模块显示
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            控制最大痛点研究页的分析模块；蓝线与 Gamma
+            图层仍可在页面内临时开关。
+          </p>
+          <div className="grid gap-2 md:grid-cols-3">
+            {maxPainSectionLabels.map(([key, label, description]) => (
+              <div
+                key={key}
+                className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-3"
+              >
+                <div>
+                  <Label
+                    htmlFor={`max-pain-section-${key}`}
+                    className="text-xs"
+                  >
+                    {label}
+                  </Label>
+                  <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+                    {description}
+                  </p>
+                </div>
+                <Switch
+                  id={`max-pain-section-${key}`}
+                  checked={draft.maxPainVisibleSections[key]}
+                  onCheckedChange={checked =>
+                    setDraft(current => ({
+                      ...current,
+                      maxPainVisibleSections: {
+                        ...current.maxPainVisibleSections,
+                        [key]: checked,
+                      },
+                    }))
+                  }
+                  aria-label={`最大痛点显示 ${label}`}
+                />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="glass-card">
         <CardHeader>

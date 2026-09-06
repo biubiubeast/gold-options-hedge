@@ -55,6 +55,10 @@ function loadSettings(): PortfolioSettings {
         ...DEFAULT_PORTFOLIO_SETTINGS.positionsVisibleSections,
         ...saved.positionsVisibleSections,
       },
+      maxPainVisibleSections: {
+        ...DEFAULT_PORTFOLIO_SETTINGS.maxPainVisibleSections,
+        ...saved.maxPainVisibleSections,
+      },
       heatmapClickActions: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapClickActions,
         ...saved.heatmapClickActions,

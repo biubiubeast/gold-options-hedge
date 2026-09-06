@@ -18,14 +18,25 @@ describe("operator display defaults", () => {
     });
   });
 
-  it("lets xauwhales use positions, the market heatmap, and TradingView by default", () => {
+  it("keeps Max Pain admin-visible but opt-in for xauwhales", () => {
     expect(DEFAULT_VIEWER_PAGE_PERMISSIONS).toEqual({
       dashboard: false,
       positions: true,
       matrix: true,
       tradingView: true,
+      maxPain: false,
       formulas: false,
       dataSources: false,
+    });
+  });
+
+  it("shows every Max Pain research section to the admin by default", () => {
+    expect(DEFAULT_PORTFOLIO_SETTINGS.maxPainVisibleSections).toEqual({
+      chart: true,
+      details: true,
+      backtest: true,
+      gammaZone: true,
+      methodology: true,
     });
   });
 

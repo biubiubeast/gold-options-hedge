@@ -123,6 +123,7 @@ export type AdminPasswordPage =
   | "positions"
   | "matrix"
   | "tradingView"
+  | "maxPain"
   | "formulas"
   | "dataSources"
   | "settings"
@@ -198,6 +199,7 @@ export type PortfolioSettings = {
     positions: boolean;
     matrix: boolean;
     tradingView: boolean;
+    maxPain: boolean;
     formulas: boolean;
     dataSources: boolean;
     settings: boolean;
@@ -213,6 +215,13 @@ export type PortfolioSettings = {
     cumulativeEntryCostCard: boolean;
     cumulativeRealizedPnlCard: boolean;
     importStatusCard: boolean;
+  };
+  maxPainVisibleSections: {
+    chart: boolean;
+    details: boolean;
+    backtest: boolean;
+    gammaZone: boolean;
+    methodology: boolean;
   };
   heatmapClickActions: {
     cellDetail: boolean;
@@ -296,6 +305,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     positions: true,
     matrix: false,
     tradingView: true,
+    maxPain: true,
     formulas: true,
     dataSources: true,
     settings: true,
@@ -307,6 +317,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     positions: true,
     matrix: true,
     tradingView: true,
+    maxPain: true,
     formulas: false,
     dataSources: false,
     settings: true,
@@ -322,6 +333,13 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     cumulativeEntryCostCard: false,
     cumulativeRealizedPnlCard: false,
     importStatusCard: false,
+  },
+  maxPainVisibleSections: {
+    chart: true,
+    details: true,
+    backtest: true,
+    gammaZone: true,
+    methodology: true,
   },
   heatmapClickActions: {
     cellDetail: false,
