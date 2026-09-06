@@ -13,10 +13,23 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, PanelLeft, Grid3X3, ListPlus, Calculator, Database, Settings, ZoomIn, ZoomOut, LogOut, CandlestickChart } from "lucide-react";
+import {
+  LayoutDashboard,
+  PanelLeft,
+  Grid3X3,
+  ListPlus,
+  Calculator,
+  Database,
+  Settings,
+  ZoomIn,
+  ZoomOut,
+  LogOut,
+  CandlestickChart,
+  Target,
+} from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
+import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 import { LiveSpotBar } from "./LiveSpotBar";
 import { MarketRefreshButton } from "./MarketRefreshButton";
@@ -25,12 +38,28 @@ import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import { trpc } from "@/lib/trpc";
 
 const menuItems = [
-  { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
+  {
+    key: "dashboard",
+    icon: LayoutDashboard,
+    label: "Dashboard",
+    path: "/dashboard",
+  },
   { key: "positions", icon: ListPlus, label: "仓位管理", path: "/positions" },
   { key: "matrix", icon: Grid3X3, label: "市场热力图", path: "/matrix" },
-  { key: "tradingView", icon: CandlestickChart, label: "K线图", path: "/charts" },
+  {
+    key: "tradingView",
+    icon: CandlestickChart,
+    label: "K线图",
+    path: "/charts",
+  },
+  { key: "maxPain", icon: Target, label: "BTC 最大痛点", path: "/max-pain" },
   { key: "formulas", icon: Calculator, label: "公式管理", path: "/formulas" },
-  { key: "dataSources", icon: Database, label: "数据来源", path: "/data-sources" },
+  {
+    key: "dataSources",
+    icon: Database,
+    label: "数据来源",
+    path: "/data-sources",
+  },
   { key: "settings", icon: Settings, label: "设置", path: "/settings" },
 ] as const;
 
@@ -42,7 +71,8 @@ const PAGE_ZOOM_KEY = "page-zoom";
 const MIN_PAGE_ZOOM = 0.2;
 const MAX_PAGE_ZOOM = 1.4;
 
-const clampZoom = (value: number) => Math.min(MAX_PAGE_ZOOM, Math.max(MIN_PAGE_ZOOM, value));
+const clampZoom = (value: number) =>
+  Math.min(MAX_PAGE_ZOOM, Math.max(MIN_PAGE_ZOOM, value));
 
 export default function DashboardLayout({
   children,
@@ -60,7 +90,7 @@ export default function DashboardLayout({
   }, [sidebarWidth]);
 
   if (loading) {
-    return <DashboardLayoutSkeleton />
+    return <DashboardLayoutSkeleton />;
   }
 
   return (
@@ -100,9 +130,11 @@ function DashboardLayoutContent({
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeMenuItem = menuItems.find(item => item.path === location);
-  const visibleMenuItems = menuItems.filter(item => user?.role === "admin"
-    ? settings.visiblePages[item.key]
-    : item.key !== "settings" && Boolean(viewerPages.data?.[item.key]));
+  const visibleMenuItems = menuItems.filter(item =>
+    user?.role === "admin"
+      ? settings.visiblePages[item.key]
+      : item.key !== "settings" && Boolean(viewerPages.data?.[item.key])
+  );
   const isMobile = useIsMobile();
   const [pageZoom, setPageZoom] = useState(() => {
     const saved = Number(localStorage.getItem(PAGE_ZOOM_KEY));
@@ -220,7 +252,28 @@ function DashboardLayoutContent({
 
           <SidebarFooter className="p-3">
             <div className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2 group-data-[collapsible=icon]:hidden">
-              <div className="flex items-center justify-between gap-2"><div className="min-w-0"><p className="truncate text-xs font-medium text-foreground">{user?.name}</p><p className="mt-1 text-[11px] text-muted-foreground">{user?.role === "admin" ? "管理员" : "受限用户"} · 刷新后需重新登录</p></div><Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" title="退出登录" aria-label="退出登录" onClick={() => void logout()}><LogOut className="h-4 w-4" /></Button></div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium text-foreground">
+                    {user?.name}
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {user?.role === "admin" ? "管理员" : "受限用户"} ·
+                    刷新后需重新登录
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  title="退出登录"
+                  aria-label="退出登录"
+                  onClick={() => void logout()}
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </SidebarFooter>
         </Sidebar>
@@ -237,7 +290,9 @@ function DashboardLayoutContent({
       <SidebarInset>
         <div className="flex border-b min-h-14 flex-wrap items-center justify-between gap-2 bg-background/95 px-2 py-2 sm:px-4 backdrop-blur sticky top-0 z-40">
           <div className="flex items-center gap-2 min-w-0">
-            {isMobile && <SidebarTrigger className="h-9 w-9 rounded-lg bg-background shrink-0" />}
+            {isMobile && (
+              <SidebarTrigger className="h-9 w-9 rounded-lg bg-background shrink-0" />
+            )}
             <span className="tracking-tight text-foreground truncate">
               {activeMenuItem?.label ?? "Dashboard"}
             </span>
@@ -245,14 +300,22 @@ function DashboardLayoutContent({
           <div className="order-3 flex w-full justify-end overflow-x-auto lg:order-none lg:ml-auto lg:w-auto">
             <LiveSpotBar />
           </div>
-          <div className="flex items-center gap-1 shrink-0" role="group" aria-label="页面缩放">
+          <div
+            className="flex items-center gap-1 shrink-0"
+            role="group"
+            aria-label="页面缩放"
+          >
             <MarketRefreshButton compact />
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => setPageZoom(current => clampZoom(Number((current - 0.1).toFixed(2))))}
+              onClick={() =>
+                setPageZoom(current =>
+                  clampZoom(Number((current - 0.1).toFixed(2)))
+                )
+              }
               disabled={pageZoom <= MIN_PAGE_ZOOM}
               aria-label="缩小全部页面"
               title="缩小全部页面，最低 20%（Alt -）"
@@ -273,7 +336,11 @@ function DashboardLayoutContent({
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => setPageZoom(current => clampZoom(Number((current + 0.1).toFixed(2))))}
+              onClick={() =>
+                setPageZoom(current =>
+                  clampZoom(Number((current + 0.1).toFixed(2)))
+                )
+              }
               disabled={pageZoom >= MAX_PAGE_ZOOM}
               aria-label="放大全部页面"
               title="放大全部页面（Alt +）"

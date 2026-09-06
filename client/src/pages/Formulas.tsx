@@ -275,6 +275,67 @@ export default function Formulas() {
         </CardContent>
       </Card>
 
+      <Card className="glass-card border-primary/20">
+        <CardContent className="p-4">
+          <details open>
+            <summary className="cursor-pointer text-sm font-semibold text-primary">
+              BTC Max Pain、Gamma 代理与回测公式（研究页固定口径）
+            </summary>
+            <div className="mt-4 grid gap-3 text-xs text-muted-foreground lg:grid-cols-2">
+              <div className="rounded-md border border-border/60 p-3">
+                <strong className="text-foreground">
+                  1. 到期赔付与 Max Pain
+                </strong>
+                <code className="mt-2 block whitespace-normal leading-relaxed">
+                  P(S) = Σ max(S-K,0)×CallOI + Σ max(K-S,0)×PutOI；MaxPain =
+                  argmin P(S)
+                </code>
+                <p className="mt-2 leading-relaxed">
+                  候选 S 为该到期日实际 Strike；相同最小值取较低
+                  Strike，与按升序遍历并保留首个最小值一致。Combined 会先合并逐
+                  Strike OI 后重算，绝不平均两个产品的 Max Pain。
+                </p>
+              </div>
+              <div className="rounded-md border border-border/60 p-3">
+                <strong className="text-foreground">2. OI Notional</strong>
+                <code className="mt-2 block">
+                  Notional USD = BTC-equivalent OI × 同时点 BTC Spot
+                </code>
+                <p className="mt-2 leading-relaxed">
+                  用于量级比较，不是期权市值或最大可能损失；权利金、Delta、方向与动态对冲均不包含在内。
+                </p>
+              </div>
+              <div className="rounded-md border border-border/60 p-3">
+                <strong className="text-foreground">
+                  3. 毛 Gamma 密集区代理
+                </strong>
+                <code className="mt-2 block whitespace-normal leading-relaxed">
+                  Gamma(K) = BS_Gamma(S,K,T,σ) × (CallOI+PutOI) × S² × 1%
+                </code>
+                <p className="mt-2 leading-relaxed">
+                  σ 使用过去 30 天小时收盘实现波动率；区间取累计权重 20%–80%。OI
+                  没有客户/做市商方向，因此不能解释为正/负 dealer GEX。
+                </p>
+              </div>
+              <div className="rounded-md border border-border/60 p-3">
+                <strong className="text-foreground">4. 吸引力回测</strong>
+                <code className="mt-2 block whitespace-normal leading-relaxed">
+                  Convergence = (|P₀-M|-|P₁-M|) / |P₀-M|；Gap = (M-Pobs)/Pobs
+                </code>
+                <p className="mt-2 leading-relaxed">
+                  分别报告观察前 24h 的描述性收敛和观察后 24h
+                  的无未来数据检验；Pearson/Spearman 关联 Gap
+                  与未来收益，不等同因果关系。
+                </p>
+              </div>
+            </div>
+            <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+              这些口径是可审计的研究算法，不接入可任意编辑的仓位表达式引擎，以免历史结果被静默改写。页面模块与访问权限可在“设置”中管理；算法变更应通过代码评审、测试和版本记录完成。
+            </p>
+          </details>
+        </CardContent>
+      </Card>
+
       <Card className="glass-card">
         <CardContent className="p-4">
           <details open>

@@ -3,7 +3,10 @@ import path from "node:path";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
 import type { ImportedPosition, ImportMode } from "@shared/positionExcel";
 import type { TransactionUnderlyingSummary } from "@shared/transactionExcel";
-import { DEFAULT_VIEWER_PAGE_PERMISSIONS, type ViewerPagePermissions } from "@shared/access";
+import {
+  DEFAULT_VIEWER_PAGE_PERMISSIONS,
+  type ViewerPagePermissions,
+} from "@shared/access";
 
 export type LocalUser = {
   id: number;
@@ -123,9 +126,9 @@ type Store = {
 };
 
 const LOCAL_USER_ID = 1;
-const VIEWER_PAGE_PERMISSIONS_VERSION = 2;
+const VIEWER_PAGE_PERMISSIONS_VERSION = 3;
 const dataFile = path.resolve(
-  process.env.DATA_FILE || path.join(process.cwd(), "data", "portfolio.json"),
+  process.env.DATA_FILE || path.join(process.cwd(), "data", "portfolio.json")
 );
 
 let operationQueue: Promise<unknown> = Promise.resolve();
@@ -144,14 +147,23 @@ const emptyStore = (): Store => ({
 async function loadStore(): Promise<Store> {
   try {
     const parsed = JSON.parse(await readFile(dataFile, "utf8")) as Store;
-    if (parsed.version !== 1 || !Array.isArray(parsed.positions) || !Array.isArray(parsed.formulas)) {
+    if (
+      parsed.version !== 1 ||
+      !Array.isArray(parsed.positions) ||
+      !Array.isArray(parsed.formulas)
+    ) {
       throw new Error("Unsupported portfolio data format");
     }
     return parsed;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyStore();
-    console.error("[LocalStore] Portfolio data is unreadable. The file was left untouched:", error);
-    throw new Error(`无法读取本地数据文件 ${dataFile}，请从备份恢复或修复 JSON`);
+    console.error(
+      "[LocalStore] Portfolio data is unreadable. The file was left untouched:",
+      error
+    );
+    throw new Error(
+      `无法读取本地数据文件 ${dataFile}，请从备份恢复或修复 JSON`
+    );
   }
 }
 
@@ -164,7 +176,10 @@ async function saveStore(store: Store): Promise<void> {
 
 function serialize<T>(task: () => Promise<T>): Promise<T> {
   const result = operationQueue.then(task, task);
-  operationQueue = result.then(() => undefined, () => undefined);
+  operationQueue = result.then(
+    () => undefined,
+    () => undefined
+  );
   return result;
 }
 
@@ -180,15 +195,20 @@ const inflateFormula = (value: StoredFormula): FormulaRecord => ({
   updatedAt: new Date(value.updatedAt),
 });
 
-async function ensureDefaultFormulas(store: Store, userId: number): Promise<boolean> {
+async function ensureDefaultFormulas(
+  store: Store,
+  userId: number
+): Promise<boolean> {
   const existingNames = new Set(
-    store.formulas.filter(formula => formula.userId === userId).map(formula => formula.name),
+    store.formulas
+      .filter(formula => formula.userId === userId)
+      .map(formula => formula.name)
   );
   let changed = false;
 
   for (const definition of DEFAULT_FORMULAS) {
     const existing = store.formulas.find(
-      formula => formula.userId === userId && formula.name === definition.name,
+      formula => formula.userId === userId && formula.name === definition.name
     );
     if (!existing) {
       const now = new Date().toISOString();
@@ -272,13 +292,18 @@ export async function getViewerPagePermissions(): Promise<ViewerPagePermissions>
     ...DEFAULT_VIEWER_PAGE_PERMISSIONS,
     ...store.viewerPagePermissions,
   };
-  if ((store.viewerPagePermissionsVersion ?? 1) < VIEWER_PAGE_PERMISSIONS_VERSION) {
+  if (
+    (store.viewerPagePermissionsVersion ?? 1) < VIEWER_PAGE_PERMISSIONS_VERSION
+  ) {
     permissions.tradingView = true;
+    permissions.maxPain = false;
   }
   return permissions;
 }
 
-export async function updateViewerPagePermissions(permissions: ViewerPagePermissions) {
+export async function updateViewerPagePermissions(
+  permissions: ViewerPagePermissions
+) {
   return serialize(async () => {
     const store = await loadStore();
     store.viewerPagePermissions = { ...permissions };
@@ -293,12 +318,17 @@ export async function getPositionsByUser(userId: number) {
   return store.positions
     .filter(position => position.userId === userId)
     .map(inflatePosition)
-    .sort((a, b) => a.expiry.localeCompare(b.expiry) || Number(a.strike) - Number(b.strike));
+    .sort(
+      (a, b) =>
+        a.expiry.localeCompare(b.expiry) || Number(a.strike) - Number(b.strike)
+    );
 }
 
 export async function getPositionById(id: number, userId: number) {
   const store = await loadStore();
-  const position = store.positions.find(item => item.id === id && item.userId === userId);
+  const position = store.positions.find(
+    item => item.id === id && item.userId === userId
+  );
   return position ? inflatePosition(position) : undefined;
 }
 
@@ -316,11 +346,13 @@ export async function createPosition(data: PositionInput) {
 export async function updatePosition(
   id: number,
   userId: number,
-  data: Partial<Omit<PositionInput, "userId">>,
+  data: Partial<Omit<PositionInput, "userId">>
 ) {
   return serialize(async () => {
     const store = await loadStore();
-    const position = store.positions.find(item => item.id === id && item.userId === userId);
+    const position = store.positions.find(
+      item => item.id === id && item.userId === userId
+    );
     if (!position) throw new Error("仓位不存在");
     Object.assign(position, data, { updatedAt: new Date().toISOString() });
     await saveStore(store);
@@ -329,14 +361,16 @@ export async function updatePosition(
 
 export async function updatePositionsMarketData(
   userId: number,
-  updates: Array<{ id: number; data: Partial<Omit<PositionInput, "userId">> }>,
+  updates: Array<{ id: number; data: Partial<Omit<PositionInput, "userId">> }>
 ) {
   return serialize(async () => {
     const store = await loadStore();
     const now = new Date().toISOString();
     let updated = 0;
     for (const update of updates) {
-      const position = store.positions.find(item => item.id === update.id && item.userId === userId);
+      const position = store.positions.find(
+        item => item.id === update.id && item.userId === userId
+      );
       if (!position) continue;
       Object.assign(position, update.data, { updatedAt: now });
       updated += 1;
@@ -349,60 +383,115 @@ export async function updatePositionsMarketData(
 export async function deletePosition(id: number, userId: number) {
   return serialize(async () => {
     const store = await loadStore();
-    const next = store.positions.filter(item => !(item.id === id && item.userId === userId));
+    const next = store.positions.filter(
+      item => !(item.id === id && item.userId === userId)
+    );
     if (next.length === store.positions.length) throw new Error("仓位不存在");
     store.positions = next;
     await saveStore(store);
   });
 }
 
-function positionIdentity(position: Pick<PositionRecord, "underlying" | "expiry" | "strike" | "optionType" | "instrument" | "sourceAccount">) {
-  return position.instrument?.trim().toUpperCase()
-    || [position.sourceAccount ?? "", position.underlying, position.expiry, Number(position.strike).toString(), position.optionType].join("|");
+function positionIdentity(
+  position: Pick<
+    PositionRecord,
+    | "underlying"
+    | "expiry"
+    | "strike"
+    | "optionType"
+    | "instrument"
+    | "sourceAccount"
+  >
+) {
+  return (
+    position.instrument?.trim().toUpperCase() ||
+    [
+      position.sourceAccount ?? "",
+      position.underlying,
+      position.expiry,
+      Number(position.strike).toString(),
+      position.optionType,
+    ].join("|")
+  );
 }
 
-export async function importPositions(userId: number, positions: ImportedPosition[], mode: ImportMode) {
+export async function importPositions(
+  userId: number,
+  positions: ImportedPosition[],
+  mode: ImportMode
+) {
   return serialize(async () => {
     const store = await loadStore();
-    const before = store.positions.filter(position => position.userId === userId);
+    const before = store.positions.filter(
+      position => position.userId === userId
+    );
     const now = new Date().toISOString();
     const backupDirectory = path.join(path.dirname(dataFile), "backups");
     await mkdir(backupDirectory, { recursive: true });
     const backupName = `portfolio-before-import-${now.replace(/[:.]/g, "-")}.json`;
-    await writeFile(path.join(backupDirectory, backupName), `${JSON.stringify({ exportedAt: now, positions: before }, null, 2)}\n`, "utf8");
+    await writeFile(
+      path.join(backupDirectory, backupName),
+      `${JSON.stringify({ exportedAt: now, positions: before }, null, 2)}\n`,
+      "utf8"
+    );
 
     const incoming = positions.map(position => {
-      const existing = before.find(item => positionIdentity(item) === positionIdentity(position));
+      const existing = before.find(
+        item => positionIdentity(item) === positionIdentity(position)
+      );
       return {
         ...position,
-        cumulativeEntryCost: position.cumulativeEntryCost ?? existing?.cumulativeEntryCost ?? null,
-        cumulativeRealizedPnl: position.cumulativeRealizedPnl ?? existing?.cumulativeRealizedPnl ?? null,
+        cumulativeEntryCost:
+          position.cumulativeEntryCost ?? existing?.cumulativeEntryCost ?? null,
+        cumulativeRealizedPnl:
+          position.cumulativeRealizedPnl ??
+          existing?.cumulativeRealizedPnl ??
+          null,
         userId,
       };
     });
     let created = 0;
     let updated = 0;
     if (mode === "replace") {
-      store.positions = store.positions.filter(position => position.userId !== userId);
+      store.positions = store.positions.filter(
+        position => position.userId !== userId
+      );
       for (const position of incoming) {
-        store.positions.push({ ...position, id: store.nextPositionId++, createdAt: now, updatedAt: now });
+        store.positions.push({
+          ...position,
+          id: store.nextPositionId++,
+          createdAt: now,
+          updatedAt: now,
+        });
         created += 1;
       }
     } else {
       for (const position of incoming) {
         const identity = positionIdentity(position);
-        const existing = store.positions.find(item => item.userId === userId && positionIdentity(item) === identity);
+        const existing = store.positions.find(
+          item => item.userId === userId && positionIdentity(item) === identity
+        );
         if (existing) {
           Object.assign(existing, position, { updatedAt: now });
           updated += 1;
         } else {
-          store.positions.push({ ...position, id: store.nextPositionId++, createdAt: now, updatedAt: now });
+          store.positions.push({
+            ...position,
+            id: store.nextPositionId++,
+            createdAt: now,
+            updatedAt: now,
+          });
           created += 1;
         }
       }
     }
     await saveStore(store);
-    return { created, updated, removed: mode === "replace" ? before.length : 0, backupName };
+    return {
+      created,
+      updated,
+      removed: mode === "replace" ? before.length : 0,
+      backupName,
+    };
   });
 }
 
@@ -417,31 +506,62 @@ export async function importTransactionPositions(
   userId: number,
   positions: ImportedPosition[],
   summaries: TransactionUnderlyingSummary[],
-  fileName: string,
+  fileName: string
 ) {
   return serialize(async () => {
     const store = await loadStore();
-    const before = store.positions.filter(position => position.userId === userId);
-    const previousSummaries = (store.transactionSummaries ?? []).filter(summary => summary.userId === userId);
+    const before = store.positions.filter(
+      position => position.userId === userId
+    );
+    const previousSummaries = (store.transactionSummaries ?? []).filter(
+      summary => summary.userId === userId
+    );
     const now = new Date().toISOString();
     const backupDirectory = path.join(path.dirname(dataFile), "backups");
     await mkdir(backupDirectory, { recursive: true });
     const backupName = `portfolio-before-transaction-import-${now.replace(/[:.]/g, "-")}.json`;
-    await writeFile(path.join(backupDirectory, backupName), `${JSON.stringify({ exportedAt: now, positions: before, transactionSummaries: previousSummaries }, null, 2)}\n`, "utf8");
+    await writeFile(
+      path.join(backupDirectory, backupName),
+      `${JSON.stringify({ exportedAt: now, positions: before, transactionSummaries: previousSummaries }, null, 2)}\n`,
+      "utf8"
+    );
 
-    const affectedUnderlyings = new Set(summaries.map(summary => summary.underlying));
-    store.positions = store.positions.filter(position => position.userId !== userId || !affectedUnderlyings.has(position.underlying));
+    const affectedUnderlyings = new Set(
+      summaries.map(summary => summary.underlying)
+    );
+    store.positions = store.positions.filter(
+      position =>
+        position.userId !== userId ||
+        !affectedUnderlyings.has(position.underlying)
+    );
     for (const position of positions) {
-      store.positions.push({ ...position, userId, id: store.nextPositionId++, createdAt: now, updatedAt: now });
+      store.positions.push({
+        ...position,
+        userId,
+        id: store.nextPositionId++,
+        createdAt: now,
+        updatedAt: now,
+      });
     }
     store.transactionSummaries = [
-      ...(store.transactionSummaries ?? []).filter(summary => summary.userId !== userId || !affectedUnderlyings.has(summary.underlying)),
-      ...summaries.map(summary => ({ ...summary, userId, fileName, importedAt: now })),
+      ...(store.transactionSummaries ?? []).filter(
+        summary =>
+          summary.userId !== userId ||
+          !affectedUnderlyings.has(summary.underlying)
+      ),
+      ...summaries.map(summary => ({
+        ...summary,
+        userId,
+        fileName,
+        importedAt: now,
+      })),
     ];
     await saveStore(store);
     return {
       created: positions.length,
-      removed: before.filter(position => affectedUnderlyings.has(position.underlying)).length,
+      removed: before.filter(position =>
+        affectedUnderlyings.has(position.underlying)
+      ).length,
       underlyings: [...affectedUnderlyings],
       backupName,
     };
@@ -463,7 +583,7 @@ export async function upsertFormula(data: FormulaInput) {
   return serialize(async () => {
     const store = await loadStore();
     const existing = store.formulas.find(
-      formula => formula.userId === data.userId && formula.name === data.name,
+      formula => formula.userId === data.userId && formula.name === data.name
     );
     const now = new Date().toISOString();
     if (existing) {
@@ -481,13 +601,19 @@ export async function upsertFormula(data: FormulaInput) {
 export async function updateFormula(
   id: number,
   userId: number,
-  data: Pick<FormulaRecord, "expression"> & Partial<Pick<FormulaRecord, "description" | "usedIn">>,
+  data: Pick<FormulaRecord, "expression"> &
+    Partial<Pick<FormulaRecord, "description" | "usedIn">>
 ) {
   return serialize(async () => {
     const store = await loadStore();
-    const formula = store.formulas.find(item => item.id === id && item.userId === userId);
+    const formula = store.formulas.find(
+      item => item.id === id && item.userId === userId
+    );
     if (!formula) throw new Error("公式不存在");
-    Object.assign(formula, data, { isDefault: 0, updatedAt: new Date().toISOString() });
+    Object.assign(formula, data, {
+      isDefault: 0,
+      updatedAt: new Date().toISOString(),
+    });
     await saveStore(store);
   });
 }
@@ -495,7 +621,9 @@ export async function updateFormula(
 export async function deleteFormula(id: number, userId: number) {
   return serialize(async () => {
     const store = await loadStore();
-    const formula = store.formulas.find(item => item.id === id && item.userId === userId);
+    const formula = store.formulas.find(
+      item => item.id === id && item.userId === userId
+    );
     if (!formula) throw new Error("公式不存在");
     if (DEFAULT_FORMULAS.some(definition => definition.name === formula.name)) {
       throw new Error("内置公式不能删除，可恢复默认值");
@@ -508,7 +636,9 @@ export async function deleteFormula(id: number, userId: number) {
 export async function resetFormula(id: number, userId: number) {
   return serialize(async () => {
     const store = await loadStore();
-    const formula = store.formulas.find(item => item.id === id && item.userId === userId);
+    const formula = store.formulas.find(
+      item => item.id === id && item.userId === userId
+    );
     if (!formula) throw new Error("公式不存在");
     formula.expression = formula.defaultExpression;
     formula.isDefault = 1;
@@ -520,7 +650,9 @@ export async function resetFormula(id: number, userId: number) {
 export async function resetAllFormulas(userId: number) {
   return serialize(async () => {
     const store = await loadStore();
-    for (const formula of store.formulas.filter(item => item.userId === userId)) {
+    for (const formula of store.formulas.filter(
+      item => item.userId === userId
+    )) {
       formula.expression = formula.defaultExpression;
       formula.isDefault = 1;
       formula.updatedAt = new Date().toISOString();
@@ -536,6 +668,8 @@ export async function exportPortfolio(userId: number) {
     exportedAt: new Date().toISOString(),
     positions: store.positions.filter(position => position.userId === userId),
     formulas: store.formulas.filter(formula => formula.userId === userId),
-    transactionSummaries: (store.transactionSummaries ?? []).filter(summary => summary.userId === userId),
+    transactionSummaries: (store.transactionSummaries ?? []).filter(
+      summary => summary.userId === userId
+    ),
   };
 }
