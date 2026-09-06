@@ -113,7 +113,7 @@ export default function MaxPainResearch() {
   const [selectedMaturity, setSelectedMaturity] = useState("policy");
   const [backtestHour, setBacktestHour] = useState<ObservationHour>(0);
   const [showMaxPain, setShowMaxPain] = useState(true);
-  const [showGamma, setShowGamma] = useState(true);
+  const [showGamma, setShowGamma] = useState(false);
   const [validationError, setValidationError] = useState<string>();
   const research = useMaxPainResearch();
 
@@ -422,7 +422,7 @@ export default function MaxPainResearch() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-primary" />
-                BTC K 线 × Max Pain × Gamma 代理区
+                BTC K 线 × Max Pain
               </CardTitle>
               <p className="mt-2 text-xs text-muted-foreground">
                 绿/红为{" "}

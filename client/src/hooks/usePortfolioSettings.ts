@@ -4,8 +4,9 @@ import {
 } from "@/lib/portfolio";
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY = "gold-options-portfolio-settings-v10";
+const STORAGE_KEY = "gold-options-portfolio-settings-v11";
 const LEGACY_STORAGE_KEYS = [
+  "gold-options-portfolio-settings-v10",
   "gold-options-portfolio-settings-v9",
   "gold-options-portfolio-settings-v8",
   "gold-options-portfolio-settings-v7",
@@ -21,7 +22,7 @@ function loadSettings(): PortfolioSettings {
   try {
     const current = localStorage.getItem(STORAGE_KEY);
     const previousVersion = localStorage.getItem(
-      "gold-options-portfolio-settings-v9"
+      "gold-options-portfolio-settings-v10"
     );
     const legacy = LEGACY_STORAGE_KEYS.map(key =>
       localStorage.getItem(key)
@@ -57,7 +58,10 @@ function loadSettings(): PortfolioSettings {
       },
       maxPainVisibleSections: {
         ...DEFAULT_PORTFOLIO_SETTINGS.maxPainVisibleSections,
-        ...saved.maxPainVisibleSections,
+        // v11 changes the first-run research view: advanced backtest/Gamma
+        // modules start hidden. Apply it once to older saved settings, then
+        // preserve every explicit v11 choice made in Settings.
+        ...(current ? saved.maxPainVisibleSections : {}),
       },
       heatmapClickActions: {
         ...DEFAULT_PORTFOLIO_SETTINGS.heatmapClickActions,
