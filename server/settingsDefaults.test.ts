@@ -18,13 +18,13 @@ describe("operator display defaults", () => {
     });
   });
 
-  it("keeps Max Pain admin-visible but opt-in for xauwhales", () => {
+  it("shows Max Pain to xauwhales by default", () => {
     expect(DEFAULT_VIEWER_PAGE_PERMISSIONS).toEqual({
       dashboard: false,
       positions: true,
       matrix: true,
       tradingView: true,
-      maxPain: false,
+      maxPain: true,
       formulas: false,
       dataSources: false,
     });

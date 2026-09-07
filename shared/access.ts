@@ -16,7 +16,30 @@ export const DEFAULT_VIEWER_PAGE_PERMISSIONS: ViewerPagePermissions = {
   positions: true,
   matrix: true,
   tradingView: true,
-  maxPain: false,
+  maxPain: true,
   formulas: false,
   dataSources: false,
+};
+
+export const MAX_PAIN_SECTION_KEYS = [
+  "chart",
+  "oiDistribution",
+  "details",
+  "backtest",
+  "gammaZone",
+  "methodology",
+] as const;
+
+export type MaxPainVisibleSections = Record<
+  (typeof MAX_PAIN_SECTION_KEYS)[number],
+  boolean
+>;
+
+export const DEFAULT_MAX_PAIN_VISIBLE_SECTIONS: MaxPainVisibleSections = {
+  chart: true,
+  oiDistribution: true,
+  details: true,
+  backtest: false,
+  gammaZone: false,
+  methodology: true,
 };

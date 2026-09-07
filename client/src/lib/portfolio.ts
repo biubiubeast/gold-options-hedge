@@ -13,6 +13,10 @@ import type { DataStatus } from "@shared/riskHeatmap";
 import type { HeatmapMetric } from "@shared/riskHeatmap";
 import type { ModelIvStatus } from "@shared/impliedVolatility";
 import { modelImpliedVolatilityFromPrice } from "@shared/impliedVolatility";
+import {
+  DEFAULT_MAX_PAIN_VISIBLE_SECTIONS,
+  type MaxPainVisibleSections,
+} from "@shared/access";
 
 export type HeatmapControlKey =
   | "dataset"
@@ -216,14 +220,7 @@ export type PortfolioSettings = {
     cumulativeRealizedPnlCard: boolean;
     importStatusCard: boolean;
   };
-  maxPainVisibleSections: {
-    chart: boolean;
-    oiDistribution: boolean;
-    details: boolean;
-    backtest: boolean;
-    gammaZone: boolean;
-    methodology: boolean;
-  };
+  maxPainVisibleSections: MaxPainVisibleSections;
   heatmapClickActions: {
     cellDetail: boolean;
     expiryDetail: boolean;
@@ -335,14 +332,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     cumulativeRealizedPnlCard: false,
     importStatusCard: false,
   },
-  maxPainVisibleSections: {
-    chart: true,
-    oiDistribution: true,
-    details: true,
-    backtest: false,
-    gammaZone: false,
-    methodology: true,
-  },
+  maxPainVisibleSections: { ...DEFAULT_MAX_PAIN_VISIBLE_SECTIONS },
   heatmapClickActions: {
     cellDetail: false,
     expiryDetail: false,

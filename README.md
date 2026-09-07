@@ -260,7 +260,7 @@ GLD、Bybit USD/USDT/USDC 权利金的换算因子为 1；Deribit BTC/ETH 期权
 - 管理员：`APP_USERNAME` / `APP_PASSWORD`，默认用户名 `xauadmin`。
 - 受限用户：`VIEWER_USERNAME` / `VIEWER_PASSWORD`，默认用户名 `xauwhales`。
 
-`xauwhales` 默认可访问市场热力图、仓位管理和 TradingView K线图；管理员可在设置页调整其服务端页面权限。设置页始终仅管理员可访问。两个账户默认使用同一组合数据；当前受限账户不是只读角色，只要仓位管理权限开启，仍可新增、修改、导入或删除仓位。
+`xauwhales` 默认可访问市场热力图、仓位管理、TradingView K线图和 BTC 最大痛点；管理员可在设置页调整其服务端页面权限。设置页始终仅管理员可访问。两个账户默认使用同一组合数据；当前受限账户不是只读角色，只要仓位管理权限开启，仍可新增、修改、导入或删除仓位。
 
 登录 token 只保存在当前页面内存，刷新页面或重新打开网站后需要重新登录。服务器 session 默认 12 小时，退出登录会立即撤销当前 token。
 

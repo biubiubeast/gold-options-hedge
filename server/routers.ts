@@ -230,6 +230,15 @@ const viewerPagePermissionsInput = z.object({
   dataSources: z.boolean(),
 });
 
+const maxPainVisibleSectionsInput = z.object({
+  chart: z.boolean(),
+  oiDistribution: z.boolean(),
+  details: z.boolean(),
+  backtest: z.boolean(),
+  gammaZone: z.boolean(),
+  methodology: z.boolean(),
+});
+
 export const appRouter = router({
   auth: router({
     login: publicProcedure
@@ -260,6 +269,12 @@ export const appRouter = router({
     updateViewerPages: adminProcedure
       .input(viewerPagePermissionsInput)
       .mutation(({ input }) => db.updateViewerPagePermissions(input)),
+    maxPainSections: protectedProcedure.query(() =>
+      db.getMaxPainVisibleSections()
+    ),
+    updateMaxPainSections: adminProcedure
+      .input(maxPainVisibleSectionsInput)
+      .mutation(({ input }) => db.updateMaxPainVisibleSections(input)),
   }),
 
   positions: router({

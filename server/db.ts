@@ -4,7 +4,9 @@ import { DEFAULT_FORMULAS } from "@shared/marketTypes";
 import type { ImportedPosition, ImportMode } from "@shared/positionExcel";
 import type { TransactionUnderlyingSummary } from "@shared/transactionExcel";
 import {
+  DEFAULT_MAX_PAIN_VISIBLE_SECTIONS,
   DEFAULT_VIEWER_PAGE_PERMISSIONS,
+  type MaxPainVisibleSections,
   type ViewerPagePermissions,
 } from "@shared/access";
 
@@ -123,10 +125,11 @@ type Store = {
   transactionSummaries?: StoredTransactionSummary[];
   viewerPagePermissions?: ViewerPagePermissions;
   viewerPagePermissionsVersion?: number;
+  maxPainVisibleSections?: MaxPainVisibleSections;
 };
 
 const LOCAL_USER_ID = 1;
-const VIEWER_PAGE_PERMISSIONS_VERSION = 3;
+const VIEWER_PAGE_PERMISSIONS_VERSION = 4;
 const dataFile = path.resolve(
   process.env.DATA_FILE || path.join(process.cwd(), "data", "portfolio.json")
 );
@@ -142,6 +145,7 @@ const emptyStore = (): Store => ({
   transactionSummaries: [],
   viewerPagePermissions: { ...DEFAULT_VIEWER_PAGE_PERMISSIONS },
   viewerPagePermissionsVersion: VIEWER_PAGE_PERMISSIONS_VERSION,
+  maxPainVisibleSections: { ...DEFAULT_MAX_PAIN_VISIBLE_SECTIONS },
 });
 
 async function loadStore(): Promise<Store> {
@@ -292,12 +296,11 @@ export async function getViewerPagePermissions(): Promise<ViewerPagePermissions>
     ...DEFAULT_VIEWER_PAGE_PERMISSIONS,
     ...store.viewerPagePermissions,
   };
-  if (
-    (store.viewerPagePermissionsVersion ?? 1) < VIEWER_PAGE_PERMISSIONS_VERSION
-  ) {
+  const version = store.viewerPagePermissionsVersion ?? 1;
+  if (version < 3) {
     permissions.tradingView = true;
-    permissions.maxPain = false;
   }
+  if (version < 4) permissions.maxPain = true;
   return permissions;
 }
 
@@ -310,6 +313,31 @@ export async function updateViewerPagePermissions(
     store.viewerPagePermissionsVersion = VIEWER_PAGE_PERMISSIONS_VERSION;
     await saveStore(store);
     return store.viewerPagePermissions;
+  });
+}
+
+export async function getMaxPainVisibleSections(): Promise<{
+  sections: MaxPainVisibleSections;
+  configured: boolean;
+}> {
+  const store = await loadStore();
+  return {
+    sections: {
+      ...DEFAULT_MAX_PAIN_VISIBLE_SECTIONS,
+      ...store.maxPainVisibleSections,
+    },
+    configured: Boolean(store.maxPainVisibleSections),
+  };
+}
+
+export async function updateMaxPainVisibleSections(
+  sections: MaxPainVisibleSections
+) {
+  return serialize(async () => {
+    const store = await loadStore();
+    store.maxPainVisibleSections = { ...sections };
+    await saveStore(store);
+    return { sections: store.maxPainVisibleSections, configured: true };
   });
 }
 

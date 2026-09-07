@@ -21,6 +21,7 @@ import {
   type HeatmapMetric,
 } from "@shared/riskHeatmap";
 import {
+  DEFAULT_MAX_PAIN_VISIBLE_SECTIONS,
   DEFAULT_VIEWER_PAGE_PERMISSIONS,
   type ViewerPage,
   type ViewerPagePermissions,
@@ -150,7 +151,7 @@ const viewerPageLabels: Array<[ViewerPage, string, string]> = [
     "TradingView K线图",
     "默认允许 xauwhales 使用；可在此单独关闭",
   ],
-  ["maxPain", "BTC 最大痛点", "默认不允许；可在此单独开放研究页"],
+  ["maxPain", "BTC 最大痛点", "默认允许 xauwhales 使用；可在此单独关闭"],
   ["formulas", "公式管理", "默认不允许；公式编辑仍仅管理员可操作"],
   ["dataSources", "数据来源", "默认不允许"],
 ];
@@ -448,6 +449,7 @@ export default function Settings() {
     draft.xautContractMultiplier
   );
   const viewerPagesQuery = trpc.access.viewerPages.useQuery();
+  const maxPainSectionsQuery = trpc.access.maxPainSections.useQuery();
   const accessUtils = trpc.useUtils();
   const updateViewerPages = trpc.access.updateViewerPages.useMutation({
     onSuccess: async value => {
@@ -455,6 +457,12 @@ export default function Settings() {
       await accessUtils.access.viewerPages.invalidate();
       toast.success("xauwhales 页面权限已保存");
     },
+  });
+  const updateMaxPainSections = trpc.access.updateMaxPainSections.useMutation({
+    onSuccess: value => {
+      accessUtils.access.maxPainSections.setData(undefined, value);
+    },
+    onError: error => toast.error(`最大痛点模块设置未同步：${error.message}`),
   });
   const dynamicFilterOptions = {
     venue: [
@@ -492,7 +500,27 @@ export default function Settings() {
     ].sort(),
   };
 
-  useEffect(() => setDraft(settings), [settings]);
+  useEffect(
+    () =>
+      setDraft({
+        ...settings,
+        maxPainVisibleSections: maxPainSectionsQuery.data?.configured
+          ? maxPainSectionsQuery.data.sections
+          : settings.maxPainVisibleSections,
+      }),
+    [maxPainSectionsQuery.data, settings]
+  );
+  useEffect(() => {
+    if (
+      maxPainSectionsQuery.data &&
+      !maxPainSectionsQuery.data.configured &&
+      !updateMaxPainSections.isPending
+    ) {
+      // One-time migration: preserve the administrator's existing browser
+      // choices when this setting first moves from localStorage to the server.
+      updateMaxPainSections.mutate(settings.maxPainVisibleSections);
+    }
+  }, [maxPainSectionsQuery.data]);
   useEffect(() => {
     if (viewerPagesQuery.data) setViewerPages(viewerPagesQuery.data);
   }, [viewerPagesQuery.data]);
@@ -506,7 +534,7 @@ export default function Settings() {
     };
   }, []);
 
-  const save = () => {
+  const save = async () => {
     const invalidGroup = fixedOptionGroups.find(
       ([key]) => !Object.values(draft.heatmapFilterOptions[key]).some(Boolean)
     );
@@ -549,13 +577,27 @@ export default function Settings() {
           : numeric(String(draft.xautSpotScaleOverride), 1, Number.EPSILON),
     };
     setSettings(validated);
-    toast.success("全站参数已保存并同步到 Dashboard、仓位、市场热力图和详情页");
+    try {
+      await updateMaxPainSections.mutateAsync(validated.maxPainVisibleSections);
+      toast.success(
+        "全站参数已保存；最大痛点模块设置已同步到 xauadmin 与 xauwhales"
+      );
+    } catch {
+      // Mutation onError already reports the server-sync failure.
+    }
   };
 
-  const reset = () => {
+  const reset = async () => {
     resetSettings();
     setDraft(DEFAULT_PORTFOLIO_SETTINGS);
-    toast.success("已恢复默认设置");
+    try {
+      await updateMaxPainSections.mutateAsync(
+        DEFAULT_MAX_PAIN_VISIBLE_SECTIONS
+      );
+      toast.success("已恢复默认设置并同步到两个账户");
+    } catch {
+      // Mutation onError already reports the server-sync failure.
+    }
   };
 
   return (
@@ -563,7 +605,7 @@ export default function Settings() {
       <div>
         <h1 className="text-2xl font-bold text-gold-gradient">设置</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          控制全站市场刷新、合约口径与风险估值参数。保存后当前浏览器的所有页面立即生效。
+          控制全站市场刷新、合约口径与风险估值参数。最大痛点模块设置由服务端共享，其余显示偏好保存在当前浏览器。
         </p>
       </div>
 
@@ -1048,8 +1090,8 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs text-muted-foreground">
-            控制最大痛点研究页的分析模块；蓝线与 Gamma
-            图层仍可在页面内临时开关。
+            服务端统一控制 xauadmin 与 xauwhales 的最大痛点分析模块；蓝线与
+            Gamma 图层仍可在页面内临时开关。
           </p>
           <div className="grid gap-2 md:grid-cols-3">
             {maxPainSectionLabels.map(([key, label, description]) => (
@@ -1653,7 +1695,11 @@ export default function Settings() {
           <RotateCcw className="h-4 w-4" />
           恢复全部默认值
         </Button>
-        <Button className="gap-2" onClick={save}>
+        <Button
+          className="gap-2"
+          onClick={save}
+          disabled={updateMaxPainSections.isPending}
+        >
           <CheckCircle2 className="h-4 w-4" />
           保存全站设置
         </Button>

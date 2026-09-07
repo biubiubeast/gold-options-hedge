@@ -17,7 +17,9 @@ import {
 import { useMaxPainResearch } from "@/hooks/useMaxPainResearch";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
 import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { DEFAULT_MAX_PAIN_VISIBLE_SECTIONS } from "@shared/access";
 import {
   displayTimeZoneName,
   formatDisplayDateTime,
@@ -89,7 +91,6 @@ function percent(value?: number) {
 
 const EXPIRIES: Array<{ value: MaxPainExpiryPolicy; label: string }> = [
   { value: "front", label: "最近到期" },
-  { value: "daily", label: "当日到期" },
   { value: "weekly", label: "最近周五" },
   { value: "monthly", label: "最近月度" },
 ];
@@ -130,9 +131,18 @@ function SegmentedButton({
 }
 
 export default function MaxPainResearch() {
+  const { user } = useAuth();
   const { settings } = usePortfolioSettings();
   const { timeZone } = useDisplayTimezone();
-  const sections = settings.maxPainVisibleSections;
+  const sharedSectionsQuery = trpc.access.maxPainSections.useQuery(undefined, {
+    staleTime: 5_000,
+    refetchOnWindowFocus: true,
+  });
+  const sections = sharedSectionsQuery.data?.configured
+    ? sharedSectionsQuery.data.sections
+    : user?.role === "admin"
+      ? settings.maxPainVisibleSections
+      : DEFAULT_MAX_PAIN_VISIBLE_SECTIONS;
   const [startDate, setStartDate] = useState(utcDate(7));
   const [endDate, setEndDate] = useState(utcDate(1));
   const [interval, setInterval] = useState<ResearchKlineInterval>("4h");
