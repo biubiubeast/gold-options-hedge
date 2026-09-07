@@ -5,8 +5,8 @@
 - 路由：`/max-pain`
 - 历史范围：实测从 2023-05-05 起；单次查询 1–93 天
 - 观察时点：每天 UTC 00:00、04:00、08:00、12:00、16:00、20:00
-- 产品：Inverse BTC、Linear USDC、Combined
-- 期限：最近到期、当日到期、最近周五、最近月度，或固定到期日
+- 产品：BTC 结算、USDC 结算；两类产品始终分开
+- 期限：最近到期、最近周五、最近月度，或固定到期日
 - 输出：Max Pain、Call/Put/Total OI、OI Notional、逐 Strike OIList
 - 图表：1h/4h/12h/1d BTC K线、Max Pain 蓝线、每日 00:00 毛 Gamma 代理区
 - 回测：前 24h 描述性收敛、后 24h 无未来数据检验、Pearson、Spearman
@@ -21,8 +21,7 @@ SignalPlus 历史逐合约 OI
   -> 每个观察时点取前 30 分钟内最后一条记录
   -> 解析 BTC-* / BTC_USDC-* 合约名
   -> 按产品 + 到期日 + Strike 汇总 Call/Put OI
-  -> 计算 inverse / linear
-  -> 合并逐 Strike OI 后重新计算 combined
+  -> 分别计算 BTC 结算 / USDC 结算 Max Pain
 
 Coinbase 小时 K线 -> OKX 备用 -> Binance 最后备用
   -> UTC 聚合为 1h/4h/12h/1d
@@ -42,7 +41,11 @@ MaxPain = argmin P(S)
 
 候选结算价取该到期日实际 Strike。最小值相同时保留较低 Strike。该口径与 Deribit 示例的到期内在价值算法一致，不包含权利金、手续费、持仓方向、做市商对冲和时间价值。
 
-Combined 不是两个 Max Pain 的平均值；它先按 Strike 合并 inverse 和 linear 的 OI，再对完整赔付曲线找最小值。
+Cronus 不计算跨产品汇总。`BTC-*` 与 `BTC_USDC-*` 的标的是同一个 BTC，但报价、结算币种、价格指数和产品条款不同；SignalPlus 历史响应也没有返回结算币种或合约乘数，无法对跨产品汇总做完整审计。
+
+Deribit 官方把 `BTC-*` 称为 **Inverse Options** 或 coin-settled options，API 返回 `instrument_type=reversed`、`settlement_currency=BTC`、`price_index=btc_usd`。`BTC_USDC-*` 称为 **Linear USDC Options**，API 返回 `instrument_type=linear`、`settlement_currency=USDC`、`price_index=btc_usdc`。页面用更直白的“BTC 结算 / USDC 结算”，并只把 SignalPlus `instrument_name` 前缀当作产品分类依据。
+
+当前两类 BTC 产品的 Deribit `contract_size` 都是 1。OI 在页面上直接显示数值，不附加换算单位；OI 可以是小数，因此不会把它误标为必须是整数的“Contracts”。
 
 ## 关键文件
 
@@ -80,7 +83,7 @@ pnpm start
 
 1. 选择 7/30/90 天，或输入开始、结束日期。
 2. 选择 BTC K线周期后点击“计算”。
-3. 在图表右上角切换 Combined、Inverse BTC、Linear USDC。
+3. 在图表右上角切换“BTC 结算”或“USDC 结算”。
 4. 使用期限策略，或从“指定到期日曲线”选择一个具体到期日。
 5. 展开六时点明细底部的 Strike/OIList，核对最新 00:00 的逐 Strike 输入。
 6. 在回测卡切换 00/04/08/12/16/20 时点。
@@ -89,7 +92,7 @@ pnpm start
 ## 已知边界
 
 - SignalPlus 没有公开历史保留 SLA；2023-05-05 是实测边界，不是供应商承诺。
-- SignalPlus 响应没有交易所字段。Deribit 风格合约名不足以证明数据就是 Deribit 官方归档，因此页面不会将它误标为 Binance、Bybit、OKX 或官方 Deribit 数据。
+- SignalPlus 响应只有 `instrument_name`、`type`、`open_interest`、`ts`，没有交易所、结算币种、合约乘数或产品类型字段。Deribit 风格合约名不足以证明数据就是 Deribit 官方归档，因此页面不会将它误标为 Binance、Bybit、OKX 或官方 Deribit 数据，也不会跨产品合并。
 - OI 能计算标准 Max Pain，但不能识别买方/卖方、客户/做市商方向，所以不能从 OI 单独推导真实正/负 dealer Gamma。
 - Gamma 区使用 Black-Scholes、过去 30 天小时实现波动率与 Call+Put OI，只是毛敏感度集中区。
 - “价格向痛点靠近”是统计描述或预测检验，不证明 Max Pain 导致价格移动。正式策略研究还应做非重叠样本、按 DTE/波动率分层、交易成本和 walk-forward 样本外测试。
@@ -107,6 +110,8 @@ pnpm start
 ## 参考
 
 - [Deribit Max Pain Python 指南](https://insights.deribit.com/dev-hub/deribit-max-pain-python-code/)
-- [Deribit API：期权 OI 的 amount unit](https://docs.deribit.com/)
+- [Deribit API：public/get_instruments](https://docs.deribit.com/api-reference/market-data/public-get_instruments)
+- [Deribit Inverse Options](https://support.deribit.com/hc/en-us/articles/31424939096093-Inverse-Options)
+- [Deribit Linear USDC Options](https://support.deribit.com/hc/en-us/articles/31424932728093-Linear-USDC-Options)
 - [Coinbase Exchange Candles](https://docs.cdp.coinbase.com/exchange/reference/exchangerestapi_getproductcandles)
 - [OKX History Candles](https://www.okx.com/docs-v5/en/#rest-api-market-data-get-candlesticks-history)

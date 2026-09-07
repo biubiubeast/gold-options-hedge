@@ -176,7 +176,7 @@ export function OpenInterestByStrikeChart({
                   opacity="0.84"
                   pointerEvents="none"
                 />
-                <title>{`${price(row.strike)}\nCall OI ${number(row.callOi)}\nPut OI ${number(row.putOi)}\nTotal OI ${number(total)} BTC-eq`}</title>
+                <title>{`${price(row.strike)}\nCall OI ${number(row.callOi)}\nPut OI ${number(row.putOi)}\nTotal OI ${number(total)}`}</title>
               </g>
             );
           })}
@@ -257,19 +257,19 @@ export function OpenInterestByStrikeChart({
             <div className="flex justify-between gap-4">
               <span className="text-slate-400">Call OI</span>
               <span className="font-mono text-cyan-300">
-                {number(tooltip.callOi)} BTC-eq
+                {number(tooltip.callOi)}
               </span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-slate-400">Put OI</span>
               <span className="font-mono text-violet-300">
-                {number(tooltip.putOi)} BTC-eq
+                {number(tooltip.putOi)}
               </span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-slate-400">总 OI</span>
               <span className="font-mono">
-                {number(tooltip.callOi + tooltip.putOi)} BTC-eq
+                {number(tooltip.callOi + tooltip.putOi)}
               </span>
             </div>
             <div className="flex justify-between gap-4">

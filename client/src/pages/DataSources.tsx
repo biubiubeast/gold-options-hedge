@@ -159,9 +159,12 @@ export default function DataSources() {
           </div>
           <p className="text-xs leading-relaxed text-muted-foreground">
             SignalPlus 端点没有公开历史保留 SLA，且响应没有 exchange
-            字段；Cronus 只把它标为 SignalPlus/Deribit
-            风格合约数据，不将其误标成 Binance、Bybit 或 OKX 期权 OI。K线源与 OI
-            源独立，Binance 403 时会自动切换，不影响 Max Pain 计算。
+            、结算币种或合约乘数字段。Cronus 按 instrument_name 将 BTC-* 识别为
+            BTC 结算产品，将 BTC_USDC-* 识别为 USDC 结算产品，并始终分别计算。
+            Deribit 官方分别称为 Inverse Options（API
+            instrument_type=reversed）与 Linear USDC
+            Options（instrument_type=linear）。K线源与 OI 源独立，Binance 403
+            时会自动切换，不影响 Max Pain 计算。
           </p>
           <div className="flex flex-wrap gap-4">
             <a
@@ -171,6 +174,23 @@ export default function DataSources() {
               className="inline-flex items-center gap-1.5 text-primary hover:underline"
             >
               Deribit Max Pain 指南 <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <a
+              href="https://support.deribit.com/hc/en-us/articles/31424939096093-Inverse-Options"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-primary hover:underline"
+            >
+              Deribit Inverse Options <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <a
+              href="https://support.deribit.com/hc/en-us/articles/31424932728093-Linear-USDC-Options"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-primary hover:underline"
+            >
+              Deribit Linear USDC Options{" "}
+              <ExternalLink className="h-3.5 w-3.5" />
             </a>
             <a
               href="https://docs.cdp.coinbase.com/exchange/reference/exchangerestapi_getproductcandles"

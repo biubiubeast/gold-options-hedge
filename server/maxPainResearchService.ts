@@ -40,7 +40,7 @@ interface ParsedOption {
   maturity: string;
   strike: number;
   side: "call" | "put";
-  product: Exclude<OptionProduct, "combined">;
+  product: OptionProduct;
   openInterest: number;
   timestamp: number;
 }
@@ -103,7 +103,11 @@ function parseMaturity(value: string) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
-/** Parse Deribit inverse BTC-* and linear BTC_USDC-* option identifiers. */
+/**
+ * Parse the two Deribit-style product prefixes returned by SignalPlus.
+ * BTC-* maps to Deribit Inverse Options (API instrument_type=reversed), while
+ * BTC_USDC-* maps to Linear USDC Options (instrument_type=linear).
+ */
 export function parseSignalPlusOption(row: RawOiRow): ParsedOption | null {
   if (
     row.type !== "OPTION" ||
@@ -185,10 +189,7 @@ export function buildStrikeBooks(options: ParsedOption[]): GammaStrikeBook[] {
 
   const books: GammaStrikeBook[] = [];
   for (const [key, strikeMap] of base) {
-    const [product, maturity] = key.split("|") as [
-      Exclude<OptionProduct, "combined">,
-      string,
-    ];
+    const [product, maturity] = key.split("|") as [OptionProduct, string];
     books.push({
       maturity,
       product,
@@ -196,33 +197,6 @@ export function buildStrikeBooks(options: ParsedOption[]): GammaStrikeBook[] {
     });
   }
 
-  // Combined is calculated from the merged strike-level payout curve. It is
-  // deliberately not an average of inverse and linear Max Pain values.
-  const combined = new Map<
-    string,
-    Map<number, { strike: number; callOi: number; putOi: number }>
-  >();
-  for (const book of books) {
-    const strikes = combined.get(book.maturity) ?? new Map();
-    for (const source of book.strikes) {
-      const row = strikes.get(source.strike) ?? {
-        strike: source.strike,
-        callOi: 0,
-        putOi: 0,
-      };
-      row.callOi += source.callOi;
-      row.putOi += source.putOi;
-      strikes.set(source.strike, row);
-    }
-    combined.set(book.maturity, strikes);
-  }
-  for (const [maturity, strikeMap] of combined) {
-    books.push({
-      maturity,
-      product: "combined",
-      strikes: [...strikeMap.values()].sort((a, b) => a.strike - b.strike),
-    });
-  }
   return books;
 }
 
@@ -298,6 +272,7 @@ export async function fetchSignalPlusStrikeSnapshot(
     warnings: [
       "逐 Strike OI 为观察时点前 30 分钟内每份合约的最后记录，不包含未来数据。",
       "接口没有 exchange 字段；Deribit 风格合约名不能单独证明交易所归属。",
+      "BTC-* 与 BTC_USDC-* 按产品分别计算；SignalPlus 不返回结算币种或合约乘数，因此不做跨产品 OI 或 Max Pain 汇总。",
     ],
   };
   strikeSnapshotCache.set(key, {

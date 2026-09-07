@@ -2,6 +2,7 @@ import {
   nearestClose,
   type GammaZone,
   type IntradayMaxPainPoint,
+  type OptionProduct,
   type ResearchKline,
 } from "@shared/maxPainResearch";
 import {
@@ -42,6 +43,10 @@ function compactNumber(value: number) {
     notation: value >= 10_000 ? "compact" : "standard",
     maximumFractionDigits: value >= 1_000 ? 1 : 2,
   }).format(value);
+}
+
+function productLabel(product: OptionProduct) {
+  return product === "inverse" ? "BTC 结算" : "USDC 结算";
 }
 
 /** Lightweight SVG chart: no extra chart runtime and safe under Cronus page zoom. */
@@ -336,18 +341,18 @@ export function MaxPainCandlestickChart({
                   color: "#38bdf8",
                 },
                 { label: "到期日", value: point.maturity },
-                { label: "产品", value: point.product },
+                { label: "产品", value: productLabel(point.product) },
                 {
                   label: "Call OI",
-                  value: `${compactNumber(point.callOi)} BTC-eq`,
+                  value: compactNumber(point.callOi),
                 },
                 {
                   label: "Put OI",
-                  value: `${compactNumber(point.putOi)} BTC-eq`,
+                  value: compactNumber(point.putOi),
                 },
                 {
                   label: "总 OI",
-                  value: `${compactNumber(point.totalOi)} BTC-eq`,
+                  value: compactNumber(point.totalOi),
                 },
                 {
                   label: "Call / Put",
@@ -388,7 +393,7 @@ export function MaxPainCandlestickChart({
                     strokeWidth="1"
                     pointerEvents="none"
                   />
-                  <title>{`${title}\nMax Pain ${priceLabel(point.maxPain)}\n到期 ${point.maturity}\nOI ${point.totalOi.toLocaleString()} BTC-eq`}</title>
+                  <title>{`${title}\nMax Pain ${priceLabel(point.maxPain)}\n到期 ${point.maturity}\nOI ${point.totalOi.toLocaleString()}`}</title>
                 </g>
               );
             })}
@@ -443,17 +448,17 @@ export function MaxPainCandlestickChart({
                   { label: "到期日", value: point.maturity },
                   {
                     label: "Call OI",
-                    value: `${compactNumber(point.callOi)} BTC-eq`,
+                    value: compactNumber(point.callOi),
                     color: "#22d3ee",
                   },
                   {
                     label: "Put OI",
-                    value: `${compactNumber(point.putOi)} BTC-eq`,
+                    value: compactNumber(point.putOi),
                     color: "#a78bfa",
                   },
                   {
                     label: "总 OI",
-                    value: `${compactNumber(point.totalOi)} BTC-eq`,
+                    value: compactNumber(point.totalOi),
                   },
                 ];
                 const title = `${formatDisplayDateTime(point.timestamp, timeZone, { includeZone: true })} · OI`;
@@ -482,7 +487,7 @@ export function MaxPainCandlestickChart({
                       fill="#a78bfa"
                       opacity="0.78"
                     />
-                    <title>{`${title}\nCall OI ${point.callOi.toLocaleString()}\nPut OI ${point.putOi.toLocaleString()}\nTotal OI ${point.totalOi.toLocaleString()} BTC-eq`}</title>
+                    <title>{`${title}\nCall OI ${point.callOi.toLocaleString()}\nPut OI ${point.putOi.toLocaleString()}\nTotal OI ${point.totalOi.toLocaleString()}`}</title>
                   </g>
                 );
               })}

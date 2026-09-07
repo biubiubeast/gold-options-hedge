@@ -40,7 +40,7 @@ describe("BTC Max Pain research", () => {
     expect(result?.payout).toBe(30_000);
   });
 
-  it("recalculates a combined strike book rather than averaging maxima", () => {
+  it("calculates one complete strike book rather than averaging maxima", () => {
     const result = calculateMaxPain([
       { strike: 90, callOi: 20, putOi: 0 },
       { strike: 100, callOi: 0, putOi: 1 },
@@ -54,12 +54,12 @@ describe("BTC Max Pain research", () => {
       mergeStrikeBooks([
         {
           maturity: "2026-08-28",
-          product: "combined",
+          product: "inverse",
           strikes: [{ strike: 100, callOi: 2, putOi: 3 }],
         },
         {
           maturity: "2026-09-04",
-          product: "combined",
+          product: "inverse",
           strikes: [
             { strike: 100, callOi: 5, putOi: 7 },
             { strike: 110, callOi: 1, putOi: 4 },
@@ -99,7 +99,7 @@ describe("BTC Max Pain research", () => {
     const point = calculateIntradayPoint(
       timestamp,
       "2026-08-28",
-      "combined",
+      "inverse",
       [{ strike: 110, callOi: 5, putOi: 5 }],
       timestamp - 60_000
     )!;
@@ -140,7 +140,7 @@ describe("BTC Max Pain research", () => {
       "2026-08-20",
       {
         maturity: "2026-08-28",
-        product: "combined",
+        product: "inverse",
         strikes: [
           { strike: 90, callOi: 2, putOi: 2 },
           { strike: 105, callOi: 100, putOi: 100 },

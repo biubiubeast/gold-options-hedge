@@ -96,10 +96,13 @@ const EXPIRIES: Array<{ value: MaxPainExpiryPolicy; label: string }> = [
 ];
 
 const PRODUCTS: Array<{ value: OptionProduct; label: string }> = [
-  { value: "combined", label: "Combined" },
-  { value: "inverse", label: "Inverse BTC" },
-  { value: "linear", label: "Linear USDC" },
+  { value: "inverse", label: "BTC 结算" },
+  { value: "linear", label: "USDC 结算" },
 ];
+
+function productLabel(product: OptionProduct) {
+  return product === "inverse" ? "BTC 结算" : "USDC 结算";
+}
 
 const INTERVALS: ResearchKlineInterval[] = ["1h", "4h", "12h", "1d"];
 
@@ -146,7 +149,7 @@ export default function MaxPainResearch() {
   const [startDate, setStartDate] = useState(utcDate(7));
   const [endDate, setEndDate] = useState(utcDate(1));
   const [interval, setInterval] = useState<ResearchKlineInterval>("4h");
-  const [product, setProduct] = useState<OptionProduct>("combined");
+  const [product, setProduct] = useState<OptionProduct>("inverse");
   const [expiryPolicy, setExpiryPolicy] =
     useState<MaxPainExpiryPolicy>("front");
   const [selectedMaturity, setSelectedMaturity] = useState("policy");
@@ -161,7 +164,7 @@ export default function MaxPainResearch() {
   const [strikeHour, setStrikeHour] = useState<ObservationHour>(
     latestObservationHour
   );
-  const [strikeProduct, setStrikeProduct] = useState<OptionProduct>("combined");
+  const [strikeProduct, setStrikeProduct] = useState<OptionProduct>("inverse");
   const [strikeMaturity, setStrikeMaturity] = useState("front");
   const [validationError, setValidationError] = useState<string>();
   const research = useMaxPainResearch();
@@ -293,10 +296,10 @@ export default function MaxPainResearch() {
         callOi: 0,
         putOi: 0,
       };
-      const btcEquivalent =
+      const openInterestAmount =
         quote.openInterest * (quote.contractMultiplier ?? 1);
-      if (quote.optionType === "call") row.callOi += btcEquivalent;
-      else row.putOi += btcEquivalent;
+      if (quote.optionType === "call") row.callOi += openInterestAmount;
+      else row.putOi += openInterestAmount;
       strikes.set(quote.strike, row);
       expiries.set(quote.expiry, strikes);
     }
@@ -630,7 +633,9 @@ export default function MaxPainResearch() {
           {
             label: "最新总 OI",
             value: latest
-              ? `${latest.totalOi.toLocaleString(undefined, { maximumFractionDigits: 1 })} BTC-eq`
+              ? latest.totalOi.toLocaleString(undefined, {
+                  maximumFractionDigits: 1,
+                })
               : "—",
             detail: `Call ${latest?.callOi.toFixed(1) ?? "—"} / Put ${latest?.putOi.toFixed(1) ?? "—"}`,
             color: "",
@@ -638,7 +643,7 @@ export default function MaxPainResearch() {
           {
             label: "OI Notional Value",
             value: money(latestNotional),
-            detail: "BTC-eq OI × 同时点 BTC 现货价",
+            detail: "总 OI × 同时点 BTC 现货价（量级参考）",
             color: "text-emerald-400",
           },
         ].map(card => (
@@ -890,7 +895,7 @@ export default function MaxPainResearch() {
                 </>
               ) : (
                 <>
-                  <Badge variant="outline">Deribit BTC inverse</Badge>
+                  <Badge variant="outline">Deribit BTC 结算期权</Badge>
                   <Badge variant="outline">
                     {liveDeribitQuery.data?.status === "realtime"
                       ? "实时"
@@ -944,7 +949,9 @@ export default function MaxPainResearch() {
                     ],
                     [
                       "所选总 OI",
-                      `${distributionTotalOi.toLocaleString(undefined, { maximumFractionDigits: 2 })} BTC-eq`,
+                      distributionTotalOi.toLocaleString(undefined, {
+                        maximumFractionDigits: 2,
+                      }),
                       `Call ${distributionCallOi.toFixed(2)} / Put ${distributionPutOi.toFixed(2)}`,
                     ],
                     [
@@ -1151,8 +1158,9 @@ export default function MaxPainResearch() {
                     </div>
                     <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
                       每行把该 Strike 视为到期结算价 S，汇总整张所选期权链：
-                      Call max(S−K, 0) × OI + Put max(K−S, 0) × OI。 OI 为
-                      BTC-eq，因此结果是 USD 到期总内在价值；全列最小值即 Max
+                      Call max(S−K, 0) × OI + Put max(K−S, 0) × OI。
+                      两类产品各自单独计算；当前 BTC 期权每份合约面值为 1
+                      BTC，因此结果可表示为 USD 到期总内在价值。全列最小值即 Max
                       Pain。
                     </p>
                   </div>
@@ -1160,8 +1168,8 @@ export default function MaxPainResearch() {
 
                 <p className="text-[11px] leading-5 text-muted-foreground">
                   {distributionMode === "live"
-                    ? "实时模式来自 Deribit 官方 BTC inverse 全期权链；OI 按合约乘 contract size 转成 BTC-eq，并用同一快照的 Deribit BTC index 计算 Notional。"
-                    : "历史模式来自 SignalPlus OI History；接口返回 Deribit 风格的 BTC / BTC_USDC 合约名，但没有 exchange 字段，因此不会把它误标成已经验证的 Deribit 全市场数据。六个源时点是固定快照槽位，也不等于实时逐秒快照。"}
+                    ? "实时模式来自 Deribit 官方 BTC 结算期权链。Deribit 称其为 Inverse Options，API instrument_type=reversed。OI 数字后不附加单位，并用同一快照的 Deribit BTC index 计算 Notional。"
+                    : "历史模式来自 SignalPlus OI History。BTC-* 按 BTC 结算产品计算，BTC_USDC-* 按 USDC 结算产品计算。Deribit 分别称 Inverse Options 与 Linear USDC Options；SignalPlus 响应本身只有 instrument_name，没有产品、结算币种、合约乘数或 exchange 字段，所以两类产品绝不合并。六个源时点也不等于实时逐秒快照。"}
                 </p>
               </>
             ) : null}
@@ -1212,7 +1220,7 @@ export default function MaxPainResearch() {
                             includeZone: true,
                           })}
                         </TableCell>
-                        <TableCell>{point.product}</TableCell>
+                        <TableCell>{productLabel(point.product)}</TableCell>
                         <TableCell>{point.maturity}</TableCell>
                         <TableCell className="text-right font-mono text-sky-400">
                           {money(point.maxPain)}

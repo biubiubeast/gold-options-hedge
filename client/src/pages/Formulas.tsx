@@ -292,17 +292,19 @@ export default function Formulas() {
                 </code>
                 <p className="mt-2 leading-relaxed">
                   候选 S 为该到期日实际 Strike；相同最小值取较低
-                  Strike，与按升序遍历并保留首个最小值一致。Combined 会先合并逐
-                  Strike OI 后重算，绝不平均两个产品的 Max Pain。
+                  Strike，与按升序遍历并保留首个最小值一致。BTC-* 与 BTC_USDC-*
+                  按产品分别计算，不合并 OI 或 Max Pain。
                 </p>
               </div>
               <div className="rounded-md border border-border/60 p-3">
                 <strong className="text-foreground">2. OI Notional</strong>
                 <code className="mt-2 block">
-                  Notional USD = BTC-equivalent OI × 同时点 BTC Spot
+                  Notional USD = 总 OI × 同时点 BTC Spot
                 </code>
                 <p className="mt-2 leading-relaxed">
-                  用于量级比较，不是期权市值或最大可能损失；权利金、Delta、方向与动态对冲均不包含在内。
+                  当前 Deribit BTC 与 BTC_USDC 期权的 contract_size 均为 1。OI
+                  数字后不附加单位；Notional
+                  只用于量级比较，不是期权市值或最大可能损失。
                 </p>
               </div>
               <div className="rounded-md border border-border/60 p-3">

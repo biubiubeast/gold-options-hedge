@@ -12,7 +12,11 @@ export const SIGNALPLUS_EARLIEST_VERIFIED_DATE = "2023-05-05";
 export const MAX_INTRADAY_QUERY_DAYS = 93;
 
 export type ObservationHour = (typeof OBSERVATION_HOURS)[number];
-export type OptionProduct = "combined" | "inverse" | "linear";
+/**
+ * Deribit product families. Keep them separate because BTC-settled inverse
+ * options and USDC-settled linear options have different settlement terms.
+ */
+export type OptionProduct = "inverse" | "linear";
 export type MaxPainExpiryPolicy = "front" | "daily" | "weekly" | "monthly";
 export type ResearchKlineInterval = "1h" | "4h" | "12h" | "1d";
 

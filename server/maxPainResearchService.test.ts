@@ -7,7 +7,7 @@ import {
 import type { ResearchKline } from "@shared/maxPainResearch";
 
 describe("Max Pain data adapters", () => {
-  it("parses inverse and linear Deribit-style option names", () => {
+  it("parses BTC-settled and USDC-settled Deribit-style option names", () => {
     expect(
       parseSignalPlusOption({
         instrument_name: "BTC-29AUG26-90000-C",
@@ -31,7 +31,7 @@ describe("Max Pain data adapters", () => {
     ).toMatchObject({ side: "put", product: "linear" });
   });
 
-  it("builds inverse, linear and strike-level combined expiry books", () => {
+  it("keeps BTC-settled and USDC-settled expiry books separate", () => {
     const rows = [
       parseSignalPlusOption({
         instrument_name: "BTC-29AUG26-90000-C",
@@ -47,9 +47,12 @@ describe("Max Pain data adapters", () => {
       }),
     ].filter(row => row !== null);
     const books = buildStrikeBooks(rows);
-    expect(books).toHaveLength(3);
-    expect(books.find(book => book.product === "combined")?.strikes).toEqual([
-      { strike: 90_000, callOi: 12.5, putOi: 3 },
+    expect(books).toHaveLength(2);
+    expect(books.find(book => book.product === "inverse")?.strikes).toEqual([
+      { strike: 90_000, callOi: 12.5, putOi: 0 },
+    ]);
+    expect(books.find(book => book.product === "linear")?.strikes).toEqual([
+      { strike: 90_000, callOi: 0, putOi: 3 },
     ]);
   });
 
