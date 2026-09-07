@@ -7,6 +7,8 @@ import { useParams, useLocation } from "wouter";
 import { calculatePosition, getPositionMarketData } from "@/lib/portfolio";
 import { MARKET_QUERY_OPTIONS } from "@/lib/marketPolling";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
+import { formatDisplayDateTime } from "@shared/displayTimezone";
 
 const money = (value: number) =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(
@@ -18,6 +20,7 @@ const iv = (value: number | null | undefined, model = false) =>
     : "—";
 
 export default function OptionDetail() {
+  const { timeZone } = useDisplayTimezone();
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const positionId = Number(params.id || 0);
@@ -111,7 +114,15 @@ export default function OptionDetail() {
       "IV Reference Spot",
       market.ivReferenceSpot ? market.ivReferenceSpot.toFixed(4) : "—",
     ],
-    ["IV Reference As-of", market.ivReferenceTime ?? "—"],
+    [
+      "IV Reference As-of",
+      market.ivReferenceTime
+        ? formatDisplayDateTime(market.ivReferenceTime, timeZone, {
+            seconds: true,
+            includeZone: true,
+          })
+        : "—",
+    ],
     ["IV Reference Source", market.ivReferenceSource ?? "—"],
     ["Bid 1", market.bid1 > 0 ? market.bid1.toFixed(4) : "—"],
     ["Ask 1", market.ask1 > 0 ? market.ask1.toFixed(4) : "—"],

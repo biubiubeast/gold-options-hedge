@@ -46,6 +46,7 @@ import {
 } from "@/lib/riskHeatmapAdapter";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 import {
   parseStoredTargetOptions,
   TARGET_OPTION_STORAGE_KEY,
@@ -57,6 +58,10 @@ import {
 import { MARKET_QUERY_OPTIONS } from "@/lib/marketPolling";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { resolveHeatmapSpots } from "@/lib/spotSelection";
+import {
+  formatDisplayDateTime,
+  type DisplayTimeZone,
+} from "@shared/displayTimezone";
 import {
   resolveGldContractMultiplier,
   resolveGldXauMultiplier,
@@ -231,12 +236,6 @@ function initialDataset(): DatasetMode {
     : requested === "100"
       ? "mock100"
       : "chain";
-}
-
-function formatHongKongAsOf(value: Date | string | number) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (!Number.isFinite(date.getTime())) return "MISSING · HKT (UTC+8)";
-  return `${date.toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Hong_Kong" })} HKT (UTC+8)`;
 }
 
 function modelIvLabel(
@@ -462,10 +461,12 @@ function buildDecisionCards(
 function PositionDetailDialog({
   position,
   content,
+  timeZone,
   onClose,
 }: {
   position: EnrichedRiskPosition | null;
   content: PortfolioSettings["heatmapDetailContent"];
+  timeZone: DisplayTimeZone;
   onClose: () => void;
 }) {
   if (!position) return null;
@@ -511,7 +512,7 @@ function PositionDetailDialog({
     [
       "bidAskIv",
       "IV Reference Spot / As-of",
-      `${formatPrice(position.ivReferenceSpot)} / ${position.ivReferenceTime ?? "MISSING"}`,
+      `${formatPrice(position.ivReferenceSpot)} / ${position.ivReferenceTime ? formatDisplayDateTime(position.ivReferenceTime, timeZone, { seconds: true, includeZone: true }) : "MISSING"}`,
     ],
     [
       "bidAskIv",
@@ -536,7 +537,16 @@ function PositionDetailDialog({
     ["entryCost", "Entry Cost", position.entryCost],
     ["upl", "UPL", position.UPL],
     ["source", "Source", position.source],
-    ["quoteAsOf", "Quote As-of", position.quoteTime],
+    [
+      "quoteAsOf",
+      "Quote As-of",
+      position.quoteTime
+        ? formatDisplayDateTime(position.quoteTime, timeZone, {
+            seconds: true,
+            includeZone: true,
+          })
+        : null,
+    ],
     ["dataStatus", "Data Status", position.dataStatus],
     ["deliverableSource", "Deliverable Source", position.deliverableSource],
     [
@@ -607,12 +617,14 @@ function ExpiryDetailDialog({
   metric,
   sampleRange,
   content,
+  timeZone,
   onClose,
 }: {
   selection: ExpirySelection | null;
   metric: HeatmapMetric;
   sampleRange: StatisticalSampleRange | null;
   content: PortfolioSettings["heatmapExpiryHoverContent"];
+  timeZone: DisplayTimeZone;
   onClose: () => void;
 }) {
   if (!selection) return null;
@@ -640,14 +652,17 @@ function ExpiryDetailDialog({
     "unitDelta",
     metric === "unitDelta" ? sampleRange : null
   );
-  const latestQuote =
-    positions
-      .map(position => position.quoteTime)
-      .filter((value): value is string => Boolean(value))
-      .sort()
-      .at(-1)
-      ?.slice(0, 19)
-      .replace("T", " ") ?? "MISSING";
+  const latestQuoteRaw = positions
+    .map(position => position.quoteTime)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
+  const latestQuote = latestQuoteRaw
+    ? formatDisplayDateTime(latestQuoteRaw, timeZone, {
+        seconds: true,
+        includeZone: true,
+      })
+    : "MISSING";
   const summaryRows: Array<[string, string]> = [];
   summaryRows.push([
     `${METRIC_LABELS[metric]} · Average`,
@@ -951,6 +966,7 @@ function ExpiryDetailDialog({
 
 export default function Matrix() {
   const { user } = useAuth();
+  const { timeZone } = useDisplayTimezone();
   const { data: positions, isLoading } = trpc.positions.list.useQuery();
   const { data: formulas } = trpc.formulas.list.useQuery();
   const { data: xautTickers } = trpc.market.xautTickers.useQuery(
@@ -1996,7 +2012,11 @@ export default function Matrix() {
         </div>
         <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
           <span data-testid="heatmap-as-of" className="whitespace-nowrap">
-            As-of {formatHongKongAsOf(selectedChainTimestamp)}
+            As-of{" "}
+            {formatDisplayDateTime(selectedChainTimestamp, timeZone, {
+              seconds: true,
+              includeZone: true,
+            })}
           </span>
           {visibleSections.dataError && (
             <button
@@ -2661,8 +2681,9 @@ export default function Matrix() {
             GLD FULL CHAIN · {gldChain.contractCount} contracts ·{" "}
             {gldChain.expiryCount} expiries · {gldChain.strikeCount} strikes ·{" "}
             {gldChain.source} · updated{" "}
-            {new Date(gldChain.timestamp).toLocaleString("zh-CN", {
-              hour12: false,
+            {formatDisplayDateTime(gldChain.timestamp, timeZone, {
+              seconds: true,
+              includeZone: true,
             })}{" "}
             · Display Spot {formatSpotPrice(gldChain.spot)} · IV Reference Spot{" "}
             {formatSpotPrice(gldChain.ivReferenceSpot)} · observed age{" "}
@@ -2678,8 +2699,9 @@ export default function Matrix() {
             XAUT FULL CHAIN · {xautChain.contractCount} tradable contracts ·{" "}
             {xautChain.expiryCount} expiries · {xautChain.strikeCount} strikes ·{" "}
             {xautChain.source} · updated{" "}
-            {new Date(xautChain.timestamp).toLocaleString("zh-CN", {
-              hour12: false,
+            {formatDisplayDateTime(xautChain.timestamp, timeZone, {
+              seconds: true,
+              includeZone: true,
             })}{" "}
             · observed age {Math.round(xautChain.delaySeconds)}s
           </div>
@@ -2692,8 +2714,9 @@ export default function Matrix() {
             BTC FULL CHAIN · {btcChain.contractCount} tradable contracts ·{" "}
             {btcChain.expiryCount} expiries · {btcChain.strikeCount} strikes ·{" "}
             {btcChain.source} · updated{" "}
-            {new Date(btcChain.timestamp).toLocaleString("zh-CN", {
-              hour12: false,
+            {formatDisplayDateTime(btcChain.timestamp, timeZone, {
+              seconds: true,
+              includeZone: true,
             })}{" "}
             · observed age {Math.round(btcChain.delaySeconds)}s
           </div>
@@ -2706,8 +2729,9 @@ export default function Matrix() {
             ETH BYBIT FULL CHAIN · {ethChain.contractCount} tradable contracts ·{" "}
             {ethChain.expiryCount} expiries · {ethChain.strikeCount} strikes ·{" "}
             {ethChain.source} · updated{" "}
-            {new Date(ethChain.timestamp).toLocaleString("zh-CN", {
-              hour12: false,
+            {formatDisplayDateTime(ethChain.timestamp, timeZone, {
+              seconds: true,
+              includeZone: true,
             })}{" "}
             · observed age {Math.round(ethChain.delaySeconds)}s
           </div>
@@ -2721,8 +2745,9 @@ export default function Matrix() {
             contracts · {deribitBtcChain.expiryCount} expiries ·{" "}
             {deribitBtcChain.strikeCount} strikes · {deribitBtcChain.source} ·
             updated{" "}
-            {new Date(deribitBtcChain.timestamp).toLocaleString("zh-CN", {
-              hour12: false,
+            {formatDisplayDateTime(deribitBtcChain.timestamp, timeZone, {
+              seconds: true,
+              includeZone: true,
             })}{" "}
             · observed age {Math.round(deribitBtcChain.delaySeconds)}s
           </div>
@@ -2736,8 +2761,9 @@ export default function Matrix() {
             contracts · {deribitEthChain.expiryCount} expiries ·{" "}
             {deribitEthChain.strikeCount} strikes · {deribitEthChain.source} ·
             updated{" "}
-            {new Date(deribitEthChain.timestamp).toLocaleString("zh-CN", {
-              hour12: false,
+            {formatDisplayDateTime(deribitEthChain.timestamp, timeZone, {
+              seconds: true,
+              includeZone: true,
             })}{" "}
             · observed age {Math.round(deribitEthChain.delaySeconds)}s
           </div>
@@ -2829,6 +2855,7 @@ export default function Matrix() {
       <PositionDetailDialog
         position={selectedPosition}
         content={settings.heatmapDetailContent}
+        timeZone={timeZone}
         onClose={() => setSelectedPosition(null)}
       />
       <ExpiryDetailDialog
@@ -2836,6 +2863,7 @@ export default function Matrix() {
         metric={effectiveMetric}
         sampleRange={activeStatisticalSampleRange}
         content={settings.heatmapExpiryHoverContent}
+        timeZone={timeZone}
         onClose={() => setSelectedExpiry(null)}
       />
     </div>

@@ -16,7 +16,14 @@ import {
 } from "@/components/ui/table";
 import { useMaxPainResearch } from "@/hooks/useMaxPainResearch";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 import { trpc } from "@/lib/trpc";
+import {
+  displayTimeZoneName,
+  formatDisplayDateTime,
+  formatObservationSlot,
+  observationTimestamp,
+} from "@shared/displayTimezone";
 import {
   MAX_INTRADAY_QUERY_DAYS,
   OBSERVATION_HOURS,
@@ -124,6 +131,7 @@ function SegmentedButton({
 
 export default function MaxPainResearch() {
   const { settings } = usePortfolioSettings();
+  const { timeZone } = useDisplayTimezone();
   const sections = settings.maxPainVisibleSections;
   const [startDate, setStartDate] = useState(utcDate(7));
   const [endDate, setEndDate] = useState(utcDate(1));
@@ -477,8 +485,6 @@ export default function MaxPainResearch() {
           <Badge variant="outline" className="border-primary/40 text-primary">
             CRONUS · SIGNALPLUS OI
           </Badge>
-          <Badge variant="outline">UTC 00/04/08/12/16/20</Badge>
-          <Badge variant="outline">NO LOOK-AHEAD</Badge>
         </div>
         <h1 className="text-2xl font-bold text-gold-gradient">
           BTC 历史最大痛点与价格回测
@@ -486,7 +492,8 @@ export default function MaxPainResearch() {
         <p className="mt-2 max-w-5xl text-sm leading-6 text-muted-foreground">
           从逐行权价历史 OI 复算每个到期日的赔付曲线；蓝线为所选期限的 Max
           Pain，叠加 BTC 现货 K 线。K 线自动使用 Coinbase、OKX、Binance
-          三级容错，所有观察时间均为 UTC。
+          三级容错。页面时间按顶部所选时区显示，切换不会改变原始行情、OI
+          快照或回测配对。
         </p>
       </header>
 
@@ -590,13 +597,13 @@ export default function MaxPainResearch() {
         </Alert>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         {[
           {
             label: "最新 Max Pain",
             value: money(latest?.maxPain),
             detail: latest
-              ? `${latest.date} ${String(latest.hourUtc).padStart(2, "0")}:00 · ${latest.maturity}`
+              ? `${formatDisplayDateTime(latest.timestamp, timeZone, { includeZone: true })} · ${latest.maturity}`
               : "等待计算",
             color: "text-sky-400",
           },
@@ -613,12 +620,6 @@ export default function MaxPainResearch() {
             value: money(latestNotional),
             detail: "BTC-eq OI × 同时点 BTC 现货价",
             color: "text-emerald-400",
-          },
-          {
-            label: "有效观察点",
-            value: String(selectedPoints.length),
-            detail: `${research.days.length} 天 · 最多每日至 6 点`,
-            color: "text-primary",
           },
         ].map(card => (
           <Card key={card.label} className="glass-card">
@@ -735,7 +736,7 @@ export default function MaxPainResearch() {
                 <AlertDescription>
                   蓝线只连接该到期日在本次查询范围内实际存在的观察点
                   {firstMaturityPoint
-                    ? `，当前从 ${firstMaturityPoint.date} ${String(firstMaturityPoint.hourUtc).padStart(2, "0")}:00 开始`
+                    ? `，当前从 ${formatDisplayDateTime(firstMaturityPoint.timestamp, timeZone, { includeZone: true })} 开始`
                     : ""}
                   。 若合约更早已挂牌，请把开始日期向前调后重新计算。
                 </AlertDescription>
@@ -749,6 +750,7 @@ export default function MaxPainResearch() {
               showMaxPain={showMaxPain}
               showGamma={showGamma && sections.gammaZone}
               showOiBars={showOiBars}
+              timeZone={timeZone}
             />
           </CardContent>
         </Card>
@@ -765,8 +767,8 @@ export default function MaxPainResearch() {
                 </CardTitle>
                 <p className="mt-2 max-w-5xl text-xs leading-5 text-muted-foreground">
                   实时模式读取 Deribit 官方当前 BTC
-                  期权链；历史模式可选择任意日期和 UTC 六时点读取 SignalPlus OI
-                  History。青柱为 Call、紫柱为
+                  期权链；历史模式可选择任意日期和六个固定源时点读取 SignalPlus
+                  OI History。青柱为 Call、紫柱为
                   Put，蓝色虚线为到期内在价值口径复算的 Max Pain。
                 </p>
               </div>
@@ -787,7 +789,7 @@ export default function MaxPainResearch() {
                 </div>
                 {distributionMode === "historical" ? (
                   <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                    <span>历史日期（UTC）</span>
+                    <span>历史快照日期</span>
                     <input
                       type="date"
                       min={SIGNALPLUS_EARLIEST_VERIFIED_DATE}
@@ -843,7 +845,7 @@ export default function MaxPainResearch() {
                         disabled={!observationHasOccurred(strikeDate, hour)}
                         onClick={() => setStrikeHour(hour)}
                       >
-                        {String(hour).padStart(2, "0")}:00
+                        {formatObservationSlot(strikeDate, hour, timeZone)}
                       </SegmentedButton>
                     ))}
                   </div>
@@ -858,7 +860,13 @@ export default function MaxPainResearch() {
                       </SegmentedButton>
                     ))}
                   </div>
-                  <Badge variant="outline">全部时间均为 UTC</Badge>
+                  <Badge variant="outline">
+                    显示：
+                    {displayTimeZoneName(
+                      timeZone,
+                      observationTimestamp(strikeDate, strikeHour)
+                    )}
+                  </Badge>
                 </>
               ) : (
                 <>
@@ -873,15 +881,13 @@ export default function MaxPainResearch() {
               {distributionTimestamp ? (
                 <Badge variant="outline">
                   源记录：
-                  {new Date(
+                  {formatDisplayDateTime(
                     distributionMode === "historical"
                       ? strikeSnapshotQuery.data!.sourceTimestamp
-                      : distributionTimestamp
-                  )
-                    .toISOString()
-                    .slice(0, 16)
-                    .replace("T", " ")}{" "}
-                  UTC
+                      : distributionTimestamp,
+                    timeZone,
+                    { includeZone: true }
+                  )}
                 </Badge>
               ) : null}
             </div>
@@ -892,7 +898,7 @@ export default function MaxPainResearch() {
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {distributionMode === "live"
                   ? "正在读取 Deribit 实时 BTC 期权全链…"
-                  : `正在读取 ${strikeDate} ${String(strikeHour).padStart(2, "0")}:00 UTC 的逐 Strike OI…`}
+                  : `正在读取 ${formatDisplayDateTime(observationTimestamp(strikeDate, strikeHour), timeZone, { includeZone: true })} 的逐 Strike OI…`}
               </div>
             ) : distributionError ? (
               <Alert className="border-amber-500/30 bg-amber-500/5">
@@ -1112,7 +1118,7 @@ export default function MaxPainResearch() {
                 <p className="text-[11px] leading-5 text-muted-foreground">
                   {distributionMode === "live"
                     ? "实时模式来自 Deribit 官方 BTC inverse 全期权链；OI 按合约乘 contract size 转成 BTC-eq，并用同一快照的 Deribit BTC index 计算 Notional。"
-                    : "历史模式来自 SignalPlus OI History；接口返回 Deribit 风格的 BTC / BTC_USDC 合约名，但没有 exchange 字段，因此不会把它误标成已经验证的 Deribit 全市场数据。固定 UTC 观察时点也不等于实时逐秒快照。"}
+                    : "历史模式来自 SignalPlus OI History；接口返回 Deribit 风格的 BTC / BTC_USDC 合约名，但没有 exchange 字段，因此不会把它误标成已经验证的 Deribit 全市场数据。六个源时点是固定快照槽位，也不等于实时逐秒快照。"}
                 </p>
               </>
             ) : null}
@@ -1133,7 +1139,9 @@ export default function MaxPainResearch() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>UTC 时点</TableHead>
+                    <TableHead>
+                      观察时点（{displayTimeZoneName(timeZone)}）
+                    </TableHead>
                     <TableHead>产品</TableHead>
                     <TableHead>到期日</TableHead>
                     <TableHead className="text-right">Max Pain</TableHead>
@@ -1157,8 +1165,9 @@ export default function MaxPainResearch() {
                         key={`${point.timestamp}-${point.product}-${point.maturity}`}
                       >
                         <TableCell>
-                          {point.date} {String(point.hourUtc).padStart(2, "0")}
-                          :00
+                          {formatDisplayDateTime(point.timestamp, timeZone, {
+                            includeZone: true,
+                          })}
                         </TableCell>
                         <TableCell>{point.product}</TableCell>
                         <TableCell>{point.maturity}</TableCell>
@@ -1192,8 +1201,13 @@ export default function MaxPainResearch() {
             {latestZeroBook ? (
               <details className="rounded-lg border border-border/60 p-4">
                 <summary className="cursor-pointer text-sm font-medium text-primary">
-                  查看最新 00:00 Strike / OIList · {latestZeroBook.date} ·{" "}
-                  {latestZeroBook.book.maturity}
+                  查看最新 Strike / OIList ·{" "}
+                  {formatDisplayDateTime(
+                    observationTimestamp(latestZeroBook.date, 0),
+                    timeZone,
+                    { includeZone: true }
+                  )}{" "}
+                  · {latestZeroBook.book.maturity}
                 </summary>
                 <div className="mt-3 max-h-[360px] overflow-auto">
                   <Table>
@@ -1244,7 +1258,7 @@ export default function MaxPainResearch() {
                     active={backtestHour === hour}
                     onClick={() => setBacktestHour(hour)}
                   >
-                    {String(hour).padStart(2, "0")}:00
+                    {formatObservationSlot(endDate, hour, timeZone)}
                   </SegmentedButton>
                 ))}
               </div>
@@ -1302,7 +1316,7 @@ export default function MaxPainResearch() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>日期</TableHead>
+                      <TableHead>观察时点</TableHead>
                       <TableHead className="text-right">a 痛点</TableHead>
                       <TableHead className="text-right">c 前24h</TableHead>
                       <TableHead className="text-right">b 观察价</TableHead>
@@ -1315,7 +1329,11 @@ export default function MaxPainResearch() {
                   <TableBody>
                     {[...(backtest?.rows ?? [])].reverse().map(row => (
                       <TableRow key={row.timestamp}>
-                        <TableCell>{row.date}</TableCell>
+                        <TableCell>
+                          {formatDisplayDateTime(row.timestamp, timeZone, {
+                            includeZone: true,
+                          })}
+                        </TableCell>
                         <TableCell className="text-right">
                           {money(row.maxPain)}
                         </TableCell>
@@ -1357,7 +1375,7 @@ export default function MaxPainResearch() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Sigma className="h-5 w-5 text-purple-400" />
-                每日 00:00 Gamma 密集区（代理）
+                每日固定快照 Gamma 密集区（代理）
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1374,7 +1392,7 @@ export default function MaxPainResearch() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>日期</TableHead>
+                      <TableHead>观察时点</TableHead>
                       <TableHead>到期日</TableHead>
                       <TableHead className="text-right">下沿</TableHead>
                       <TableHead className="text-right">峰值</TableHead>
@@ -1385,7 +1403,13 @@ export default function MaxPainResearch() {
                   <TableBody>
                     {[...gammaZones].reverse().map(zone => (
                       <TableRow key={`${zone.date}-${zone.maturity}`}>
-                        <TableCell>{zone.date}</TableCell>
+                        <TableCell>
+                          {formatDisplayDateTime(
+                            observationTimestamp(zone.date, 0),
+                            timeZone,
+                            { includeZone: true }
+                          )}
+                        </TableCell>
                         <TableCell>{zone.maturity}</TableCell>
                         <TableCell className="text-right">
                           {money(zone.lowerStrike)}

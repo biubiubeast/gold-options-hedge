@@ -5,6 +5,11 @@ import {
   type ResearchKline,
 } from "@shared/maxPainResearch";
 import {
+  formatDisplayDateTime,
+  formatDisplayMonthDayTime,
+  type DisplayTimeZone,
+} from "@shared/displayTimezone";
+import {
   useMemo,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -18,6 +23,7 @@ interface Props {
   showMaxPain: boolean;
   showGamma: boolean;
   showOiBars: boolean;
+  timeZone: DisplayTimeZone;
 }
 
 interface ChartTooltip {
@@ -38,10 +44,6 @@ function compactNumber(value: number) {
   }).format(value);
 }
 
-function utcTime(timestamp: number) {
-  return new Date(timestamp).toISOString().slice(0, 16).replace("T", " ");
-}
-
 /** Lightweight SVG chart: no extra chart runtime and safe under Cronus page zoom. */
 export function MaxPainCandlestickChart({
   klines,
@@ -51,6 +53,7 @@ export function MaxPainCandlestickChart({
   showMaxPain,
   showGamma,
   showOiBars,
+  timeZone,
 }: Props) {
   const [tooltip, setTooltip] = useState<ChartTooltip>();
   const geometry = useMemo(() => {
@@ -269,14 +272,14 @@ export function MaxPainCandlestickChart({
                 onPointerEnter={event =>
                   showTooltip(
                     event,
-                    `${utcTime(kline.openTime)} UTC · BTC K线`,
+                    `${formatDisplayDateTime(kline.openTime, timeZone, { includeZone: true })} · BTC K线`,
                     rows
                   )
                 }
                 onPointerMove={event =>
                   showTooltip(
                     event,
-                    `${utcTime(kline.openTime)} UTC · BTC K线`,
+                    `${formatDisplayDateTime(kline.openTime, timeZone, { includeZone: true })} · BTC K线`,
                     rows
                   )
                 }
@@ -306,7 +309,7 @@ export function MaxPainCandlestickChart({
                   opacity="0.86"
                   pointerEvents="none"
                 />
-                <title>{`${utcTime(kline.openTime)} UTC\nO ${priceLabel(kline.open)} H ${priceLabel(kline.high)} L ${priceLabel(kline.low)} C ${priceLabel(kline.close)}`}</title>
+                <title>{`${formatDisplayDateTime(kline.openTime, timeZone, { includeZone: true })}\nO ${priceLabel(kline.open)} H ${priceLabel(kline.high)} L ${priceLabel(kline.low)} C ${priceLabel(kline.close)}`}</title>
               </g>
             );
           })}
@@ -361,7 +364,9 @@ export function MaxPainCandlestickChart({
                   value: `${Math.max(0, Math.round((point.timestamp - point.sourceTimestamp) / 60_000))} min`,
                 },
               ];
-              const title = `${point.date} ${String(point.hourUtc).padStart(2, "0")}:00 UTC`;
+              const title = formatDisplayDateTime(point.timestamp, timeZone, {
+                includeZone: true,
+              });
               return (
                 <g
                   key={`${point.timestamp}-${point.product}-${point.maturity}`}
@@ -451,7 +456,7 @@ export function MaxPainCandlestickChart({
                     value: `${compactNumber(point.totalOi)} BTC-eq`,
                   },
                 ];
-                const title = `${point.date} ${String(point.hourUtc).padStart(2, "0")}:00 UTC · OI`;
+                const title = `${formatDisplayDateTime(point.timestamp, timeZone, { includeZone: true })} · OI`;
                 return (
                   <g
                     key={`oi-bar-${point.timestamp}-${point.maturity}`}
@@ -500,10 +505,7 @@ export function MaxPainCandlestickChart({
                 fontSize="11"
                 textAnchor="middle"
               >
-                {new Date(item.openTime)
-                  .toISOString()
-                  .slice(5, 16)
-                  .replace("T", " ")}
+                {formatDisplayMonthDayTime(item.openTime, timeZone)}
               </text>
             </g>
           ))}

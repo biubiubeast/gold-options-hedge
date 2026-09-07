@@ -3,9 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MARKET_QUERY_OPTIONS } from "@/lib/marketPolling";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
+import { formatDisplayDateTime } from "@shared/displayTimezone";
 import { CheckCircle2, ExternalLink, Loader2, ShieldAlert } from "lucide-react";
 
 export default function DataSources() {
+  const { timeZone } = useDisplayTimezone();
   const { data, isLoading } = trpc.market.sources.useQuery();
   const { data: maxPainCoverage } = trpc.maxPainResearch.coverage.useQuery();
   const {
@@ -53,8 +56,9 @@ export default function DataSources() {
           const price = value?.price ?? 0;
           const source = value?.source ?? "";
           const updated = value?.timestamp
-            ? new Date(value.timestamp).toLocaleString("zh-CN", {
-                hour12: false,
+            ? formatDisplayDateTime(value.timestamp, timeZone, {
+                seconds: true,
+                includeZone: true,
               })
             : "—";
           const status =

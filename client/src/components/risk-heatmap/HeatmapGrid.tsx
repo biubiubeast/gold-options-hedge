@@ -42,6 +42,11 @@ import {
 } from "react";
 import type { PortfolioSettings } from "@/lib/portfolio";
 import type { TargetOptionMode } from "@/lib/heatmapTargets";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
+import {
+  formatDisplayDateTime,
+  type DisplayTimeZone,
+} from "@shared/displayTimezone";
 
 export type HeatmapCellModel = {
   key: string;
@@ -139,12 +144,14 @@ function TooltipPosition({
   ivSource,
   preset,
   content,
+  timeZone,
 }: {
   position: EnrichedRiskPosition;
   metric: HeatmapMetric;
   ivSource: IvValueSource;
   preset: HoverDataPreset;
   content: Props["hoverContent"];
+  timeZone: DisplayTimeZone;
 }) {
   const rows: Array<[string, string]> = [];
   if (content.selectedMetric)
@@ -231,7 +238,7 @@ function TooltipPosition({
         if (content.ivReferenceSpot) {
           rows.push([
             "IV Reference Spot / As-of",
-            `${formatPrice(position.ivReferenceSpot)} / ${position.ivReferenceTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`,
+            `${formatPrice(position.ivReferenceSpot)} / ${position.ivReferenceTime ? formatDisplayDateTime(position.ivReferenceTime, timeZone, { seconds: true, includeZone: true }) : "MISSING"}`,
           ]);
         }
         if (content.modelIvStatus) {
@@ -260,7 +267,7 @@ function TooltipPosition({
     if (content.sourceQuote) {
       rows.push([
         "Source / Quote As-of",
-        `${position.source ?? "MISSING"} / ${position.quoteTime?.slice(0, 19).replace("T", " ") ?? "MISSING"}`,
+        `${position.source ?? "MISSING"} / ${position.quoteTime ? formatDisplayDateTime(position.quoteTime, timeZone, { seconds: true, includeZone: true }) : "MISSING"}`,
       ]);
       if (ivSource === "model" && content.ivReferenceSource) {
         rows.push([
@@ -592,6 +599,7 @@ export function HeatmapGrid({
   onSelectPosition,
   onSelectExpiry,
 }: Props) {
+  const { timeZone } = useDisplayTimezone();
   const [hoveredCellKey, setHoveredCellKey] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const centeredOnceRef = useRef<string | null>(null);
@@ -1105,6 +1113,7 @@ export function HeatmapGrid({
                               ivSource={ivSource}
                               preset={hoverPreset}
                               content={hoverContent}
+                              timeZone={timeZone}
                             />
                           </div>
                         ))}

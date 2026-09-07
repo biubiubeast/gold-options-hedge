@@ -10,12 +10,14 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CheckCircle2, Download, FileClock, FileSpreadsheet, Info, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { formatReferenceSnapshotTime, POSITION_SOURCE_DEFAULTS, type PositionExcelPreview } from "@shared/positionExcel";
+import { POSITION_SOURCE_DEFAULTS, type PositionExcelPreview } from "@shared/positionExcel";
 import type { TransactionExcelPreview } from "@shared/transactionExcel";
 import { MarketRefreshButton } from "@/components/MarketRefreshButton";
 import { calculatePosition, getPositionMarketData, type PortfolioPosition } from "@/lib/portfolio";
 import { MARKET_QUERY_OPTIONS } from "@/lib/marketPolling";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
+import { formatDisplayDateTime } from "@shared/displayTimezone";
 import {
   DEFAULT_GLD_CONTRACT_MULTIPLIER,
   DEFAULT_XAUT_CONTRACT_MULTIPLIER,
@@ -93,6 +95,7 @@ export default function Positions() {
   const { data: xautTickers } = trpc.market.xautTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
   const { data: btcTickers } = trpc.market.btcTickers.useQuery(undefined, MARKET_QUERY_OPTIONS);
   const { settings } = usePortfolioSettings();
+  const { timeZone } = useDisplayTimezone();
   const gldXauMultiplier = resolveGldXauMultiplier(formulas?.length ? formulas : [], settings.gldSpotScaleOverride ?? 0.092);
   const xautXauMultiplier = resolveXautXauMultiplier(formulas?.length ? formulas : [], settings.xautSpotScaleOverride ?? 1);
   const gldContractMultiplier = resolveGldContractMultiplier(formulas?.length ? formulas : [], settings.gldContractMultiplier);
@@ -160,11 +163,11 @@ export default function Positions() {
       xautQty: forUnderlying("XAUT").reduce((sum, position) => sum + Number(position.quantity), 0),
       gldQty: forUnderlying("GLD").reduce((sum, position) => sum + Number(position.quantity), 0),
       btcQty: forUnderlying("BTC").reduce((sum, position) => sum + Number(position.quantity), 0),
-      referenceDate: formatReferenceSnapshotTime(latestReference?.referenceDate, latestReference?.createdAt),
+      referenceDate: latestReference?.referenceDate ? `${latestReference.referenceDate} · Imported ${formatDisplayDateTime(latestReference.createdAt, timeZone, { seconds: true, includeZone: true })}` : "—",
       cumulativeEntryCost: (transactionSummaries ?? []).reduce((sum, item) => sum + item.cumulativeEntryCost, 0),
       cumulativeRealizedPnl: (transactionSummaries ?? []).reduce((sum, item) => sum + item.cumulativeRealizedPnl, 0),
     };
-  }, [positions, transactionSummaries]);
+  }, [positions, timeZone, transactionSummaries]);
   const statusCards: Array<{ label: string; value: string | number; wide?: boolean }> = [
     { label: "Positions", value: summary.count },
     { label: "XAUT", value: `${summary.xaut} / Qty ${summary.xautQty}` },
@@ -470,7 +473,7 @@ export default function Positions() {
                   <TableCell className={`font-mono ${Number(position.importedUnrealizedPnl) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{money(position.importedUnrealizedPnl)}</TableCell>
                   <TableCell className="font-mono">{money(position.entryDelta)}</TableCell><TableCell className="font-mono">{money(position.unitGamma)}</TableCell><TableCell className="font-mono">{money(position.unitTheta)}</TableCell><TableCell className="font-mono">{money(position.unitVega)}</TableCell><TableCell className="font-mono">{money(position.importedTotalDeltaXau)}</TableCell>
                   <TableCell className="font-mono">{money(position.importedTotalGammaXau)}</TableCell><TableCell className="font-mono">{money(position.importedTotalThetaUsdDay)}</TableCell><TableCell className="font-mono">{money(position.importedTotalVegaUsdVol)}</TableCell>
-                  <TableCell className="max-w-60"><p className="truncate font-mono text-[10px]" title={position.marketQuoteTime ?? ""}>{position.marketQuoteTime?.replace("T", " ").slice(0, 19) ?? position.referenceDate ?? "MISSING"}</p><p className="truncate text-[10px] text-muted-foreground" title={position.marketSource ?? ""}>{position.marketSource ?? position.importSource ?? "MISSING"}</p></TableCell>
+                  <TableCell className="max-w-60"><p className="truncate font-mono text-[10px]" title={position.marketQuoteTime ?? ""}>{position.marketQuoteTime ? formatDisplayDateTime(position.marketQuoteTime, timeZone, { seconds: true, includeZone: true }) : position.referenceDate ?? "MISSING"}</p><p className="truncate text-[10px] text-muted-foreground" title={position.marketSource ?? ""}>{position.marketSource ?? position.importSource ?? "MISSING"}</p></TableCell>
                   <TableCell><Badge variant="outline" className={position.dataStatus === "STALE" ? "border-amber-500/40 text-amber-300" : ""}>{position.dataStatus ?? (position.importSource ? "STALE" : "WARN")}</Badge></TableCell>
                   <TableCell className="text-right"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(position)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { if (window.confirm(`确认删除 ${position.underlying} ${position.strike} ${position.optionType.toUpperCase()}？`)) deleteMutation.mutate({ id: position.id }); }}><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell>
                 </TableRow>

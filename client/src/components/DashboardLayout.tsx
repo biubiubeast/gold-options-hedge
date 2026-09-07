@@ -35,7 +35,12 @@ import { LiveSpotBar } from "./LiveSpotBar";
 import { MarketRefreshButton } from "./MarketRefreshButton";
 import { AutoMarketRefresh } from "./AutoMarketRefresh";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
 import { trpc } from "@/lib/trpc";
+import {
+  DISPLAY_TIME_ZONES,
+  displayTimeZoneName,
+} from "@shared/displayTimezone";
 
 const menuItems = [
   {
@@ -121,6 +126,7 @@ function DashboardLayoutContent({
   const [location, setLocation] = useLocation();
   const { user, logout } = useAuth();
   const { settings } = usePortfolioSettings();
+  const { timeZone, setTimeZone } = useDisplayTimezone();
   const viewerPages = trpc.access.viewerPages.useQuery(undefined, {
     enabled: user?.role !== "admin",
     staleTime: 5_000,
@@ -300,53 +306,77 @@ function DashboardLayoutContent({
           <div className="order-3 flex w-full justify-end overflow-x-auto lg:order-none lg:ml-auto lg:w-auto">
             <LiveSpotBar />
           </div>
-          <div
-            className="flex items-center gap-1 shrink-0"
-            role="group"
-            aria-label="页面缩放"
-          >
+          <div className="flex items-center gap-1 shrink-0">
+            <div
+              className="mr-1 flex h-8 items-center rounded-md border border-border/70 bg-background/70 p-0.5"
+              role="group"
+              aria-label="显示时区"
+            >
+              {DISPLAY_TIME_ZONES.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={timeZone === option.value}
+                  onClick={() => setTimeZone(option.value)}
+                  className={`h-6 rounded px-2 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    timeZone === option.value
+                      ? "bg-primary/15 font-medium text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                  title={`切换为${displayTimeZoneName(option.value)}；只转换显示，不改变行情或回测时间戳`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
             <MarketRefreshButton compact />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() =>
-                setPageZoom(current =>
-                  clampZoom(Number((current - 0.1).toFixed(2)))
-                )
-              }
-              disabled={pageZoom <= MIN_PAGE_ZOOM}
-              aria-label="缩小全部页面"
-              title="缩小全部页面，最低 20%（Alt -）"
+            <div
+              className="flex items-center gap-1"
+              role="group"
+              aria-label="页面缩放"
             >
-              <ZoomOut className="h-4 w-4" />
-            </Button>
-            <button
-              type="button"
-              onClick={() => setPageZoom(1)}
-              className="h-8 min-w-14 rounded-md px-2 text-xs font-mono text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              title="恢复 100%（Alt 0）"
-              aria-label={`当前页面缩放 ${Math.round(pageZoom * 100)}%，点击恢复`}
-            >
-              {Math.round(pageZoom * 100)}%
-            </button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() =>
-                setPageZoom(current =>
-                  clampZoom(Number((current + 0.1).toFixed(2)))
-                )
-              }
-              disabled={pageZoom >= MAX_PAGE_ZOOM}
-              aria-label="放大全部页面"
-              title="放大全部页面（Alt +）"
-            >
-              <ZoomIn className="h-4 w-4" />
-            </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() =>
+                  setPageZoom(current =>
+                    clampZoom(Number((current - 0.1).toFixed(2)))
+                  )
+                }
+                disabled={pageZoom <= MIN_PAGE_ZOOM}
+                aria-label="缩小全部页面"
+                title="缩小全部页面，最低 20%（Alt -）"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <button
+                type="button"
+                onClick={() => setPageZoom(1)}
+                className="h-8 min-w-14 rounded-md px-2 text-xs font-mono text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                title="恢复 100%（Alt 0）"
+                aria-label={`当前页面缩放 ${Math.round(pageZoom * 100)}%，点击恢复`}
+              >
+                {Math.round(pageZoom * 100)}%
+              </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() =>
+                  setPageZoom(current =>
+                    clampZoom(Number((current + 0.1).toFixed(2)))
+                  )
+                }
+                disabled={pageZoom >= MAX_PAGE_ZOOM}
+                aria-label="放大全部页面"
+                title="放大全部页面（Alt +）"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
         <main className="flex-1 p-3 sm:p-4 overflow-x-hidden">

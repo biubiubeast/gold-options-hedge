@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { usePortfolioSettings } from "@/hooks/usePortfolioSettings";
+import { useDisplayTimezone } from "@/hooks/useDisplayTimezone";
+import { formatDisplayDateTime } from "@shared/displayTimezone";
 import {
   MARKET_REFRESH_EVENT,
   readLastMarketRefreshAt,
@@ -421,6 +423,7 @@ const detailContentLabels: Array<
 
 export default function Settings() {
   const { settings, setSettings, resetSettings } = usePortfolioSettings();
+  const { timeZone } = useDisplayTimezone();
   const [draft, setDraft] = useState<PortfolioSettings>(settings);
   const [viewerPages, setViewerPages] = useState<ViewerPagePermissions>(
     DEFAULT_VIEWER_PAGE_PERMISSIONS
@@ -868,8 +871,9 @@ export default function Settings() {
               <span className="text-muted-foreground">最近成功刷新</span>
               <strong className="font-mono">
                 {lastRefreshAt
-                  ? new Date(lastRefreshAt).toLocaleString("zh-CN", {
-                      hour12: false,
+                  ? formatDisplayDateTime(lastRefreshAt, timeZone, {
+                      seconds: true,
+                      includeZone: true,
                     })
                   : "尚未记录"}
               </strong>
