@@ -18,6 +18,26 @@ describe("BTC Max Pain research", () => {
     ]);
     expect(result?.maxPain).toBe(100);
     expect(result?.payout).toBe(100);
+    expect(result?.curve).toEqual([
+      { settlementPrice: 100, payout: 100 },
+      { settlementPrice: 110, payout: 100 },
+    ]);
+  });
+
+  it("returns total intrinsic value in USD for every candidate settlement strike", () => {
+    const result = calculateMaxPain([
+      { strike: 90_000, callOi: 2, putOi: 0 },
+      { strike: 100_000, callOi: 0, putOi: 3 },
+      { strike: 110_000, callOi: 1, putOi: 1 },
+    ]);
+
+    expect(result?.curve).toEqual([
+      { settlementPrice: 90_000, payout: 50_000 },
+      { settlementPrice: 100_000, payout: 30_000 },
+      { settlementPrice: 110_000, payout: 40_000 },
+    ]);
+    expect(result?.maxPain).toBe(100_000);
+    expect(result?.payout).toBe(30_000);
   });
 
   it("recalculates a combined strike book rather than averaging maxima", () => {

@@ -367,6 +367,16 @@ export default function MaxPainResearch() {
     () => calculateMaxPain(displayedStrikes),
     [displayedStrikes]
   );
+  const distributionPayoffByStrike = useMemo(
+    () =>
+      new Map(
+        distributionMaxPain?.curve.map(point => [
+          point.settlementPrice,
+          point.payout,
+        ]) ?? []
+      ),
+    [distributionMaxPain]
+  );
   const distributionCallOi = displayedStrikes.reduce(
     (sum, row) => sum + row.callOi,
     0
@@ -1084,6 +1094,12 @@ export default function MaxPainResearch() {
                             </TableHead>
                             <TableHead className="text-right">Put OI</TableHead>
                             <TableHead className="text-right">总 OI</TableHead>
+                            <TableHead className="min-w-[190px] text-right">
+                              <span className="block">Total Payoff</span>
+                              <span className="block text-[10px] font-normal normal-case text-muted-foreground">
+                                Total Intrinsic Value · USD
+                              </span>
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1117,11 +1133,28 @@ export default function MaxPainResearch() {
                               <TableCell className="text-right">
                                 {(row.callOi + row.putOi).toFixed(4)}
                               </TableCell>
+                              <TableCell
+                                className={
+                                  row.strike === distributionMaxPain?.maxPain
+                                    ? "text-right font-mono font-semibold text-sky-400"
+                                    : "text-right font-mono"
+                                }
+                              >
+                                {money(
+                                  distributionPayoffByStrike.get(row.strike)
+                                )}
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
                     </div>
+                    <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+                      每行把该 Strike 视为到期结算价 S，汇总整张所选期权链：
+                      Call max(S−K, 0) × OI + Put max(K−S, 0) × OI。 OI 为
+                      BTC-eq，因此结果是 USD 到期总内在价值；全列最小值即 Max
+                      Pain。
+                    </p>
                   </div>
                 </div>
 
