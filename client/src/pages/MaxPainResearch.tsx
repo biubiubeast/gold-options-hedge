@@ -833,7 +833,7 @@ export default function MaxPainResearch() {
                     className="h-9 rounded-md border border-border bg-background px-3 text-foreground"
                   >
                     <option value="front">最近到期（默认）</option>
-                    <option value="all">全部到期日合并</option>
+                    <option value="all">同产品全部到期日汇总</option>
                     {strikeMaturities.map(maturity => (
                       <option key={maturity} value={maturity}>
                         {maturity}
@@ -943,7 +943,7 @@ export default function MaxPainResearch() {
                       "所选 Max Pain",
                       money(distributionMaxPain?.maxPain),
                       strikeMaturity === "all"
-                        ? "全部到期日按 Strike 合并"
+                        ? "所选产品的全部到期日按 Strike 汇总"
                         : (displayedStrikeBooks[0]?.maturity ??
                           "没有有效到期日"),
                     ],
@@ -957,7 +957,7 @@ export default function MaxPainResearch() {
                     [
                       "有效到期日",
                       String(snapshotSummary.length),
-                      `${displayedStrikes.length} 个合并后 Strike`,
+                      `${displayedStrikes.length} 个汇总后 Strike`,
                     ],
                     [
                       "OI Notional",
@@ -991,10 +991,10 @@ export default function MaxPainResearch() {
                 {strikeMaturity === "all" ? (
                   <Alert className="border-sky-500/20 bg-sky-500/5">
                     <Info className="text-sky-400" />
-                    <AlertTitle>全部到期日合并是跨期限参考值</AlertTitle>
+                    <AlertTitle>同产品全部到期日汇总是跨期限参考值</AlertTitle>
                     <AlertDescription>
-                      它把同一观察时点所有未到期合约按 Strike
-                      合并后再最小化赔付；由于真实结算日不同，不等同于任何单一到期日的
+                      它只把同一观察时点、同一个所选产品的未到期合约按 Strike
+                      汇总后再最小化赔付；由于真实结算日不同，不等同于任何单一到期日的
                       Max Pain。逐到期日结果请看下表或点击某一行。
                     </AlertDescription>
                   </Alert>
@@ -1005,7 +1005,7 @@ export default function MaxPainResearch() {
                   maxPain={distributionMaxPain?.maxPain}
                   maturityLabel={
                     strikeMaturity === "all"
-                      ? "全部到期日合并"
+                      ? "同产品全部到期日汇总"
                       : (displayedStrikeBooks[0]?.maturity ?? "所选到期日")
                   }
                   spot={snapshotSpot}
