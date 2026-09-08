@@ -10,6 +10,7 @@ interface Props {
   maxPain?: number;
   maturityLabel: string;
   spot?: number;
+  totalIntrinsicValueByStrike?: ReadonlyMap<number, number>;
 }
 
 interface TooltipState {
@@ -18,6 +19,7 @@ interface TooltipState {
   strike: number;
   callOi: number;
   putOi: number;
+  totalIntrinsicValue?: number;
 }
 
 function price(value: number) {
@@ -41,6 +43,7 @@ export function OpenInterestByStrikeChart({
   maxPain,
   maturityLabel,
   spot,
+  totalIntrinsicValueByStrike,
 }: Props) {
   const [tooltip, setTooltip] = useState<TooltipState>();
   const geometry = useMemo(() => {
@@ -77,8 +80,9 @@ export function OpenInterestByStrikeChart({
   ) => {
     setTooltip({
       left: Math.max(8, Math.min(event.clientX + 14, window.innerWidth - 292)),
-      top: Math.max(8, Math.min(event.clientY + 14, window.innerHeight - 230)),
+      top: Math.max(8, Math.min(event.clientY + 14, window.innerHeight - 272)),
       ...row,
+      totalIntrinsicValue: totalIntrinsicValueByStrike?.get(row.strike),
     });
   };
 
@@ -176,7 +180,11 @@ export function OpenInterestByStrikeChart({
                   opacity="0.84"
                   pointerEvents="none"
                 />
-                <title>{`${price(row.strike)}\nCall OI ${number(row.callOi)}\nPut OI ${number(row.putOi)}\nTotal OI ${number(total)}`}</title>
+                <title>{`${price(row.strike)}\nCall OI ${number(row.callOi)}\nPut OI ${number(row.putOi)}\nTotal OI ${number(total)}${
+                  totalIntrinsicValueByStrike?.has(row.strike)
+                    ? `\nTotal Intrinsic Value (USD) ${price(totalIntrinsicValueByStrike.get(row.strike)!)}`
+                    : ""
+                }`}</title>
               </g>
             );
           })}
@@ -280,6 +288,25 @@ export function OpenInterestByStrikeChart({
                   : "∞"}
               </span>
             </div>
+            {tooltip.totalIntrinsicValue !== undefined ? (
+              <div className="flex justify-between gap-4 border-t border-border/60 pt-1.5">
+                <span className="text-slate-400">
+                  <span className="block">Total Intrinsic Value (USD)</span>
+                  <span className="block text-[10px]">
+                    假设结算价 = 该 Strike
+                  </span>
+                </span>
+                <span
+                  className={`font-mono ${
+                    tooltip.strike === maxPain
+                      ? "font-semibold text-sky-300"
+                      : ""
+                  }`}
+                >
+                  {price(tooltip.totalIntrinsicValue)}
+                </span>
+              </div>
+            ) : null}
             {spot ? (
               <div className="flex justify-between gap-4">
                 <span className="text-slate-400">OI Notional</span>

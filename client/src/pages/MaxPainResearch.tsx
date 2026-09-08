@@ -937,7 +937,7 @@ export default function MaxPainResearch() {
               </Alert>
             ) : distributionReady ? (
               <>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   {[
                     [
                       "所选 Max Pain",
@@ -955,6 +955,13 @@ export default function MaxPainResearch() {
                       `Call ${distributionCallOi.toFixed(2)} / Put ${distributionPutOi.toFixed(2)}`,
                     ],
                     [
+                      "Max Pain 总内在价值",
+                      money(distributionMaxPain?.payout),
+                      strikeMaturity === "all"
+                        ? "Total Intrinsic Value · USD · 跨到期日参考值"
+                        : "Total Intrinsic Value · USD · 全链最小到期赔付",
+                    ],
+                    [
                       "有效到期日",
                       String(snapshotSummary.length),
                       `${displayedStrikes.length} 个汇总后 Strike`,
@@ -967,7 +974,7 @@ export default function MaxPainResearch() {
                           : undefined
                       ),
                       snapshotSpot
-                        ? `BTC 参考价 ${money(snapshotSpot)}`
+                        ? `总 OI × BTC 参考价 ${money(snapshotSpot)}；非到期赔付`
                         : "先计算覆盖该日的 K 线后显示",
                     ],
                   ].map(([label, value, detail]) => (
@@ -1009,6 +1016,7 @@ export default function MaxPainResearch() {
                       : (displayedStrikeBooks[0]?.maturity ?? "所选到期日")
                   }
                   spot={snapshotSpot}
+                  totalIntrinsicValueByStrike={distributionPayoffByStrike}
                 />
 
                 <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
