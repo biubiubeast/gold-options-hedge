@@ -46,6 +46,7 @@ import {
 import { createAuthSession, revokeAuthToken } from "./auth";
 import {
   fetchResearchMarketHistory,
+  fetchResearchReferencePrice,
   fetchSignalPlusDay,
   fetchSignalPlusStrikeSnapshot,
   getMaxPainCoverage,
@@ -233,6 +234,7 @@ const viewerPagePermissionsInput = z.object({
 const maxPainVisibleSectionsInput = z.object({
   chart: z.boolean(),
   oiDistribution: z.boolean(),
+  oiNotional: z.boolean().default(false),
   details: z.boolean(),
   backtest: z.boolean(),
   gammaZone: z.boolean(),
@@ -481,6 +483,9 @@ export const appRouter = router({
 
   maxPainResearch: router({
     coverage: protectedProcedure.query(getMaxPainCoverage),
+    referencePrice: protectedProcedure
+      .input(z.object({ timestamp: z.number().int().positive() }))
+      .query(({ input }) => fetchResearchReferencePrice(input.timestamp)),
     intradayDay: protectedProcedure
       .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
       .query(({ input }) => fetchSignalPlusDay(input.date)),

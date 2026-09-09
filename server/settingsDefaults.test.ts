@@ -34,6 +34,7 @@ describe("operator display defaults", () => {
     expect(DEFAULT_PORTFOLIO_SETTINGS.maxPainVisibleSections).toEqual({
       chart: true,
       oiDistribution: true,
+      oiNotional: false,
       details: true,
       backtest: false,
       gammaZone: false,

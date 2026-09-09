@@ -24,6 +24,7 @@ export const DEFAULT_VIEWER_PAGE_PERMISSIONS: ViewerPagePermissions = {
 export const MAX_PAIN_SECTION_KEYS = [
   "chart",
   "oiDistribution",
+  "oiNotional",
   "details",
   "backtest",
   "gammaZone",
@@ -38,6 +39,7 @@ export type MaxPainVisibleSections = Record<
 export const DEFAULT_MAX_PAIN_VISIBLE_SECTIONS: MaxPainVisibleSections = {
   chart: true,
   oiDistribution: true,
+  oiNotional: false,
   details: true,
   backtest: false,
   gammaZone: false,

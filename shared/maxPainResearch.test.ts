@@ -5,12 +5,37 @@ import {
   calculateIntradayPoint,
   calculateMaxPain,
   mergeStrikeBooks,
+  nearestClosedKline,
+  nearestClose,
   selectIntradayExpiry,
   type IntradayMaxPainPoint,
   type ResearchKline,
 } from "./maxPainResearch";
 
 describe("BTC Max Pain research", () => {
+  it("pairs a reference price with the last closed candle and rejects stale or future prices", () => {
+    const timestamp = Date.parse("2026-08-31T16:00:00Z");
+    const candle = (closeTime: number, close: number): ResearchKline => ({
+      openTime: closeTime - 3_600_000 + 1,
+      closeTime,
+      open: close,
+      high: close,
+      low: close,
+      close,
+      volume: 1,
+    });
+    const closed = candle(timestamp - 1, 78_561.63);
+    const future = candle(timestamp + 3_600_000 - 1, 80_000);
+    expect(nearestClosedKline([future, closed], timestamp)).toEqual(closed);
+    expect(nearestClose([future, closed], timestamp)).toBe(78_561.63);
+    expect(nearestClose([future], timestamp)).toBeUndefined();
+    expect(
+      nearestClose([candle(timestamp - 7_200_001, 70_000)], timestamp)
+    ).toBeUndefined();
+    expect(
+      nearestClose([candle(timestamp, NaN), candle(timestamp, 0)], timestamp)
+    ).toBeUndefined();
+  });
   it("uses the intrinsic-payout minimum and lower strike on a tie", () => {
     const result = calculateMaxPain([
       { strike: 100, callOi: 10, putOi: 0 },

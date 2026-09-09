@@ -10,6 +10,7 @@ interface Props {
   maxPain?: number;
   maturityLabel: string;
   spot?: number;
+  showOiNotional?: boolean;
   totalIntrinsicValueByStrike?: ReadonlyMap<number, number>;
 }
 
@@ -43,6 +44,7 @@ export function OpenInterestByStrikeChart({
   maxPain,
   maturityLabel,
   spot,
+  showOiNotional = false,
   totalIntrinsicValueByStrike,
 }: Props) {
   const [tooltip, setTooltip] = useState<TooltipState>();
@@ -307,7 +309,7 @@ export function OpenInterestByStrikeChart({
                 </span>
               </div>
             ) : null}
-            {spot ? (
+            {showOiNotional && spot ? (
               <div className="flex justify-between gap-4">
                 <span className="text-slate-400">OI Notional</span>
                 <span className="font-mono">

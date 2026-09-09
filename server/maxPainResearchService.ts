@@ -3,12 +3,14 @@ import {
   OBSERVATION_HOURS,
   SIGNALPLUS_EARLIEST_VERIFIED_DATE,
   calculateIntradayPoint,
+  nearestClosedKline,
   type GammaStrikeBook,
   type MarketHistoryResponse,
   type ObservationHour,
   type OptionProduct,
   type ResearchKline,
   type ResearchKlineInterval,
+  type ResearchReferencePrice,
   type SignalPlusDayResponse,
   type SignalPlusStrikeSnapshotResponse,
 } from "@shared/maxPainResearch";
@@ -56,6 +58,10 @@ const strikeSnapshotCache = new Map<
 const marketCache = new Map<
   string,
   { expiresAt: number; value: MarketHistoryResponse }
+>();
+const referencePriceCache = new Map<
+  number,
+  { expiresAt: number; value: ResearchReferencePrice }
 >();
 
 function fetchWithTimeout(url: string, timeoutMs = 45_000) {
@@ -370,7 +376,11 @@ function intervalMilliseconds(interval: ResearchKlineInterval) {
   }[interval];
 }
 
-function validateHourlyKlines(rows: ResearchKline[], provider: string) {
+function validateHourlyKlines(
+  rows: ResearchKline[],
+  provider: string,
+  minimumRows = 24
+) {
   const valid = rows
     .filter(
       row =>
@@ -384,13 +394,17 @@ function validateHourlyKlines(rows: ResearchKline[], provider: string) {
     )
     .sort((a, b) => a.openTime - b.openTime);
   const unique = [...new Map(valid.map(row => [row.openTime, row])).values()];
-  if (unique.length < 24)
+  if (unique.length < minimumRows)
     throw new Error(`${provider} 返回的有效小时 K 线不足`);
   return unique;
 }
 
 /** Coinbase public Exchange candles, fetched in <=300-candle chunks. */
-async function fetchCoinbaseHourly(startTime: number, endTime: number) {
+async function fetchCoinbaseHourly(
+  startTime: number,
+  endTime: number,
+  minimumRows = 24
+) {
   const hour = 3_600_000;
   const result: ResearchKline[] = [];
   let cursor = startTime;
@@ -421,11 +435,15 @@ async function fetchCoinbaseHourly(startTime: number, endTime: number) {
     }
     cursor = chunkEnd + hour;
   }
-  return validateHourlyKlines(result, "Coinbase");
+  return validateHourlyKlines(result, "Coinbase", minimumRows);
 }
 
 /** OKX is the independent secondary K-line source. */
-async function fetchOkxHourly(startTime: number, endTime: number) {
+async function fetchOkxHourly(
+  startTime: number,
+  endTime: number,
+  minimumRows = 24
+) {
   const hour = 3_600_000;
   const result: ResearchKline[] = [];
   let cursor = endTime + 1;
@@ -467,10 +485,14 @@ async function fetchOkxHourly(startTime: number, endTime: number) {
     if (oldest >= cursor || oldest <= startTime) break;
     cursor = oldest;
   }
-  return validateHourlyKlines(result, "OKX");
+  return validateHourlyKlines(result, "OKX", minimumRows);
 }
 
-async function fetchBinanceHourly(startTime: number, endTime: number) {
+async function fetchBinanceHourly(
+  startTime: number,
+  endTime: number,
+  minimumRows = 24
+) {
   const result: ResearchKline[] = [];
   let cursor = startTime;
   while (cursor <= endTime) {
@@ -503,7 +525,61 @@ async function fetchBinanceHourly(startTime: number, endTime: number) {
     if (!Number.isFinite(next) || next <= cursor) break;
     cursor = next;
   }
-  return validateHourlyKlines(result, "Binance");
+  return validateHourlyKlines(result, "Binance", minimumRows);
+}
+
+/** Fetch only the hours around a selected OI observation, without a full backtest. */
+export async function fetchResearchReferencePrice(
+  timestamp: number
+): Promise<ResearchReferencePrice> {
+  if (
+    !Number.isSafeInteger(timestamp) ||
+    timestamp < Date.parse(`${SIGNALPLUS_EARLIEST_VERIFIED_DATE}T00:00:00Z`) ||
+    timestamp > Date.now()
+  )
+    throw new Error("BTC 参考价时点超出有效历史范围");
+  const cached = referencePriceCache.get(timestamp);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const hour = 3_600_000;
+  const start = Math.floor(timestamp / hour) * hour - 3 * hour;
+  const providers = [
+    {
+      source: "Coinbase Exchange",
+      symbol: "BTC-USD",
+      fetch: fetchCoinbaseHourly,
+    },
+    { source: "OKX Spot", symbol: "BTC-USDT", fetch: fetchOkxHourly },
+    { source: "Binance Spot", symbol: "BTCUSDT", fetch: fetchBinanceHourly },
+  ] as const;
+  const errors: string[] = [];
+  for (const provider of providers) {
+    try {
+      const rows = await provider.fetch(start, timestamp, 1);
+      // Reject future/unclosed candles and stale prices before trying the next source.
+      const candle = nearestClosedKline(rows, timestamp);
+      if (!candle) throw new Error("观察时点前两小时内没有有效已收盘价格");
+      const value: ResearchReferencePrice = {
+        timestamp,
+        price: candle.close,
+        priceTimestamp: candle.closeTime,
+        source: provider.source,
+        symbol: provider.symbol,
+      };
+      if (referencePriceCache.size >= 1000)
+        referencePriceCache.delete(referencePriceCache.keys().next().value!);
+      referencePriceCache.set(timestamp, {
+        expiresAt: Date.now() + DAY_CACHE_TTL_MS,
+        value,
+      });
+      return value;
+    } catch (error) {
+      errors.push(
+        `${provider.source}: ${error instanceof Error ? error.message : "读取失败"}`
+      );
+    }
+  }
+  throw new Error(`BTC 参考价读取失败：${errors.join("；")}`);
 }
 
 export function aggregateHourlyKlines(

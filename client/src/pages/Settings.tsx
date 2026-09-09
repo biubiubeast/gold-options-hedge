@@ -201,7 +201,12 @@ const maxPainSectionLabels: Array<
     "OI By Strike",
     "Deribit 实时与 SignalPlus 历史逐 Strike OI / Max Pain；默认显示",
   ],
-  ["details", "六时点明细", "各时点 Max Pain、Call/Put OI 与 Notional"],
+  [
+    "oiNotional",
+    "OI Notional 名义规模",
+    "统一显示汇总卡、表格和图表弹窗中的 OI Notional；默认隐藏，BTC 参考价始终显示",
+  ],
+  ["details", "六时点明细", "各时点 Max Pain、Call/Put OI 与 BTC 参考价"],
   ["backtest", "吸引力回测", "前后 24 小时命中率、收敛度与相关系数；默认隐藏"],
   [
     "gammaZone",

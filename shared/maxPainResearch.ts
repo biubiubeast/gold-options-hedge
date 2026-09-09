@@ -83,6 +83,15 @@ export interface MarketHistoryResponse {
   attemptedSources: string[];
 }
 
+/** A historical price reference with its actual candle time and provider. */
+export interface ResearchReferencePrice {
+  timestamp: number;
+  price: number;
+  priceTimestamp: number;
+  source: MarketHistoryResponse["source"];
+  symbol: MarketHistoryResponse["symbol"];
+}
+
 export interface GammaZone {
   date: string;
   maturity: string;
@@ -243,10 +252,12 @@ export function selectIntradayExpiry(
 }
 
 /** Return the latest fully closed hourly candle no more than two hours away. */
-export function nearestClose(klines: ResearchKline[], timestamp: number) {
+export function nearestClosedKline(klines: ResearchKline[], timestamp: number) {
   let latest: ResearchKline | undefined;
   for (const kline of klines) {
     if (
+      Number.isFinite(kline.close) &&
+      kline.close > 0 &&
       kline.closeTime <= timestamp &&
       (!latest || kline.closeTime > latest.closeTime)
     ) {
@@ -254,8 +265,12 @@ export function nearestClose(klines: ResearchKline[], timestamp: number) {
     }
   }
   return latest && timestamp - latest.closeTime <= 2 * 3_600_000
-    ? latest.close
+    ? latest
     : undefined;
+}
+
+export function nearestClose(klines: ResearchKline[], timestamp: number) {
+  return nearestClosedKline(klines, timestamp)?.close;
 }
 
 function normalPdf(value: number) {

@@ -79,9 +79,18 @@ describe("shared Max Pain access and section settings", () => {
     expect((await viewer.access.maxPainSections()).configured).toBe(false);
     await admin.access.updateMaxPainSections(hidden);
     expect(await viewer.access.maxPainSections()).toEqual({
-      sections: hidden,
+      // A saved setting from the previous version has no oiNotional key.
+      sections: { ...hidden, oiNotional: false },
       configured: true,
     });
+    await admin.access.updateMaxPainSections({ ...hidden, oiNotional: true });
+    expect((await viewer.access.maxPainSections()).sections.oiNotional).toBe(
+      true
+    );
+    await admin.access.updateMaxPainSections({ ...hidden, oiNotional: false });
+    expect((await viewer.access.maxPainSections()).sections.oiNotional).toBe(
+      false
+    );
     await expect(
       viewer.access.updateMaxPainSections({ ...hidden, chart: true })
     ).rejects.toThrow("You do not have required permission (10002)");

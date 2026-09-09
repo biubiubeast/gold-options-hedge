@@ -24,6 +24,7 @@ interface Props {
   showMaxPain: boolean;
   showGamma: boolean;
   showOiBars: boolean;
+  showOiNotional?: boolean;
   timeZone: DisplayTimeZone;
 }
 
@@ -58,6 +59,7 @@ export function MaxPainCandlestickChart({
   showMaxPain,
   showGamma,
   showOiBars,
+  showOiNotional = false,
   timeZone,
 }: Props) {
   const [tooltip, setTooltip] = useState<ChartTooltip>();
@@ -360,10 +362,14 @@ export function MaxPainCandlestickChart({
                 },
                 { label: "Strike 数", value: String(point.strikeCount) },
                 { label: "BTC 参考价", value: spot ? priceLabel(spot) : "—" },
-                {
-                  label: "OI Notional",
-                  value: spot ? priceLabel(point.totalOi * spot) : "—",
-                },
+                ...(showOiNotional
+                  ? [
+                      {
+                        label: "OI Notional",
+                        value: spot ? priceLabel(point.totalOi * spot) : "—",
+                      },
+                    ]
+                  : []),
                 {
                   label: "源快照延迟",
                   value: `${Math.max(0, Math.round((point.timestamp - point.sourceTimestamp) / 60_000))} min`,
@@ -524,20 +530,22 @@ export function MaxPainCandlestickChart({
         >
           <div className="mb-2 font-semibold text-sky-300">{tooltip.title}</div>
           <div className="space-y-1.5">
-            {tooltip.rows.map((row, index) => (
-              <div
-                key={`${row.label}-${index}`}
-                className="flex items-center justify-between gap-5"
-              >
-                <span className="text-slate-400">{row.label}</span>
-                <span
-                  className="text-right font-mono text-slate-100"
-                  style={row.color ? { color: row.color } : undefined}
+            {tooltip.rows
+              .filter(row => showOiNotional || row.label !== "OI Notional")
+              .map((row, index) => (
+                <div
+                  key={`${row.label}-${index}`}
+                  className="flex items-center justify-between gap-5"
                 >
-                  {row.value}
-                </span>
-              </div>
-            ))}
+                  <span className="text-slate-400">{row.label}</span>
+                  <span
+                    className="text-right font-mono text-slate-100"
+                    style={row.color ? { color: row.color } : undefined}
+                  >
+                    {row.value}
+                  </span>
+                </div>
+              ))}
           </div>
         </div>
       ) : null}

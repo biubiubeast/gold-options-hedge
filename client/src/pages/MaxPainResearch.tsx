@@ -34,6 +34,7 @@ import {
   calculateGrossGammaZone,
   calculateMaxPain,
   mergeStrikeBooks,
+  nearestClosedKline,
   nearestClose,
   selectIntradayExpiry,
   type GammaStrikeBook,
@@ -73,13 +74,13 @@ function observationHasOccurred(date: string, hour: ObservationHour) {
   );
 }
 
-function money(value?: number) {
+function money(value?: number, maximumFractionDigits = 0) {
   return value === undefined || !Number.isFinite(value)
     ? "—"
     : new Intl.NumberFormat("en-US", {
         style: "currency",
         currency: "USD",
-        maximumFractionDigits: 0,
+        maximumFractionDigits,
       }).format(value);
 }
 
@@ -189,6 +190,37 @@ export default function MaxPainResearch() {
       retry: 1,
     }
   );
+
+  const snapshotObservation = strikeSnapshotQuery.data?.timestamp;
+  const loadedReferenceCandle =
+    snapshotObservation && research.market
+      ? nearestClosedKline(research.market.hourlyKlines, snapshotObservation)
+      : undefined;
+  const referencePriceQuery = trpc.maxPainResearch.referencePrice.useQuery(
+    { timestamp: observationTimestamp(strikeDate, strikeHour) },
+    {
+      enabled:
+        sections.oiDistribution &&
+        distributionMode === "historical" &&
+        Boolean(snapshotObservation) &&
+        !loadedReferenceCandle,
+      staleTime: 6 * 60 * 60 * 1000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    }
+  );
+  // Reuse the chart's exact price when available; otherwise load this snapshot alone.
+  const historicalReferencePrice =
+    loadedReferenceCandle && research.market
+      ? {
+          price: loadedReferenceCandle.close,
+          priceTimestamp: loadedReferenceCandle.closeTime,
+          source: research.market.source,
+          symbol: research.market.symbol,
+        }
+      : referencePriceQuery.data?.timestamp === snapshotObservation
+        ? referencePriceQuery.data
+        : undefined;
 
   const allPoints = useMemo(
     () => research.days.flatMap(day => day.points),
@@ -430,12 +462,15 @@ export default function MaxPainResearch() {
   const snapshotSpot =
     distributionMode === "live"
       ? liveDeribitQuery.data?.spot
-      : strikeSnapshotQuery.data && research.market
-        ? nearestClose(
-            research.market.hourlyKlines,
-            strikeSnapshotQuery.data.timestamp
-          )
-        : undefined;
+      : historicalReferencePrice?.price;
+  const snapshotPriceDetail =
+    distributionMode === "live"
+      ? `Deribit BTC 指数 · ${distributionTimestamp ? formatDisplayDateTime(distributionTimestamp, timeZone, { includeZone: true }) : "等待快照"}`
+      : historicalReferencePrice
+        ? `${historicalReferencePrice.source} ${historicalReferencePrice.symbol} · 1h 收盘 ${formatDisplayDateTime(historicalReferencePrice.priceTimestamp, timeZone, { includeZone: true })}`
+        : referencePriceQuery.isFetching
+          ? "正在读取所选时点的 BTC 参考价…"
+          : "该时点参考价暂不可用，可刷新快照重试";
   const distributionLoading =
     distributionMode === "live"
       ? liveDeribitQuery.isLoading
@@ -480,10 +515,11 @@ export default function MaxPainResearch() {
   };
 
   const latest = selectedPoints.at(-1);
-  const latestSpot =
+  const latestReferenceCandle =
     latest && research.market
-      ? nearestClose(research.market.hourlyKlines, latest.timestamp)
+      ? nearestClosedKline(research.market.hourlyKlines, latest.timestamp)
       : undefined;
+  const latestSpot = latestReferenceCandle?.close;
   const latestNotional =
     latest && latestSpot ? latest.totalOi * latestSpot : undefined;
   const firstMaturityPoint =
@@ -620,7 +656,9 @@ export default function MaxPainResearch() {
         </Alert>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div
+        className={`grid gap-4 md:grid-cols-3 ${sections.oiNotional ? "xl:grid-cols-4" : ""}`}
+      >
         {[
           {
             label: "最新 Max Pain",
@@ -641,11 +679,24 @@ export default function MaxPainResearch() {
             color: "",
           },
           {
-            label: "OI Notional Value",
-            value: money(latestNotional),
-            detail: "总 OI × 同时点 BTC 现货价（量级参考）",
+            label: "BTC 参考价",
+            value: money(latestSpot, 2),
+            detail:
+              latestReferenceCandle && research.market
+                ? `${research.market.source} ${research.market.symbol} · 1h 收盘 ${formatDisplayDateTime(latestReferenceCandle.closeTime, timeZone, { includeZone: true })}`
+                : "计算后显示最新观察时点对应的价格",
             color: "text-emerald-400",
           },
+          ...(sections.oiNotional
+            ? [
+                {
+                  label: "OI Notional Value",
+                  value: money(latestNotional),
+                  detail: "总 OI × 同时点 BTC 现货价（量级参考）",
+                  color: "text-emerald-400",
+                },
+              ]
+            : []),
         ].map(card => (
           <Card key={card.label} className="glass-card">
             <CardContent className="p-4">
@@ -775,6 +826,7 @@ export default function MaxPainResearch() {
               showMaxPain={showMaxPain}
               showGamma={showGamma && sections.gammaZone}
               showOiBars={showOiBars}
+              showOiNotional={sections.oiNotional}
               timeZone={timeZone}
             />
           </CardContent>
@@ -832,7 +884,12 @@ export default function MaxPainResearch() {
                     onChange={event => setStrikeMaturity(event.target.value)}
                     className="h-9 rounded-md border border-border bg-background px-3 text-foreground"
                   >
-                    <option value="front">最近到期（默认）</option>
+                    <option value="front">
+                      最近到期
+                      {strikeMaturities[0]
+                        ? ` · ${strikeMaturities[0]}`
+                        : "（暂无有效到期日）"}
+                    </option>
                     <option value="all">同产品全部到期日汇总</option>
                     {strikeMaturities.map(maturity => (
                       <option key={maturity} value={maturity}>
@@ -843,11 +900,15 @@ export default function MaxPainResearch() {
                 </label>
                 <Button
                   variant="outline"
-                  onClick={() =>
-                    void (distributionMode === "live"
-                      ? liveDeribitQuery.refetch()
-                      : strikeSnapshotQuery.refetch())
-                  }
+                  onClick={() => {
+                    if (distributionMode === "live") {
+                      void liveDeribitQuery.refetch();
+                    } else {
+                      void strikeSnapshotQuery.refetch();
+                      if (!loadedReferenceCandle)
+                        void referencePriceQuery.refetch();
+                    }
+                  }}
                   disabled={distributionFetching}
                 >
                   {distributionFetching ? (
@@ -937,7 +998,9 @@ export default function MaxPainResearch() {
               </Alert>
             ) : distributionReady ? (
               <>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                <div
+                  className={`grid gap-3 sm:grid-cols-2 xl:grid-cols-3 ${sections.oiNotional ? "2xl:grid-cols-6" : "2xl:grid-cols-5"}`}
+                >
                   {[
                     [
                       "所选 Max Pain",
@@ -966,17 +1029,22 @@ export default function MaxPainResearch() {
                       String(snapshotSummary.length),
                       `${displayedStrikes.length} 个汇总后 Strike`,
                     ],
-                    [
-                      "OI Notional",
-                      money(
-                        snapshotSpot
-                          ? distributionTotalOi * snapshotSpot
-                          : undefined
-                      ),
-                      snapshotSpot
-                        ? `总 OI × BTC 参考价 ${money(snapshotSpot)}；非到期赔付`
-                        : "先计算覆盖该日的 K 线后显示",
-                    ],
+                    ["BTC 参考价", money(snapshotSpot, 2), snapshotPriceDetail],
+                    ...(sections.oiNotional
+                      ? [
+                          [
+                            "OI Notional",
+                            money(
+                              snapshotSpot
+                                ? distributionTotalOi * snapshotSpot
+                                : undefined
+                            ),
+                            snapshotSpot
+                              ? `总 OI × BTC 参考价 ${money(snapshotSpot)}；非到期赔付`
+                              : "等待所选时点 BTC 参考价",
+                          ],
+                        ]
+                      : []),
                   ].map(([label, value, detail]) => (
                     <div
                       key={label}
@@ -994,6 +1062,14 @@ export default function MaxPainResearch() {
                     </div>
                   ))}
                 </div>
+
+                {distributionMode === "historical" &&
+                !historicalReferencePrice &&
+                referencePriceQuery.error ? (
+                  <p className="text-xs text-amber-400" role="status">
+                    {referencePriceQuery.error.message}
+                  </p>
+                ) : null}
 
                 {strikeMaturity === "all" ? (
                   <Alert className="border-sky-500/20 bg-sky-500/5">
@@ -1016,6 +1092,7 @@ export default function MaxPainResearch() {
                       : (displayedStrikeBooks[0]?.maturity ?? "所选到期日")
                   }
                   spot={snapshotSpot}
+                  showOiNotional={sections.oiNotional}
                   totalIntrinsicValueByStrike={distributionPayoffByStrike}
                 />
 
@@ -1043,9 +1120,11 @@ export default function MaxPainResearch() {
                             </TableHead>
                             <TableHead className="text-right">Put OI</TableHead>
                             <TableHead className="text-right">总 OI</TableHead>
-                            <TableHead className="text-right">
-                              Notional
-                            </TableHead>
+                            {sections.oiNotional ? (
+                              <TableHead className="text-right">
+                                Notional
+                              </TableHead>
+                            ) : null}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1081,13 +1160,15 @@ export default function MaxPainResearch() {
                               <TableCell className="text-right">
                                 {point.totalOi.toFixed(2)}
                               </TableCell>
-                              <TableCell className="text-right">
-                                {money(
-                                  snapshotSpot
-                                    ? point.totalOi * snapshotSpot
-                                    : undefined
-                                )}
-                              </TableCell>
+                              {sections.oiNotional ? (
+                                <TableCell className="text-right">
+                                  {money(
+                                    snapshotSpot
+                                      ? point.totalOi * snapshotSpot
+                                      : undefined
+                                  )}
+                                </TableCell>
+                              ) : null}
                             </TableRow>
                           ))}
                         </TableBody>
@@ -1207,7 +1288,10 @@ export default function MaxPainResearch() {
                     <TableHead className="text-right">Call OI</TableHead>
                     <TableHead className="text-right">Put OI</TableHead>
                     <TableHead className="text-right">总 OI</TableHead>
-                    <TableHead className="text-right">Notional</TableHead>
+                    <TableHead className="text-right">BTC 参考价</TableHead>
+                    {sections.oiNotional ? (
+                      <TableHead className="text-right">Notional</TableHead>
+                    ) : null}
                     <TableHead className="text-right">源快照延迟</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1243,8 +1327,13 @@ export default function MaxPainResearch() {
                           {point.totalOi.toFixed(1)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {money(spot ? point.totalOi * spot : undefined)}
+                          {money(spot, 2)}
                         </TableCell>
+                        {sections.oiNotional ? (
+                          <TableCell className="text-right">
+                            {money(spot ? point.totalOi * spot : undefined)}
+                          </TableCell>
+                        ) : null}
                         <TableCell className="text-right">
                           {Math.round(
                             (point.timestamp - point.sourceTimestamp) / 60_000

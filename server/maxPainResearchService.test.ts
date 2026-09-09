@@ -1,12 +1,115 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   aggregateHourlyKlines,
   buildStrikeBooks,
+  fetchResearchReferencePrice,
   parseSignalPlusOption,
 } from "./maxPainResearchService";
 import type { ResearchKline } from "@shared/maxPainResearch";
 
+afterEach(() => vi.unstubAllGlobals());
+
 describe("Max Pain data adapters", () => {
+  it("loads a single historical reference without requiring a month of candles", async () => {
+    const timestamp = Date.parse("2026-08-31T16:00:00Z");
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          [timestamp / 1000, 78_000, 80_000, 78_561, 79_000, 1],
+          [
+            (timestamp - 3_600_000) / 1000,
+            78_166.47,
+            78_756.81,
+            78_560.1,
+            78_561.63,
+            702.23452262,
+          ],
+        ])
+      )
+    );
+    vi.stubGlobal("fetch", mockFetch);
+    expect(await fetchResearchReferencePrice(timestamp)).toEqual({
+      timestamp,
+      price: 78_561.63,
+      priceTimestamp: timestamp - 1,
+      source: "Coinbase Exchange",
+      symbol: "BTC-USD",
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const url = new URL(mockFetch.mock.calls[0][0]);
+    expect(Date.parse(url.searchParams.get("start")!)).toBe(
+      timestamp - 3 * 3_600_000
+    );
+    expect(Date.parse(url.searchParams.get("end")!)).toBe(timestamp);
+  });
+
+  it("tries OKX when Coinbase supplies only a candle after the observation", async () => {
+    const timestamp = Date.parse("2026-09-01T16:00:00Z");
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            [timestamp / 1000, 77_000, 79_000, 78_000, 78_500, 1],
+          ])
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: "0",
+            data: [
+              [
+                String(timestamp - 3_600_000),
+                "77800",
+                "77900",
+                "77700",
+                "77850",
+                "1",
+                "1",
+                "1",
+                "1",
+              ],
+              [
+                String(timestamp - 4 * 3_600_000),
+                "77800",
+                "77900",
+                "77700",
+                "77850",
+                "1",
+                "1",
+                "1",
+                "1",
+              ],
+            ],
+          })
+        )
+      );
+    vi.stubGlobal("fetch", mockFetch);
+    expect(await fetchResearchReferencePrice(timestamp)).toMatchObject({
+      price: 77_850,
+      priceTimestamp: timestamp - 1,
+      source: "OKX Spot",
+      symbol: "BTC-USDT",
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a missing reference missing after all sources fail and rejects future requests", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(new Response("", { status: 503 }));
+    vi.stubGlobal("fetch", mockFetch);
+    await expect(
+      fetchResearchReferencePrice(Date.parse("2026-08-30T16:00:00Z"))
+    ).rejects.toThrow("BTC 参考价读取失败");
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    await expect(
+      fetchResearchReferencePrice(Date.now() + 86_400_000)
+    ).rejects.toThrow("超出有效历史范围");
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
   it("parses BTC-settled and USDC-settled Deribit-style option names", () => {
     expect(
       parseSignalPlusOption({
