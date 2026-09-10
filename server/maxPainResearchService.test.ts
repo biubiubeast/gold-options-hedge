@@ -4,12 +4,38 @@ import {
   buildStrikeBooks,
   fetchResearchReferencePrice,
   parseSignalPlusOption,
+  validateMarketCoverage,
 } from "./maxPainResearchService";
 import type { ResearchKline } from "@shared/maxPainResearch";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Max Pain data adapters", () => {
+  it("accepts a complete 90-day history and rejects a truncated month or internal gap", () => {
+    const start = Date.parse("2026-06-11T00:00:00Z");
+    const end = Date.parse("2026-09-08T23:59:59Z");
+    const history = Array.from({ length: 90 * 24 }, (_, i) => ({
+      openTime: start + i * 3600000,
+      closeTime: start + (i + 1) * 3600000 - 1,
+      open: 100,
+      close: 100,
+      low: 99,
+      high: 101,
+      volume: 1,
+    }));
+    expect(validateMarketCoverage(history, start, end)).toHaveLength(2160);
+    expect(aggregateHourlyKlines(history, start, end, "4h")).toHaveLength(540);
+    expect(() =>
+      validateMarketCoverage(history.slice(0, 30 * 24), start, end)
+    ).toThrow("缺少 1440");
+    expect(() =>
+      validateMarketCoverage(
+        history.filter((_, i) => i !== 800),
+        start,
+        end
+      )
+    ).toThrow("缺少 1");
+  });
   it("loads a single historical reference without requiring a month of candles", async () => {
     const timestamp = Date.parse("2026-08-31T16:00:00Z");
     const mockFetch = vi.fn().mockResolvedValue(

@@ -80,7 +80,7 @@ describe("shared Max Pain access and section settings", () => {
     await admin.access.updateMaxPainSections(hidden);
     expect(await viewer.access.maxPainSections()).toEqual({
       // A saved setting from the previous version has no oiNotional key.
-      sections: { ...hidden, oiNotional: false },
+      sections: { ...hidden, oiNotional: false, gammaExposure: true },
       configured: true,
     });
     await admin.access.updateMaxPainSections({ ...hidden, oiNotional: true });
@@ -89,6 +89,13 @@ describe("shared Max Pain access and section settings", () => {
     );
     await admin.access.updateMaxPainSections({ ...hidden, oiNotional: false });
     expect((await viewer.access.maxPainSections()).sections.oiNotional).toBe(
+      false
+    );
+    await admin.access.updateMaxPainSections({
+      ...hidden,
+      gammaExposure: false,
+    });
+    expect((await viewer.access.maxPainSections()).sections.gammaExposure).toBe(
       false
     );
     await expect(

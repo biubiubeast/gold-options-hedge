@@ -11,16 +11,24 @@ import {
   type DisplayTimeZone,
 } from "@shared/displayTimezone";
 import {
+  useEffect,
+  useRef,
+  useId,
   useMemo,
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { GAMMA_MODELS, type SignedGammaSnapshot } from "@shared/maxPainGamma";
+import { gammaFlipLabel } from "./MaxPainGammaPanel";
 
 interface Props {
   klines: ResearchKline[];
   referenceKlines?: ResearchKline[];
   maxPainPoints: IntradayMaxPainPoint[];
   gammaZones: GammaZone[];
+  signedGamma?: SignedGammaSnapshot[];
+  showSignedGamma?: boolean;
+  showGammaFlip?: boolean;
   showMaxPain: boolean;
   showGamma: boolean;
   showOiBars: boolean;
@@ -50,12 +58,38 @@ function productLabel(product: OptionProduct) {
   return product === "inverse" ? "BTC 结算" : "USDC 结算";
 }
 
+function gammaTooltipRows(s: SignedGammaSnapshot): ChartTooltip["rows"] {
+  return [
+    { label: "模型", value: GAMMA_MODELS.find(m => m.id === s.model)!.label },
+    { label: "到期日", value: s.maturity },
+    {
+      label: "正 Gamma USD/1%",
+      value: priceLabel(s.positiveGamma),
+      color: "#2dd4bf",
+    },
+    {
+      label: "负 Gamma USD/1%",
+      value: priceLabel(s.negativeGamma),
+      color: "#fb923c",
+    },
+    { label: "净 Gamma USD/1%", value: priceLabel(s.netGamma) },
+    { label: "Gamma Flip", value: gammaFlipLabel(s), color: "#fde047" },
+    {
+      label: "年化RV",
+      value: `${(s.volatility * 100).toFixed(1)}%${s.volatilityFallback ? " (60%假设)" : s.volatilityFloor ? " (5%下限)" : ""}`,
+    },
+  ];
+}
+
 /** Lightweight SVG chart: no extra chart runtime and safe under Cronus page zoom. */
 export function MaxPainCandlestickChart({
   klines,
   referenceKlines,
   maxPainPoints,
   gammaZones,
+  signedGamma = [],
+  showSignedGamma = false,
+  showGammaFlip = false,
   showMaxPain,
   showGamma,
   showOiBars,
@@ -63,11 +97,31 @@ export function MaxPainCandlestickChart({
   timeZone,
 }: Props) {
   const [tooltip, setTooltip] = useState<ChartTooltip>();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const clipId = useId();
+  const [viewportWidth, setViewportWidth] = useState(1000);
+  const [zoom, setZoom] = useState(1);
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() =>
+      setViewportWidth(element.clientWidth)
+    );
+    setViewportWidth(element.clientWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (scrollRef.current && zoom === 1) scrollRef.current.scrollLeft = 0;
+    setTooltip(undefined);
+  }, [zoom, klines]);
   const geometry = useMemo(() => {
     if (!klines.length) return null;
-    const width = Math.max(1000, Math.min(9000, klines.length * 8));
+    // Default overview fits the entire requested history, independent of bar count.
+    const width = Math.max(280, viewportWidth - 2) * zoom;
     const height = showOiBars ? 640 : 500;
-    const margin = { top: 22, right: 90, bottom: 40, left: 18 };
+    const margin = { top: 22, right: 90, bottom: 40, left: 30 };
     const innerWidth = width - margin.left - margin.right;
     const pricePanelHeight = 420;
     const pricePanelBottom = margin.top + pricePanelHeight;
@@ -83,6 +137,20 @@ export function MaxPainCandlestickChart({
     if (showGamma)
       prices.push(
         ...gammaZones.flatMap(zone => [zone.lowerStrike, zone.upperStrike])
+      );
+    if (showSignedGamma)
+      prices.push(
+        ...signedGamma.flatMap(s =>
+          [s.positiveBand, s.negativeBand].flatMap(b =>
+            b ? [b.lower, b.upper, b.peak] : []
+          )
+        )
+      );
+    if (showGammaFlip)
+      prices.push(
+        ...signedGamma.flatMap(s =>
+          s.nearestFlip === undefined ? [] : [s.nearestFlip]
+        )
       );
     let minimum = Math.min(...prices);
     let maximum = Math.max(...prices);
@@ -107,7 +175,19 @@ export function MaxPainCandlestickChart({
       x,
       y,
     };
-  }, [gammaZones, klines, maxPainPoints, showGamma, showMaxPain, showOiBars]);
+  }, [
+    gammaZones,
+    klines,
+    maxPainPoints,
+    showGamma,
+    showMaxPain,
+    showOiBars,
+    viewportWidth,
+    zoom,
+    signedGamma,
+    showSignedGamma,
+    showGammaFlip,
+  ]);
 
   const showTooltip = (
     event: ReactPointerEvent<SVGElement>,
@@ -132,7 +212,10 @@ export function MaxPainCandlestickChart({
 
   if (!geometry) {
     return (
-      <div className="flex h-[420px] items-center justify-center rounded-lg border border-dashed border-border/70 text-sm text-muted-foreground">
+      <div
+        ref={containerRef}
+        className="flex h-[420px] items-center justify-center rounded-lg border border-dashed border-border/70 text-sm text-muted-foreground"
+      >
         点击“计算”后加载 BTC K 线和 Max Pain。
       </div>
     );
@@ -153,7 +236,7 @@ export function MaxPainCandlestickChart({
     y,
   } = geometry;
   const candleWidth = Math.max(
-    1.5,
+    0.4,
     Math.min(6, (innerWidth / Math.max(klines.length, 1)) * 0.62)
   );
   const maxPainPath = maxPainPoints
@@ -166,7 +249,11 @@ export function MaxPainCandlestickChart({
     { length: 6 },
     (_, index) => maximum - ((maximum - minimum) * index) / 5
   );
-  const dateTickCount = Math.min(8, klines.length);
+  const dateTickCount = Math.min(
+    Math.max(2, Math.floor(width / 140)),
+    12,
+    klines.length
+  );
   const dateTicks = Array.from(
     { length: dateTickCount },
     (_, index) =>
@@ -180,22 +267,84 @@ export function MaxPainCandlestickChart({
   const oiY = (value: number) =>
     oiPanelTop + oiPanelHeight - (value / maxOi) * oiPanelHeight;
   const oiBarWidth = Math.max(
-    3,
+    0.6,
     Math.min(16, (innerWidth / Math.max(maxPainPoints.length, 1)) * 0.62)
   );
   const spotKlines = referenceKlines?.length ? referenceKlines : klines;
 
   return (
-    <div className="relative">
-      <div className="overflow-x-auto rounded-lg border border-primary/15 bg-[#071018] shadow-inner">
+    <div ref={containerRef} className="relative min-w-0">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span>
+          已加载 {klines.length} 根 K 线 ·{" "}
+          {formatDisplayDateTime(klines[0].openTime, timeZone, {
+            includeZone: true,
+          })}{" "}
+          ～{" "}
+          {formatDisplayDateTime(klines.at(-1)!.closeTime, timeZone, {
+            includeZone: true,
+          })}
+        </span>
+        <div className="flex items-center gap-2">
+          <label>
+            图表缩放{" "}
+            <select
+              aria-label="图表缩放"
+              className="rounded border border-border bg-background p-1"
+              value={zoom}
+              onChange={e => setZoom(Number(e.target.value))}
+            >
+              <option value={1}>全区间</option>
+              <option value={2}>2×</option>
+              <option value={4}>4×</option>
+              <option value={8}>8×</option>
+            </select>
+          </label>
+          {zoom > 1 && (
+            <button
+              className="rounded border border-border px-2 py-1"
+              onClick={() => {
+                if (scrollRef.current)
+                  scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+              }}
+            >
+              跳到最新
+            </button>
+          )}
+        </div>
+      </div>
+      {(showSignedGamma || showGammaFlip) && (
+        <p className="mb-2 text-xs text-muted-foreground">
+          <span className="text-teal-300">青：正 Gamma 假设</span> ·{" "}
+          <span className="text-orange-300">橙：负 Gamma 假设</span> ·{" "}
+          <span className="text-yellow-300">黄虚线：最近 Flip</span>
+          ；均为每日固定快照，不连接缺失日或到期后的数据。
+        </p>
+      )}
+      <div
+        ref={scrollRef}
+        data-testid="max-pain-chart-scroll"
+        className="overflow-x-auto rounded-lg border border-primary/15 bg-[#071018] shadow-inner"
+      >
         <svg
           width={width}
           height={height}
+          style={{ display: "block" }}
           role="img"
           aria-label="BTC K线、最大痛点、对应OI柱与Gamma代理区叠加图"
           onPointerLeave={() => setTooltip(undefined)}
         >
           <rect width={width} height={height} fill="#071018" />
+          <defs>
+            <clipPath id={clipId}>
+              <rect
+                x={margin.left}
+                y={margin.top}
+                width={innerWidth}
+                height={pricePanelHeight}
+              />
+            </clipPath>
+          </defs>
           {priceTicks.map(tick => (
             <g key={tick}>
               <line
@@ -220,9 +369,15 @@ export function MaxPainCandlestickChart({
           {showGamma &&
             gammaZones.map(zone => {
               const dayStart = Date.parse(`${zone.date}T00:00:00Z`);
-              const dayEnd = dayStart + 86_400_000;
+              const dayEnd = Math.min(
+                dayStart + 86_400_000,
+                Date.parse(`${zone.maturity}T08:00:00Z`)
+              );
               return (
-                <g key={`${zone.date}-${zone.maturity}-${zone.product}`}>
+                <g
+                  key={`${zone.date}-${zone.maturity}-${zone.product}`}
+                  clipPath={`url(#${clipId})`}
+                >
                   <rect
                     x={x(dayStart)}
                     y={y(zone.upperStrike)}
@@ -248,8 +403,75 @@ export function MaxPainCandlestickChart({
               );
             })}
 
+          {(showSignedGamma || showGammaFlip) && (
+            <g clipPath={`url(#${clipId})`}>
+              {signedGamma.map(s => {
+                const title = `${formatDisplayDateTime(s.timestamp, timeZone, { includeZone: true })} · Gamma 假设`;
+                const rows = gammaTooltipRows(s);
+                return (
+                  <g
+                    key={`signed-${s.timestamp}-${s.maturity}`}
+                    onPointerEnter={event => showTooltip(event, title, rows)}
+                    onPointerMove={event => showTooltip(event, title, rows)}
+                  >
+                    {showSignedGamma &&
+                      [
+                        [s.positiveBand, "#2dd4bf"],
+                        [s.negativeBand, "#fb923c"],
+                      ].map(([rawBand, rawColor], i) => {
+                        const b =
+                            rawBand as SignedGammaSnapshot["positiveBand"],
+                          color = rawColor as string;
+                        return b ? (
+                          <g key={i}>
+                            <rect
+                              x={x(s.timestamp)}
+                              y={y(b.upper)}
+                              width={Math.max(
+                                x(s.validUntil) - x(s.timestamp),
+                                1
+                              )}
+                              height={Math.max(y(b.lower) - y(b.upper), 2)}
+                              fill={color}
+                              opacity={0.13}
+                            />
+                            <line
+                              x1={x(s.timestamp)}
+                              x2={x(s.validUntil)}
+                              y1={y(b.peak)}
+                              y2={y(b.peak)}
+                              stroke={color}
+                              strokeWidth={1.5}
+                              opacity={0.8}
+                            />
+                          </g>
+                        ) : null;
+                      })}
+                    {showGammaFlip && s.nearestFlip !== undefined && (
+                      <line
+                        data-gamma-flip={s.nearestFlip}
+                        x1={x(s.timestamp)}
+                        x2={x(s.validUntil)}
+                        y1={y(s.nearestFlip)}
+                        y2={y(s.nearestFlip)}
+                        stroke="#fde047"
+                        strokeDasharray="6 4"
+                        strokeWidth={2.5}
+                      />
+                    )}
+                    <title>{`${title}\n${rows.map(r => `${r.label}: ${r.value}`).join("\n")}`}</title>
+                  </g>
+                );
+              })}
+            </g>
+          )}
           {klines.map(kline => {
             const center = x(kline.openTime);
+            // At full-range zoom, wide hit boxes would select a later candle.
+            const hitWidth = Math.min(
+              12,
+              Math.max(0.25, x(kline.closeTime) - center)
+            );
             const rising = kline.close >= kline.open;
             const color = rising ? "#22c55e" : "#ef4444";
             const top = y(Math.max(kline.open, kline.close));
@@ -292,9 +514,9 @@ export function MaxPainCandlestickChart({
                 }
               >
                 <rect
-                  x={center - Math.max(candleWidth, 7) / 2}
+                  x={center - hitWidth / 2}
                   y={margin.top}
-                  width={Math.max(candleWidth, 7)}
+                  width={hitWidth}
                   height={pricePanelHeight}
                   fill="transparent"
                 />
@@ -320,6 +542,41 @@ export function MaxPainCandlestickChart({
               </g>
             );
           })}
+
+          {/* Only thin line targets sit above candles; filled bands stay below. */}
+          {(showSignedGamma || showGammaFlip) && (
+            <g clipPath={`url(#${clipId})`}>
+              {signedGamma.map(s => {
+                const levels = [
+                  ...(showSignedGamma
+                    ? [s.positiveBand?.peak, s.negativeBand?.peak]
+                    : []),
+                  ...(showGammaFlip ? [s.nearestFlip] : []),
+                ].filter((level): level is number => level !== undefined);
+                const show = (event: ReactPointerEvent<SVGElement>) =>
+                  showTooltip(
+                    event,
+                    `${formatDisplayDateTime(s.timestamp, timeZone, { includeZone: true })} · Gamma 假设`,
+                    gammaTooltipRows(s)
+                  );
+                return levels.map((level, i) => (
+                  <line
+                    key={`gamma-hit-${s.timestamp}-${i}`}
+                    data-gamma-tooltip={s.timestamp}
+                    x1={x(s.timestamp)}
+                    x2={x(s.validUntil)}
+                    y1={y(level)}
+                    y2={y(level)}
+                    stroke="transparent"
+                    strokeWidth={8}
+                    pointerEvents="stroke"
+                    onPointerEnter={show}
+                    onPointerMove={show}
+                  />
+                ));
+              })}
+            </g>
+          )}
 
           {showMaxPain && maxPainPath ? (
             <path
@@ -500,7 +757,7 @@ export function MaxPainCandlestickChart({
             </g>
           ) : null}
 
-          {dateTicks.map(item => (
+          {dateTicks.map((item, index) => (
             <g key={`date-${item.openTime}`}>
               <line
                 x1={x(item.openTime)}
@@ -514,7 +771,13 @@ export function MaxPainCandlestickChart({
                 y={height - 14}
                 fill="#9aa8b5"
                 fontSize="11"
-                textAnchor="middle"
+                textAnchor={
+                  index === 0
+                    ? "start"
+                    : index === dateTicks.length - 1
+                      ? "end"
+                      : "middle"
+                }
               >
                 {formatDisplayMonthDayTime(item.openTime, timeZone)}
               </text>

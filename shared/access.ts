@@ -28,6 +28,7 @@ export const MAX_PAIN_SECTION_KEYS = [
   "details",
   "backtest",
   "gammaZone",
+  "gammaExposure",
   "methodology",
 ] as const;
 
@@ -43,5 +44,6 @@ export const DEFAULT_MAX_PAIN_VISIBLE_SECTIONS: MaxPainVisibleSections = {
   details: true,
   backtest: false,
   gammaZone: false,
+  gammaExposure: true,
   methodology: true,
 };

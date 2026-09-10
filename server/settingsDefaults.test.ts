@@ -30,7 +30,7 @@ describe("operator display defaults", () => {
     });
   });
 
-  it("defaults Max Pain to core charts and details without advanced modules", () => {
+  it("shows signed Gamma scenarios while preserving hidden gross Gamma and backtest", () => {
     expect(DEFAULT_PORTFOLIO_SETTINGS.maxPainVisibleSections).toEqual({
       chart: true,
       oiDistribution: true,
@@ -38,6 +38,7 @@ describe("operator display defaults", () => {
       details: true,
       backtest: false,
       gammaZone: false,
+      gammaExposure: true,
       methodology: true,
     });
   });

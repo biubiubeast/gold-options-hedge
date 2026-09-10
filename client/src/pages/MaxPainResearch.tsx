@@ -1,4 +1,6 @@
 import { MaxPainCandlestickChart } from "@/components/MaxPainCandlestickChart";
+import { MaxPainGammaPanel } from "@/components/MaxPainGammaPanel";
+import { calculateSignedGamma, type GammaModel } from "@shared/maxPainGamma";
 import { OpenInterestByStrikeChart } from "@/components/OpenInterestByStrikeChart";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -136,6 +138,10 @@ function SegmentedButton({
 
 export default function MaxPainResearch() {
   const { user } = useAuth();
+  const viewerPages = trpc.access.viewerPages.useQuery(undefined, {
+    enabled: user?.role !== "admin",
+    staleTime: 5_000,
+  });
   const { settings } = usePortfolioSettings();
   const { timeZone } = useDisplayTimezone();
   const sharedSectionsQuery = trpc.access.maxPainSections.useQuery(undefined, {
@@ -158,6 +164,11 @@ export default function MaxPainResearch() {
   const [showMaxPain, setShowMaxPain] = useState(true);
   const [showOiBars, setShowOiBars] = useState(true);
   const [showGamma, setShowGamma] = useState(false);
+  const [gammaModel, setGammaModel] = useState<GammaModel>(
+    "call-long-put-short"
+  );
+  const [showSignedGamma, setShowSignedGamma] = useState(true);
+  const [showGammaFlip, setShowGammaFlip] = useState(true);
   const [distributionMode, setDistributionMode] = useState<
     "live" | "historical"
   >("live");
@@ -294,6 +305,32 @@ export default function MaxPainResearch() {
       return zone ? [zone] : [];
     });
   }, [product, research.days, research.market, selectedAtZero]);
+  const signedGamma = useMemo(() => {
+    if (!research.market || !sections.gammaExposure) return [];
+    return research.days
+      .flatMap(day => {
+        const selected = selectedAtZero.get(day.date);
+        const book = day.gammaBooksAtZero.find(
+          b => b.product === product && b.maturity === selected?.maturity
+        );
+        if (!book) return [];
+        const snapshot = calculateSignedGamma(
+          day.date,
+          book,
+          research.market!.hourlyKlines,
+          gammaModel
+        );
+        return snapshot ? [snapshot] : [];
+      })
+      .sort((a, b) => a.timestamp - b.timestamp);
+  }, [
+    product,
+    research.days,
+    research.market,
+    selectedAtZero,
+    gammaModel,
+    sections.gammaExposure,
+  ]);
   const backtest = useMemo(
     () =>
       research.market
@@ -799,7 +836,7 @@ export default function MaxPainResearch() {
               {sections.gammaZone ? (
                 <label className="flex items-center gap-2 text-xs">
                   <Switch checked={showGamma} onCheckedChange={setShowGamma} />
-                  Gamma
+                  毛 Gamma（无方向）
                 </label>
               ) : null}
             </div>
@@ -818,11 +855,29 @@ export default function MaxPainResearch() {
                 </AlertDescription>
               </Alert>
             ) : null}
+            {sections.gammaExposure && (
+              <MaxPainGammaPanel
+                canViewFormulas={
+                  user?.role === "admin" || Boolean(viewerPages.data?.formulas)
+                }
+                snapshots={signedGamma}
+                model={gammaModel}
+                setModel={setGammaModel}
+                visible={showSignedGamma}
+                setVisible={setShowSignedGamma}
+                flipVisible={showGammaFlip}
+                setFlipVisible={setShowGammaFlip}
+                timeZone={timeZone}
+              />
+            )}
             <MaxPainCandlestickChart
               klines={research.market?.displayKlines ?? []}
               referenceKlines={research.market?.hourlyKlines ?? []}
               maxPainPoints={selectedPoints}
               gammaZones={gammaZones}
+              signedGamma={signedGamma}
+              showSignedGamma={showSignedGamma && sections.gammaExposure}
+              showGammaFlip={showGammaFlip && sections.gammaExposure}
               showMaxPain={showMaxPain}
               showGamma={showGamma && sections.gammaZone}
               showOiBars={showOiBars}
@@ -1570,6 +1625,9 @@ export default function MaxPainResearch() {
                         </TableCell>
                         <TableCell className="text-right">
                           {(zone.volatility * 100).toFixed(1)}%
+                          {zone.volatilityFallback
+                            ? "（样本不足，60%假设）"
+                            : ""}
                         </TableCell>
                       </TableRow>
                     ))}

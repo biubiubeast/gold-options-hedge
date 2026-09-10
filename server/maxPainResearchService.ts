@@ -611,6 +611,25 @@ export function aggregateHourlyKlines(
     });
 }
 
+/** Reject silently truncated histories (e.g. a provider returning just a month). */
+export function validateMarketCoverage(
+  rows: ResearchKline[],
+  start: number,
+  end: number
+) {
+  const hour = 3_600_000;
+  const last = Math.min(
+    Math.floor(end / hour) * hour,
+    Math.floor(Date.now() / hour) * hour - hour
+  );
+  const times = new Set(rows.map(r => r.openTime));
+  let missing = 0;
+  for (let t = start; t <= last; t += hour) if (!times.has(t)) missing++;
+  if (missing)
+    throw new Error(`请求区间缺少 ${missing} 根已收盘小时 K 线，拒绝截断数据`);
+  return rows;
+}
+
 /** Fetch provider-neutral hourly candles and aggregate them on UTC boundaries. */
 export async function fetchResearchMarketHistory(
   startDate: string,
@@ -636,7 +655,11 @@ export async function fetchResearchMarketHistory(
   let source: MarketHistoryResponse["source"] = "Coinbase Exchange";
   let symbol: MarketHistoryResponse["symbol"] = "BTC-USD";
   try {
-    hourlyKlines = await fetchCoinbaseHourly(paddedStart, paddedEnd);
+    hourlyKlines = validateMarketCoverage(
+      await fetchCoinbaseHourly(paddedStart, paddedEnd),
+      start,
+      end
+    );
     attemptedSources.push("Coinbase Exchange: success");
   } catch (error) {
     attemptedSources.push(
@@ -645,7 +668,11 @@ export async function fetchResearchMarketHistory(
   }
   if (!hourlyKlines) {
     try {
-      hourlyKlines = await fetchOkxHourly(paddedStart, paddedEnd);
+      hourlyKlines = validateMarketCoverage(
+        await fetchOkxHourly(paddedStart, paddedEnd),
+        start,
+        end
+      );
       source = "OKX Spot";
       symbol = "BTC-USDT";
       attemptedSources.push("OKX Spot: success");
@@ -657,7 +684,11 @@ export async function fetchResearchMarketHistory(
   }
   if (!hourlyKlines) {
     try {
-      hourlyKlines = await fetchBinanceHourly(paddedStart, paddedEnd);
+      hourlyKlines = validateMarketCoverage(
+        await fetchBinanceHourly(paddedStart, paddedEnd),
+        start,
+        end
+      );
       source = "Binance Spot";
       symbol = "BTCUSDT";
       attemptedSources.push("Binance Spot: success");

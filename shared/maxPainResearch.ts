@@ -102,6 +102,8 @@ export interface GammaZone {
   upperStrike: number;
   grossGamma: number;
   volatility: number;
+  volatilityFallback?: boolean;
+  volatilityReturns?: number;
   assumption: string;
 }
 
@@ -277,24 +279,50 @@ function normalPdf(value: number) {
   return Math.exp(-0.5 * value * value) / Math.sqrt(2 * Math.PI);
 }
 
-function realizedVolatility(klines: ResearchKline[], timestamp: number) {
-  const closes = klines
-    .filter(
-      kline =>
-        kline.openTime <= timestamp &&
-        kline.openTime >= timestamp - 30 * 86_400_000
-    )
-    .map(kline => kline.close);
-  if (closes.length < 24) return 0.6;
-  const returns = closes
+/** Only fully closed candles known at t; never annualize a multi-hour gap as 1h. */
+export function estimateGammaVolatility(
+  klines: ResearchKline[],
+  timestamp: number
+) {
+  const candles = [
+    ...new Map(
+      klines
+        .filter(
+          kline =>
+            kline.closeTime <= timestamp &&
+            kline.closeTime > timestamp - 30 * 86_400_000 &&
+            Number.isFinite(kline.close) &&
+            kline.close > 0
+        )
+        .map(kline => [kline.openTime, kline])
+    ).values(),
+  ].sort((a, b) => a.openTime - b.openTime);
+  const returns = candles
     .slice(1)
-    .map((value, index) => Math.log(value / closes[index]));
+    .flatMap((candle, index) =>
+      candle.openTime - candles[index].openTime === 3_600_000
+        ? [Math.log(candle.close / candles[index].close)]
+        : []
+    );
+  if (returns.length < 23)
+    return {
+      volatility: 0.6,
+      fallback: true,
+      floorApplied: false,
+      sampleCount: returns.length,
+    };
   const average =
     returns.reduce((sum, value) => sum + value, 0) / returns.length;
   const variance =
     returns.reduce((sum, value) => sum + (value - average) ** 2, 0) /
     Math.max(returns.length - 1, 1);
-  return Math.max(Math.sqrt(variance * 24 * 365), 0.05);
+  const raw = Math.sqrt(variance * 24 * 365);
+  return {
+    volatility: Math.max(raw, 0.05),
+    fallback: false,
+    floorApplied: raw < 0.05,
+    sampleCount: returns.length,
+  };
 }
 
 /**
@@ -310,11 +338,13 @@ export function calculateGrossGammaZone(
   const spot = nearestClose(hourlyKlines, timestamp);
   if (!spot) return null;
   const expiry = Date.parse(`${book.maturity}T08:00:00Z`);
+  if (!Number.isFinite(expiry) || expiry <= timestamp) return null;
   const years = Math.max(
     (expiry - timestamp) / (365 * 86_400_000),
     1 / (365 * 24)
   );
-  const volatility = realizedVolatility(hourlyKlines, timestamp);
+  const estimate = estimateGammaVolatility(hourlyKlines, timestamp);
+  const volatility = estimate.volatility;
   const weighted = book.strikes
     .map(row => {
       const d1 =
@@ -361,6 +391,8 @@ export function calculateGrossGammaZone(
     upperStrike: upper,
     grossGamma: total,
     volatility,
+    volatilityFallback: estimate.fallback,
+    volatilityReturns: estimate.sampleCount,
     assumption:
       "Black-Scholes、30日历史实现波动率、Call+Put OI；是毛 Gamma 集中度，不代表做市商净 Gamma 方向。",
   };

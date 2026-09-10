@@ -214,6 +214,11 @@ const maxPainSectionLabels: Array<
     "每日 00:00 的毛 Gamma 代理区、表格与图层；默认隐藏",
   ],
   ["methodology", "方法与边界", "数据范围、归属限制与模型风险说明"],
+  [
+    "gammaExposure",
+    "正负 Gamma 与 Gamma Flip（假设模型）",
+    "方向情景选择、每日明细和K线图层；默认显示，不代表真实做市商净持仓",
+  ],
 ];
 
 const fixedOptionGroups = [

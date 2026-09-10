@@ -238,6 +238,7 @@ const maxPainVisibleSectionsInput = z.object({
   details: z.boolean(),
   backtest: z.boolean(),
   gammaZone: z.boolean(),
+  gammaExposure: z.boolean().default(true),
   methodology: z.boolean(),
 });
 

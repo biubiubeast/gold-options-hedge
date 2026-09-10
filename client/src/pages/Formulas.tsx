@@ -28,9 +28,10 @@ import {
   Trash2,
   Power,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
+import { GAMMA_MODELS, GAMMA_FLIP_SCAN } from "@shared/maxPainGamma";
 import {
   BID_ASK_IV_INVERSION_TOGGLE,
   isBidAskIvInversionEnabled,
@@ -55,6 +56,13 @@ const emptyFormula: NewFormula = {
 export default function Formulas() {
   const utils = trpc.useUtils();
   const { data: formulas, isLoading } = trpc.formulas.list.useQuery();
+  useEffect(() => {
+    if (!isLoading && window.location.hash === "#max-pain-gamma") {
+      document
+        .getElementById("max-pain-gamma")
+        ?.scrollIntoView({ block: "start" });
+    }
+  }, [isLoading]);
   const updateMutation = trpc.formulas.update.useMutation({
     onSuccess: async result => {
       await utils.invalidate();
@@ -315,8 +323,123 @@ export default function Formulas() {
                   Gamma(K) = BS_Gamma(S,K,T,σ) × (CallOI+PutOI) × S² × 1%
                 </code>
                 <p className="mt-2 leading-relaxed">
-                  σ 使用过去 30 天小时收盘实现波动率；区间取累计权重 20%–80%。OI
+                  σ 使用观察时点前已收盘的过去 30
+                  天小时实现波动率（不含未来收盘）；区间取累计权重 20%–80%。OI
                   没有客户/做市商方向，因此不能解释为正/负 dealer GEX。
+                </p>
+              </div>
+              <div
+                id="max-pain-gamma"
+                className="scroll-mt-24 rounded-md border border-amber-400/30 p-3 md:col-span-2"
+              >
+                <strong className="text-foreground">
+                  正负 Gamma 与 Gamma Flip：方向假设模型 v1
+                </strong>
+                <p className="mt-2 leading-relaxed">
+                  用途：最大痛点页面的每日固定快照图层与明细。不是交易所披露的做市商净持仓，不是买卖建议。模型在最大痛点页面切换，下列说明不由仓位表达式引擎执行。
+                </p>
+                <code className="mt-2 block whitespace-normal leading-relaxed">
+                  d1 = [ln(S/K) + 0.5×σ²×T] / (σ√T)；ΓBS = exp(−d1²/2) /
+                  (√(2π)×S×σ√T)
+                </code>
+                <code className="mt-2 block whitespace-normal leading-relaxed">
+                  g(K,S) = (sCall×CallOI + sPut×PutOI) × ΓBS(S,K,T,σ) × m × S² ×
+                  0.01
+                </code>
+                <code className="mt-2 block whitespace-normal leading-relaxed">
+                  G+ = Σ max(g(K,S),0)；G− = Σ min(g(K,S),0)；Gnet = G+ + G−
+                </code>
+                <p className="mt-2 leading-relaxed">
+                  先在同一 Strike 内抵消假设正负持仓，再按 g 的正/负部分计算各自
+                  20%–80% 加权分位带和峰值。负权重按绝对值取分位。单位是 USD
+                  Delta 变化 / BTC 变动 1%，不是币价涨跌预测，也不是总内在价值。
+                </p>
+                <div className="mt-2 space-y-1">
+                  {GAMMA_MODELS.map(m => (
+                    <p key={m.id}>
+                      {m.label}：sCall={m.call > 0 ? "+1" : "−1"}，sPut=
+                      {m.put > 0 ? "+1" : "−1"}。
+                    </p>
+                  ))}
+                </div>
+                <p className="mt-2 leading-relaxed">
+                  默认 Call 正、Put 负仅为可切换的情景。普通买入 Call/Put 都是正
+                  Gamma，卖出才是负 Gamma；OI
+                  本身不能识别谁买谁卖，也不能证明做市商占据某一方向。
+                </p>
+                <strong className="mt-3 block text-foreground">
+                  Gamma Flip 不是对 Strike 净 OI 简单插值
+                </strong>
+                <p className="mt-2 leading-relaxed">
+                  固定该快照的 OI、到期日和 σ，在 S₀×{GAMMA_FLIP_SCAN.lower}
+                  ～S₀×{GAMMA_FLIP_SCAN.upper} 范围按对数价格划分{" "}
+                  {GAMMA_FLIP_SCAN.intervals} 个区间，逐价重算 Γ 和
+                  Gnet。只对相邻采样间的正负变号进行二分求根，价格误差目标 $
+                  {GAMMA_FLIP_SCAN.toleranceUsd}。用指数归一化防止远虚值 Gamma
+                  数值下溢被误认为零点。
+                </p>
+                <p className="mt-2 leading-relaxed">
+                  图中显示距 S₀
+                  最近的检测交点，表中列出全部检测交点。不连跨日缺失值。不变号显示“搜索范围内无Flip”；每个
+                  Strike 的假设持仓完全抵消则没有唯一
+                  Flip。有限网格可能漏掉很窄的双交点，范围外未搜索，因此不能宣称全域唯一或全域无交点。
+                </p>
+                <strong className="mt-3 block text-foreground">
+                  数据与前提
+                </strong>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>
+                    OI：SignalPlus .com 历史接口（.net为备用），取每日 UTC 00:00
+                    前30分钟内各合约的最后记录。记录并非原子同时，接口没有交易所归属、历史IV或持仓方向。
+                  </li>
+                  <li>
+                    S₀：Coinbase BTC-USD 最近已收盘小时价格，OKX/Binance
+                    为备用，最多容许两小时滞后；不是 Deribit
+                    官方历史交割指数。切换显示时区不改变 UTC 采样时刻。
+                  </li>
+                  <li>
+                    σ：过去30天内有效相邻小时对数收益率的样本标准差×√(24×365)，只使用
+                    closeTime≤观察时刻的价格；跨缺失小时不计算1h收益。少于23个收益率时使用60%假设并提示，最低5%。不使用未来IV，扫描期间保持σ不变。
+                  </li>
+                  <li>
+                    T：所选到期日08:00
+                    UTC减观察时刻，以365天年计，模型最短1小时；过期合约不算。图层只保持至下一UTC日或到期时刻，以较早者为准，不声称日内实时更新。
+                  </li>
+                  <li>
+                    r=q=0，BTC合约乘数m=1。BTC结算与USDC结算分开计算，USDC美元展示假设1:1；采用USD等值普通BS近似，不是BTC计价的精确交易所Greeks。
+                  </li>
+                  <li>
+                    若做市商真实净Gamma为正，持续Delta对冲可能抑制波动；为负可能放大已有波动。模型方向未被观测，区域不能直接认定为支撑、阻力或上涨/下跌动能。
+                  </li>
+                </ul>
+                <p className="mt-3">
+                  参考：
+                  <a
+                    className="text-sky-400 underline"
+                    href="https://www.cboe.com/insights/posts/volatility-insights-evaluating-the-market-impact-of-spx-0-dte-options"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Cboe Gamma 对冲与净持仓
+                  </a>{" "}
+                  ·{" "}
+                  <a
+                    className="text-sky-400 underline"
+                    href="https://www.cmegroup.com/education/courses/option-greeks/options-gamma-the-greeks"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    CME Gamma 原理
+                  </a>{" "}
+                  ·{" "}
+                  <a
+                    className="text-sky-400 underline"
+                    href="https://support.deribit.com/hc/en-us/articles/31424939096093-Inverse-Options"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Deribit BTC 合约规格
+                  </a>
                 </p>
               </div>
               <div className="rounded-md border border-border/60 p-3">
