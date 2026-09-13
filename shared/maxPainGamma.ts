@@ -30,6 +30,14 @@ export const GAMMA_MODELS = [
     call: -1,
     put: -1,
   },
+  {
+    id: "taker-short-maker-long",
+    label: "假设 Taker 卖 / Maker 买（Maker 视角）",
+    // Both Call and Put longs are assigned to makers; takers hold the shorts.
+    // Selling a Call AND buying a Put is a different, mixed-sign scenario.
+    call: 1,
+    put: 1,
+  },
 ] as const;
 export type GammaModel = (typeof GAMMA_MODELS)[number]["id"];
 export const GAMMA_FLIP_SCAN = {

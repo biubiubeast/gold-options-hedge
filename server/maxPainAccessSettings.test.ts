@@ -85,6 +85,7 @@ describe("shared Max Pain access and section settings", () => {
         oiNotional: false,
         gammaExposure: true,
         aggregateMinimum: true,
+        expiryRange: true,
       },
       configured: true,
     });
@@ -117,6 +118,15 @@ describe("shared Max Pain access and section settings", () => {
     expect(
       (await viewer.access.maxPainSections()).sections.aggregateMinimum
     ).toBe(true);
+    // Shared visibility also governs the new range selector for viewer accounts.
+    await admin.access.updateMaxPainSections({ ...hidden, expiryRange: false });
+    expect((await viewer.access.maxPainSections()).sections.expiryRange).toBe(
+      false
+    );
+    await admin.access.updateMaxPainSections({ ...hidden, expiryRange: true });
+    expect((await viewer.access.maxPainSections()).sections.expiryRange).toBe(
+      true
+    );
     await expect(
       viewer.access.updateMaxPainSections({ ...hidden, chart: true })
     ).rejects.toThrow("You do not have required permission (10002)");

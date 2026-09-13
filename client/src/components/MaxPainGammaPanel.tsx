@@ -110,6 +110,18 @@ export function MaxPainGammaPanel({
           无法验证开平仓、持仓归属或这一假设。
         </p>
       )}
+      {model === "taker-short-maker-long" && (
+        <p role="status" className="text-xs leading-relaxed text-amber-300">
+          本情景假设：Taker 卖出 Call 和 Put，Maker 买入 Call 和 Put，
+          且全部存续多头由 Maker 持有、空头由 Taker 持有。图表仅显示 Maker
+          侧：Call/Put 均取正号，Gnet = +Σ(CallOI+PutOI)×ΓBS×S²×1%， 与“全部
+          Long Gamma”数值相同；Taker 侧符号相反，两侧不能重复计入。 非零 OI
+          下为单边正 Gamma，不产生正负变号的 Flip。 “卖 Call、买
+          Put”是另一种混合方向，其交易对手是“买 Call、卖 Put”， 对应已有的“Call
+          正 / Put 负”情景。 Maker/Taker 是成交流动性角色；OI
+          无法验证上述持仓归属，买入也可能是平空仓。
+        </p>
+      )}
       {latest ? (
         <>
           <p className="text-xs text-muted-foreground">

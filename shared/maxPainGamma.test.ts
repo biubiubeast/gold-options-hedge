@@ -29,6 +29,43 @@ const book: GammaStrikeBook = {
 };
 
 describe("Gamma historical scenarios", () => {
+  it("assigns both call and put longs to makers in the taker-sell scenario", () => {
+    for (const product of ["inverse", "linear"] as const) {
+      const input = { ...book, product };
+      const maker = calculateSignedGamma(
+        date,
+        input,
+        one,
+        "taker-short-maker-long"
+      )!;
+      const reverse = calculateSignedGamma(
+        date,
+        input,
+        one,
+        "taker-long-maker-short"
+      )!;
+      const gross = calculateGrossGammaZone(date, input, one)!;
+      expect(maker.positiveGamma).toBeGreaterThan(0);
+      expect(maker.negativeGamma).toBe(0);
+      expect(maker.netGamma).toBeCloseTo(gross.grossGamma, 9);
+      expect(maker.netGamma).toBeCloseTo(-reverse.netGamma, 9);
+      expect(maker.positiveBand).toEqual(reverse.negativeBand);
+      expect(maker.negativeBand).toBeUndefined();
+      expect(maker.flips).toEqual([]);
+      expect(maker.flipStatus).toBe("none-in-range");
+    }
+    const empty = calculateSignedGamma(
+      date,
+      {
+        ...book,
+        strikes: [{ strike: 100, callOi: 0, putOi: 0 }],
+      },
+      one,
+      "taker-short-maker-long"
+    )!;
+    expect(empty.netGamma).toBe(0);
+    expect(empty.flipStatus).toBe("balanced");
+  });
   it("models taker longs / maker shorts from the maker inventory without counting both sides", () => {
     for (const product of ["inverse", "linear"] as const) {
       const input = { ...book, product };

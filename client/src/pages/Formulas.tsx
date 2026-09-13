@@ -315,6 +315,19 @@ export default function Formulas() {
                   可隐藏汇总金额、对应价位、图表标线和表格/弹窗内在价值，不影响
                   OI 和各单一期限。
                 </p>
+                <p className="mt-2 leading-relaxed">
+                  自选到期日范围汇总：固定一个观察时点 t 和产品，取 E ={" "}
+                  {"{e：开始到期日 ≤ e ≤ 结束到期日，且 e 在 t 尚未到期}"}。
+                  P_range(S,t) = Σ(e∈E) P_e(S,t)， Minimum Intrinsic Value =
+                  min_S P_range(S,t)；对应价位为 argmin。 先按 Strike 合并 E
+                  中的 Call/Put OI，再计算每个候选价的总内在价值，
+                  不累加不同快照的 OI。首尾日期均包含，按交易所的合约 Expiry
+                  日期筛选；
+                  显示时区仅改变实际到期时间的显示，不改变合约集合或计算结果。
+                  范围没有匹配数据时显示无数据，不将缺失数据视为零 OI。
+                  设置中“自选到期日范围汇总”控制该功能入口； “全部到期日汇总
+                  Minimum Intrinsic Value”同时控制范围汇总的内在价值显示。
+                </p>
               </div>
               <div className="rounded-md border border-border/60 p-3">
                 <strong className="text-foreground">2. OI Notional</strong>
@@ -345,7 +358,7 @@ export default function Formulas() {
                 className="scroll-mt-24 rounded-md border border-amber-400/30 p-3 md:col-span-2"
               >
                 <strong className="text-foreground">
-                  正负 Gamma 与 Gamma Flip：方向假设模型 v2
+                  正负 Gamma 与 Gamma Flip：方向假设模型 v3
                 </strong>
                 <p className="mt-2 leading-relaxed">
                   用途：最大痛点页面的每日固定快照图层与明细。不是交易所披露的做市商净持仓，不是买卖建议。模型在最大痛点页面切换，下列说明不由仓位表达式引擎执行。
@@ -399,6 +412,18 @@ export default function Formulas() {
                   默认 Call 正、Put 负仅为可切换的情景。普通买入 Call/Put 都是正
                   Gamma，卖出才是负 Gamma；OI
                   本身不能识别谁买谁卖，也不能证明做市商占据某一方向。
+                </p>
+                <p className="mt-2 leading-relaxed">
+                  Taker 卖 / Maker 买情景：假设全部存续 Call 和 Put 的空头均归
+                  Taker、多头均归 Maker。仅计算 Maker 侧，sCall=sPut=+1，
+                  Gnet=+Σ(CallOI+PutOI)×ΓBS×m×S²×0.01，与“全部 Long
+                  Gamma”数值相同； Taker 侧为等量负值，两侧不能重复加总。非零
+                  OI、到期前正 σ 时全为正 Gamma，因此没有正负变号的 Gamma
+                  Flip；零 OI 也不代表存在唯一 Flip。卖 Call 与买 Put 是不同
+                  Gamma 符号的交易， 若假设 Taker 卖 Call、买 Put，其 Maker
+                  对手方应为买 Call、卖 Put， 对应“Call 正 / Put
+                  负”，不是本情景。 这些模型仅分配假设持仓方向，不能由历史 OI
+                  验证。
                 </p>
                 <strong className="mt-3 block text-foreground">
                   Gamma Flip 不是对 Strike 净 OI 简单插值

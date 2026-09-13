@@ -36,6 +36,7 @@ describe("operator display defaults", () => {
       oiDistribution: true,
       oiNotional: false,
       aggregateMinimum: true,
+      expiryRange: true,
       details: true,
       backtest: false,
       gammaZone: false,

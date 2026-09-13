@@ -2,7 +2,10 @@ import { MaxPainCandlestickChart } from "@/components/MaxPainCandlestickChart";
 import { MaxPainGammaPanel } from "@/components/MaxPainGammaPanel";
 import { calculateSignedGamma, type GammaModel } from "@shared/maxPainGamma";
 import { OpenInterestByStrikeChart } from "@/components/OpenInterestByStrikeChart";
-import { getOiDistributionPresentation } from "@shared/maxPainPresentation";
+import {
+  filterOiBooksByExpiryRange,
+  getOiDistributionPresentation,
+} from "@shared/maxPainPresentation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -179,6 +182,14 @@ export default function MaxPainResearch() {
   );
   const [strikeProduct, setStrikeProduct] = useState<OptionProduct>("inverse");
   const [strikeMaturity, setStrikeMaturity] = useState("front");
+  const [expiryRangeStart, setExpiryRangeStart] = useState(utcDate(0));
+  const [expiryRangeEnd, setExpiryRangeEnd] = useState(utcDate(-30));
+  // Apply a shared hide setting immediately, even before the reset effect runs.
+  const effectiveStrikeMaturity =
+    strikeMaturity === "range" && !sections.expiryRange
+      ? "front"
+      : strikeMaturity;
+  const isExpiryRange = effectiveStrikeMaturity === "range";
   const [validationError, setValidationError] = useState<string>();
   const research = useMaxPainResearch();
   const liveDeribitQuery = trpc.market.deribitBtcOptionChain.useQuery(
@@ -411,35 +422,51 @@ export default function MaxPainResearch() {
 
   useEffect(() => {
     if (
-      strikeMaturity !== "front" &&
-      strikeMaturity !== "all" &&
-      !strikeMaturities.includes(strikeMaturity)
+      (strikeMaturity === "range" && !sections.expiryRange) ||
+      (strikeMaturity !== "front" &&
+        strikeMaturity !== "all" &&
+        strikeMaturity !== "range" &&
+        !strikeMaturities.includes(strikeMaturity))
     )
       setStrikeMaturity("front");
-  }, [strikeMaturities, strikeMaturity]);
+  }, [strikeMaturities, strikeMaturity, sections.expiryRange]);
 
   useEffect(() => {
     if (!observationHasOccurred(strikeDate, strikeHour))
       setStrikeHour(latestObservationHour());
   }, [strikeDate, strikeHour]);
 
+  const rangeSelection = useMemo(
+    () =>
+      filterOiBooksByExpiryRange(strikeBooks, expiryRangeStart, expiryRangeEnd),
+    [strikeBooks, expiryRangeStart, expiryRangeEnd]
+  );
   const displayedStrikeBooks = useMemo(
     () =>
-      strikeMaturity === "all"
-        ? strikeBooks
-        : strikeMaturity === "front"
-          ? strikeBooks.slice(0, 1)
-          : strikeBooks.filter(book => book.maturity === strikeMaturity),
-    [strikeBooks, strikeMaturity]
+      isExpiryRange
+        ? rangeSelection.books
+        : effectiveStrikeMaturity === "all"
+          ? strikeBooks
+          : effectiveStrikeMaturity === "front"
+            ? strikeBooks.slice(0, 1)
+            : strikeBooks.filter(
+                book => book.maturity === effectiveStrikeMaturity
+              ),
+    [strikeBooks, effectiveStrikeMaturity, isExpiryRange, rangeSelection]
   );
   const displayedStrikes = useMemo(
     () => mergeStrikeBooks(displayedStrikeBooks),
     [displayedStrikeBooks]
   );
   const distributionPresentation = getOiDistributionPresentation(
-    strikeMaturity === "all",
+    effectiveStrikeMaturity === "all" || isExpiryRange,
     sections.aggregateMinimum
   );
+  const distributionScopeLabel = isExpiryRange
+    ? `${expiryRangeStart} 至 ${expiryRangeEnd} 到期日汇总`
+    : effectiveStrikeMaturity === "all"
+      ? "同产品全部到期日汇总"
+      : (displayedStrikeBooks[0]?.maturity ?? "所选到期日");
   const distributionMinimum = useMemo(
     () => calculateMaxPain(displayedStrikes),
     [displayedStrikes]
@@ -504,6 +531,11 @@ export default function MaxPainResearch() {
     strikeProduct,
     strikeSnapshotQuery.data,
   ]);
+  const displayedSnapshotSummary = isExpiryRange
+    ? snapshotSummary.filter(point =>
+        displayedStrikeBooks.some(book => book.maturity === point.maturity)
+      )
+    : snapshotSummary;
   const snapshotSpot =
     distributionMode === "live"
       ? liveDeribitQuery.data?.spot
@@ -911,7 +943,7 @@ export default function MaxPainResearch() {
                   OI History。青柱为 Call、紫柱为 Put。
                   {distributionPresentation.showIntrinsicValue
                     ? distributionPresentation.isAggregate
-                      ? "蓝色虚线标示全部到期日的 Minimum Intrinsic Value 对应价位，仅为跨期限假设参考，不是 Max Pain。"
+                      ? "蓝色虚线标示所选到期日汇总的 Minimum Intrinsic Value 对应价位，仅为跨期限假设参考。"
                       : "蓝色虚线为到期内在价值口径复算的 Max Pain。"
                     : "全部到期日汇总的内在价值相关显示已在设置中隐藏。"}
                 </p>
@@ -947,7 +979,8 @@ export default function MaxPainResearch() {
                 <label className="flex min-w-52 flex-col gap-1 text-xs text-muted-foreground">
                   <span>Expiry 到期日</span>
                   <select
-                    value={strikeMaturity}
+                    aria-label="OI 分布到期日"
+                    value={effectiveStrikeMaturity}
                     onChange={event => setStrikeMaturity(event.target.value)}
                     className="h-9 rounded-md border border-border bg-background px-3 text-foreground"
                   >
@@ -958,6 +991,9 @@ export default function MaxPainResearch() {
                         : "（暂无有效到期日）"}
                     </option>
                     <option value="all">同产品全部到期日汇总</option>
+                    {sections.expiryRange && (
+                      <option value="range">自选到期日范围汇总</option>
+                    )}
                     {strikeMaturities.map(maturity => (
                       <option key={maturity} value={maturity}>
                         {maturity}
@@ -987,6 +1023,63 @@ export default function MaxPainResearch() {
                 </Button>
               </div>
             </div>
+            {isExpiryRange && (
+              <div className="space-y-2 rounded-lg border border-sky-500/20 bg-sky-500/5 p-3">
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    <span>开始到期日（含）</span>
+                    <input
+                      aria-label="范围汇总开始到期日"
+                      type="date"
+                      value={expiryRangeStart}
+                      onChange={event =>
+                        setExpiryRangeStart(event.target.value)
+                      }
+                      className="h-9 rounded-md border border-border bg-background px-3 text-foreground"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    <span>结束到期日（含）</span>
+                    <input
+                      aria-label="范围汇总结束到期日"
+                      type="date"
+                      min={expiryRangeStart || undefined}
+                      value={expiryRangeEnd}
+                      onChange={event => setExpiryRangeEnd(event.target.value)}
+                      className="h-9 rounded-md border border-border bg-background px-3 text-foreground"
+                    />
+                  </label>
+                  <Badge variant="outline">
+                    {displayedStrikeBooks.length} / {strikeBooks.length}{" "}
+                    个到期日
+                  </Badge>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  按合约标注的 Expiry
+                  日期筛选，包含首尾两日；仅使用当前所选快照中的未到期合约。
+                  修改日期会同步更新 OI 图、汇总数值和下方两张表。
+                  该范围是到期日范围，不累加多个观察时点的 OI。
+                  {displayedStrikeBooks.length > 0 && (
+                    <>
+                      {" "}
+                      实际纳入的到期时间：
+                      {formatDisplayDateTime(
+                        `${displayedStrikeBooks[0].maturity}T08:00:00Z`,
+                        timeZone,
+                        { includeZone: true }
+                      )}
+                      ～
+                      {formatDisplayDateTime(
+                        `${displayedStrikeBooks.at(-1)!.maturity}T08:00:00Z`,
+                        timeZone,
+                        { includeZone: true }
+                      )}
+                      。
+                    </>
+                  )}
+                </p>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-4">
               {distributionMode === "historical" ? (
                 <>
@@ -1046,7 +1139,16 @@ export default function MaxPainResearch() {
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
-            {distributionLoading ? (
+            {isExpiryRange && rangeSelection.error ? (
+              <Alert
+                role="alert"
+                className="border-amber-500/30 bg-amber-500/5"
+              >
+                <AlertTriangle className="text-amber-400" />
+                <AlertTitle>到期日范围无效</AlertTitle>
+                <AlertDescription>{rangeSelection.error}</AlertDescription>
+              </Alert>
+            ) : distributionLoading ? (
               <div className="flex h-44 items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {distributionMode === "live"
@@ -1065,6 +1167,20 @@ export default function MaxPainResearch() {
               </Alert>
             ) : distributionReady ? (
               <>
+                {isExpiryRange && displayedStrikeBooks.length === 0 && (
+                  <Alert
+                    role="status"
+                    className="border-sky-500/20 bg-sky-500/5"
+                  >
+                    <Info className="text-sky-400" />
+                    <AlertTitle>所选范围内没有可用的未到期合约</AlertTitle>
+                    <AlertDescription>
+                      当前快照可用到期日范围为 {strikeMaturities[0] ?? "—"} 至{" "}
+                      {strikeMaturities.at(-1) ?? "—"}。
+                      请调整到期日范围或历史快照；缺失数据不代表市场 OI 为零。
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <div
                   className={`grid gap-3 sm:grid-cols-2 xl:grid-cols-3 ${distributionPresentation.showIntrinsicValue ? (sections.oiNotional ? "2xl:grid-cols-6" : "2xl:grid-cols-5") : sections.oiNotional ? "2xl:grid-cols-4" : "2xl:grid-cols-3"}`}
                 >
@@ -1083,10 +1199,14 @@ export default function MaxPainResearch() {
                       : []),
                     [
                       "所选总 OI",
-                      distributionTotalOi.toLocaleString(undefined, {
-                        maximumFractionDigits: 2,
-                      }),
-                      `Call ${distributionCallOi.toFixed(2)} / Put ${distributionPutOi.toFixed(2)}`,
+                      displayedStrikes.length
+                        ? distributionTotalOi.toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })
+                        : "—",
+                      displayedStrikes.length
+                        ? `Call ${distributionCallOi.toFixed(2)} / Put ${distributionPutOi.toFixed(2)}`
+                        : "无可用逐 Strike OI",
                     ],
                     ...(distributionPresentation.showIntrinsicValue
                       ? [
@@ -1101,7 +1221,7 @@ export default function MaxPainResearch() {
                       : []),
                     [
                       "有效到期日",
-                      String(snapshotSummary.length),
+                      String(displayedStrikeBooks.length),
                       `${displayedStrikes.length} 个汇总后 Strike`,
                     ],
                     ["BTC 参考价", money(snapshotSpot, 2), snapshotPriceDetail],
@@ -1110,13 +1230,13 @@ export default function MaxPainResearch() {
                           [
                             "OI Notional",
                             money(
-                              snapshotSpot
+                              snapshotSpot && displayedStrikes.length
                                 ? distributionTotalOi * snapshotSpot
                                 : undefined
                             ),
-                            snapshotSpot
+                            snapshotSpot && displayedStrikes.length
                               ? `总 OI × BTC 参考价 ${money(snapshotSpot)}；非到期赔付`
-                              : "等待所选时点 BTC 参考价",
+                              : "等待所选时点 OI 与 BTC 参考价",
                           ],
                         ]
                       : []),
@@ -1146,14 +1266,18 @@ export default function MaxPainResearch() {
                   </p>
                 ) : null}
 
-                {strikeMaturity === "all" ? (
+                {distributionPresentation.isAggregate ? (
                   <Alert className="border-sky-500/20 bg-sky-500/5">
                     <Info className="text-sky-400" />
-                    <AlertTitle>同产品全部到期日汇总是跨期限参考值</AlertTitle>
+                    <AlertTitle>
+                      {distributionScopeLabel} · 跨期限参考值
+                    </AlertTitle>
                     <AlertDescription>
-                      同一观察时点、同一产品的未到期合约按 Strike 汇总。
-                      若假设所有期限使用同一参考价格 S，最小化其内在价值之和，
-                      可得到 Minimum Intrinsic Value（USD）及对应价位。
+                      同一观察时点、同一产品
+                      {isExpiryRange ? "、所选到期日范围内" : ""}的未到期合约按
+                      Strike 汇总。 若假设所有期限使用同一参考价格
+                      S，最小化其内在价值之和， 可得到 Minimum Intrinsic
+                      Value（USD）及对应价位。
                       各期限并不在同一时刻结算，因此此处不定义跨期限 Max Pain，
                       也不是各到期日最小值的简单相加。逐到期日结果仍见下表。
                     </AlertDescription>
@@ -1165,11 +1289,7 @@ export default function MaxPainResearch() {
                   minimumStrike={visibleDistributionMinimum?.maxPain}
                   minimumLabel={distributionPresentation.minimumLabel}
                   isAggregate={distributionPresentation.isAggregate}
-                  maturityLabel={
-                    strikeMaturity === "all"
-                      ? "同产品全部到期日汇总"
-                      : (displayedStrikeBooks[0]?.maturity ?? "所选到期日")
-                  }
+                  maturityLabel={distributionScopeLabel}
                   spot={snapshotSpot}
                   showOiNotional={sections.oiNotional}
                   totalIntrinsicValueByStrike={
@@ -1183,7 +1303,8 @@ export default function MaxPainResearch() {
                   <div>
                     <div className="mb-2 flex items-center justify-between">
                       <h3 className="text-sm font-semibold">
-                        同一时点 · 各 Expiry OI 与 Max Pain
+                        {isExpiryRange ? "所选到期日范围" : "同一时点"} · 各
+                        Expiry OI 与 Max Pain
                       </h3>
                       <span className="text-[11px] text-muted-foreground">
                         点击行可切换上方图表
@@ -1211,11 +1332,11 @@ export default function MaxPainResearch() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {snapshotSummary.map(point => (
+                          {displayedSnapshotSummary.map(point => (
                             <TableRow
                               key={`${point.product}-${point.maturity}`}
                               className={`cursor-pointer ${
-                                strikeMaturity === point.maturity
+                                effectiveStrikeMaturity === point.maturity
                                   ? "bg-sky-500/10"
                                   : ""
                               }`}
@@ -1261,7 +1382,8 @@ export default function MaxPainResearch() {
 
                   <div>
                     <h3 className="mb-2 text-sm font-semibold">
-                      所选 Expiry · Strike / OIList
+                      {isExpiryRange ? "所选到期日范围汇总" : "所选 Expiry"} ·
+                      Strike / OIList
                     </h3>
                     <div className="max-h-[430px] overflow-auto rounded-lg border border-border/60">
                       <Table>
