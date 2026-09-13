@@ -22,6 +22,14 @@ export const GAMMA_MODELS = [
   },
   { id: "all-long", label: "假设全部 Long Gamma", call: 1, put: 1 },
   { id: "all-short", label: "假设全部 Short Gamma", call: -1, put: -1 },
+  {
+    id: "taker-long-maker-short",
+    label: "假设 Taker 买 / Maker 卖（Maker 视角）",
+    // Assume ALL outstanding Call/Put longs belong to takers and shorts to makers.
+    // Execution role alone cannot establish this inventory; this is a scenario.
+    call: -1,
+    put: -1,
+  },
 ] as const;
 export type GammaModel = (typeof GAMMA_MODELS)[number]["id"];
 export const GAMMA_FLIP_SCAN = {

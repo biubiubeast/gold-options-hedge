@@ -235,6 +235,7 @@ const maxPainVisibleSectionsInput = z.object({
   chart: z.boolean(),
   oiDistribution: z.boolean(),
   oiNotional: z.boolean().default(false),
+  aggregateMinimum: z.boolean().default(true),
   details: z.boolean(),
   backtest: z.boolean(),
   gammaZone: z.boolean(),

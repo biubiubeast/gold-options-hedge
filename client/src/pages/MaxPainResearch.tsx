@@ -2,6 +2,7 @@ import { MaxPainCandlestickChart } from "@/components/MaxPainCandlestickChart";
 import { MaxPainGammaPanel } from "@/components/MaxPainGammaPanel";
 import { calculateSignedGamma, type GammaModel } from "@shared/maxPainGamma";
 import { OpenInterestByStrikeChart } from "@/components/OpenInterestByStrikeChart";
+import { getOiDistributionPresentation } from "@shared/maxPainPresentation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -435,20 +436,27 @@ export default function MaxPainResearch() {
     () => mergeStrikeBooks(displayedStrikeBooks),
     [displayedStrikeBooks]
   );
-  const distributionMaxPain = useMemo(
+  const distributionPresentation = getOiDistributionPresentation(
+    strikeMaturity === "all",
+    sections.aggregateMinimum
+  );
+  const distributionMinimum = useMemo(
     () => calculateMaxPain(displayedStrikes),
     [displayedStrikes]
   );
   const distributionPayoffByStrike = useMemo(
     () =>
       new Map(
-        distributionMaxPain?.curve.map(point => [
+        distributionMinimum?.curve.map(point => [
           point.settlementPrice,
           point.payout,
         ]) ?? []
       ),
-    [distributionMaxPain]
+    [distributionMinimum]
   );
+  const visibleDistributionMinimum = distributionPresentation.showIntrinsicValue
+    ? distributionMinimum
+    : null;
   const distributionCallOi = displayedStrikes.reduce(
     (sum, row) => sum + row.callOi,
     0
@@ -895,13 +903,17 @@ export default function MaxPainResearch() {
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <BarChart3 className="h-5 w-5 text-cyan-400" />
-                  BTC Open Interest By Strike × Max Pain
+                  {distributionPresentation.title}
                 </CardTitle>
                 <p className="mt-2 max-w-5xl text-xs leading-5 text-muted-foreground">
                   实时模式读取 Deribit 官方当前 BTC
                   期权链；历史模式可选择任意日期和六个固定源时点读取 SignalPlus
-                  OI History。青柱为 Call、紫柱为
-                  Put，蓝色虚线为到期内在价值口径复算的 Max Pain。
+                  OI History。青柱为 Call、紫柱为 Put。
+                  {distributionPresentation.showIntrinsicValue
+                    ? distributionPresentation.isAggregate
+                      ? "蓝色虚线标示全部到期日的 Minimum Intrinsic Value 对应价位，仅为跨期限假设参考，不是 Max Pain。"
+                      : "蓝色虚线为到期内在价值口径复算的 Max Pain。"
+                    : "全部到期日汇总的内在价值相关显示已在设置中隐藏。"}
                 </p>
               </div>
               <div className="flex flex-wrap items-end gap-3">
@@ -1054,17 +1066,21 @@ export default function MaxPainResearch() {
             ) : distributionReady ? (
               <>
                 <div
-                  className={`grid gap-3 sm:grid-cols-2 xl:grid-cols-3 ${sections.oiNotional ? "2xl:grid-cols-6" : "2xl:grid-cols-5"}`}
+                  className={`grid gap-3 sm:grid-cols-2 xl:grid-cols-3 ${distributionPresentation.showIntrinsicValue ? (sections.oiNotional ? "2xl:grid-cols-6" : "2xl:grid-cols-5") : sections.oiNotional ? "2xl:grid-cols-4" : "2xl:grid-cols-3"}`}
                 >
                   {[
-                    [
-                      "所选 Max Pain",
-                      money(distributionMaxPain?.maxPain),
-                      strikeMaturity === "all"
-                        ? "所选产品的全部到期日按 Strike 汇总"
-                        : (displayedStrikeBooks[0]?.maturity ??
-                          "没有有效到期日"),
-                    ],
+                    ...(distributionPresentation.showIntrinsicValue
+                      ? [
+                          [
+                            distributionPresentation.priceLabel,
+                            money(visibleDistributionMinimum?.maxPain),
+                            distributionPresentation.isAggregate
+                              ? "使跨期限假设总内在价值最小的参考价格；不是内在价值金额"
+                              : (displayedStrikeBooks[0]?.maturity ??
+                                "没有有效到期日"),
+                          ],
+                        ]
+                      : []),
                     [
                       "所选总 OI",
                       distributionTotalOi.toLocaleString(undefined, {
@@ -1072,13 +1088,17 @@ export default function MaxPainResearch() {
                       }),
                       `Call ${distributionCallOi.toFixed(2)} / Put ${distributionPutOi.toFixed(2)}`,
                     ],
-                    [
-                      "Max Pain 总内在价值",
-                      money(distributionMaxPain?.payout),
-                      strikeMaturity === "all"
-                        ? "Total Intrinsic Value · USD · 跨到期日参考值"
-                        : "Total Intrinsic Value · USD · 全链最小到期赔付",
-                    ],
+                    ...(distributionPresentation.showIntrinsicValue
+                      ? [
+                          [
+                            distributionPresentation.amountLabel,
+                            money(visibleDistributionMinimum?.payout),
+                            distributionPresentation.isAggregate
+                              ? "min Σ各到期日 Intrinsic Value(S) · 跨期限假设，不是实际到期赔付"
+                              : "Total Intrinsic Value · USD · 全链最小到期赔付",
+                          ],
+                        ]
+                      : []),
                     [
                       "有效到期日",
                       String(snapshotSummary.length),
@@ -1131,16 +1151,20 @@ export default function MaxPainResearch() {
                     <Info className="text-sky-400" />
                     <AlertTitle>同产品全部到期日汇总是跨期限参考值</AlertTitle>
                     <AlertDescription>
-                      它只把同一观察时点、同一个所选产品的未到期合约按 Strike
-                      汇总后再最小化赔付；由于真实结算日不同，不等同于任何单一到期日的
-                      Max Pain。逐到期日结果请看下表或点击某一行。
+                      同一观察时点、同一产品的未到期合约按 Strike 汇总。
+                      若假设所有期限使用同一参考价格 S，最小化其内在价值之和，
+                      可得到 Minimum Intrinsic Value（USD）及对应价位。
+                      各期限并不在同一时刻结算，因此此处不定义跨期限 Max Pain，
+                      也不是各到期日最小值的简单相加。逐到期日结果仍见下表。
                     </AlertDescription>
                   </Alert>
                 ) : null}
 
                 <OpenInterestByStrikeChart
                   strikes={displayedStrikes}
-                  maxPain={distributionMaxPain?.maxPain}
+                  minimumStrike={visibleDistributionMinimum?.maxPain}
+                  minimumLabel={distributionPresentation.minimumLabel}
+                  isAggregate={distributionPresentation.isAggregate}
                   maturityLabel={
                     strikeMaturity === "all"
                       ? "同产品全部到期日汇总"
@@ -1148,7 +1172,11 @@ export default function MaxPainResearch() {
                   }
                   spot={snapshotSpot}
                   showOiNotional={sections.oiNotional}
-                  totalIntrinsicValueByStrike={distributionPayoffByStrike}
+                  totalIntrinsicValueByStrike={
+                    distributionPresentation.showIntrinsicValue
+                      ? distributionPayoffByStrike
+                      : undefined
+                  }
                 />
 
                 <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
@@ -1245,12 +1273,18 @@ export default function MaxPainResearch() {
                             </TableHead>
                             <TableHead className="text-right">Put OI</TableHead>
                             <TableHead className="text-right">总 OI</TableHead>
-                            <TableHead className="min-w-[190px] text-right">
-                              <span className="block">Total Payoff</span>
-                              <span className="block text-[10px] font-normal normal-case text-muted-foreground">
-                                Total Intrinsic Value · USD
-                              </span>
-                            </TableHead>
+                            {distributionPresentation.showIntrinsicValue && (
+                              <TableHead className="min-w-[190px] text-right">
+                                <span className="block">
+                                  {distributionPresentation.isAggregate
+                                    ? "假设总内在价值"
+                                    : "Total Payoff"}
+                                </span>
+                                <span className="block text-[10px] font-normal normal-case text-muted-foreground">
+                                  Total Intrinsic Value · USD
+                                </span>
+                              </TableHead>
+                            )}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1258,21 +1292,24 @@ export default function MaxPainResearch() {
                             <TableRow
                               key={row.strike}
                               className={
-                                row.strike === distributionMaxPain?.maxPain
+                                row.strike ===
+                                visibleDistributionMinimum?.maxPain
                                   ? "bg-sky-500/10"
                                   : ""
                               }
                             >
                               <TableCell
                                 className={
-                                  row.strike === distributionMaxPain?.maxPain
+                                  row.strike ===
+                                  visibleDistributionMinimum?.maxPain
                                     ? "font-mono font-semibold text-sky-400"
                                     : "font-mono"
                                 }
                               >
                                 {money(row.strike)}
-                                {row.strike === distributionMaxPain?.maxPain
-                                  ? " · Max Pain"
+                                {row.strike ===
+                                visibleDistributionMinimum?.maxPain
+                                  ? ` · ${distributionPresentation.minimumLabel}${distributionPresentation.isAggregate ? " 对应价位" : ""}`
                                   : ""}
                               </TableCell>
                               <TableCell className="text-right text-cyan-300">
@@ -1284,29 +1321,40 @@ export default function MaxPainResearch() {
                               <TableCell className="text-right">
                                 {(row.callOi + row.putOi).toFixed(4)}
                               </TableCell>
-                              <TableCell
-                                className={
-                                  row.strike === distributionMaxPain?.maxPain
-                                    ? "text-right font-mono font-semibold text-sky-400"
-                                    : "text-right font-mono"
-                                }
-                              >
-                                {money(
-                                  distributionPayoffByStrike.get(row.strike)
-                                )}
-                              </TableCell>
+                              {distributionPresentation.showIntrinsicValue && (
+                                <TableCell
+                                  className={
+                                    row.strike ===
+                                    visibleDistributionMinimum?.maxPain
+                                      ? "text-right font-mono font-semibold text-sky-400"
+                                      : "text-right font-mono"
+                                  }
+                                >
+                                  {money(
+                                    distributionPayoffByStrike.get(row.strike)
+                                  )}
+                                </TableCell>
+                              )}
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
                     </div>
-                    <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                      每行把该 Strike 视为到期结算价 S，汇总整张所选期权链：
-                      Call max(S−K, 0) × OI + Put max(K−S, 0) × OI。
-                      两类产品各自单独计算；当前 BTC 期权每份合约面值为 1
-                      BTC，因此结果可表示为 USD 到期总内在价值。全列最小值即 Max
-                      Pain。
-                    </p>
+                    {distributionPresentation.showIntrinsicValue && (
+                      <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+                        每行把该 Strike 视为
+                        {distributionPresentation.isAggregate
+                          ? "所有期限共用的假设参考价"
+                          : "到期结算价"}{" "}
+                        S，汇总整张所选期权链： Call max(S−K, 0) × OI + Put
+                        max(K−S, 0) × OI。 两类产品各自单独计算；当前 BTC
+                        期权每份合约面值为 1 BTC，因此结果可表示为 USD
+                        总内在价值。
+                        {distributionPresentation.isAggregate
+                          ? "全列最小金额称 Minimum Intrinsic Value，其对应价位不是 Max Pain，也不是实际共同交割价。"
+                          : "全列最小金额为最低到期赔付，其对应的 Strike 才是 Max Pain。"}
+                      </p>
+                    )}
                   </div>
                 </div>
 

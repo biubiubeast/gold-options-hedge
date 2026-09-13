@@ -303,6 +303,18 @@ export default function Formulas() {
                   Strike，与按升序遍历并保留首个最小值一致。BTC-* 与 BTC_USDC-*
                   按产品分别计算，不合并 OI 或 Max Pain。
                 </p>
+                <p className="mt-2 leading-relaxed">
+                  同产品全部到期日汇总：令 P_all(S)=Σ各期限 P_expiry(S)，
+                  Minimum Intrinsic Value = min_S P_all(S)（USD）； 对应价位 =
+                  argmin_S P_all(S)。两者分别是金额和价格，不能混用。
+                  这里只是假设各期限共用同一
+                  S，不存在实际共同到期日，因此不称跨期限 Max Pain。 min ΣP ≥
+                  Σmin
+                  P，通常不能直接相加各期限的最小值。设置中的“全部到期日汇总
+                  Minimum Intrinsic Value”
+                  可隐藏汇总金额、对应价位、图表标线和表格/弹窗内在价值，不影响
+                  OI 和各单一期限。
+                </p>
               </div>
               <div className="rounded-md border border-border/60 p-3">
                 <strong className="text-foreground">2. OI Notional</strong>
@@ -333,7 +345,7 @@ export default function Formulas() {
                 className="scroll-mt-24 rounded-md border border-amber-400/30 p-3 md:col-span-2"
               >
                 <strong className="text-foreground">
-                  正负 Gamma 与 Gamma Flip：方向假设模型 v1
+                  正负 Gamma 与 Gamma Flip：方向假设模型 v2
                 </strong>
                 <p className="mt-2 leading-relaxed">
                   用途：最大痛点页面的每日固定快照图层与明细。不是交易所披露的做市商净持仓，不是买卖建议。模型在最大痛点页面切换，下列说明不由仓位表达式引擎执行。
@@ -362,6 +374,27 @@ export default function Formulas() {
                     </p>
                   ))}
                 </div>
+                <p className="mt-2 leading-relaxed">
+                  新增 Taker 买 / Maker 卖情景：进一步假设全部存续 Call/Put
+                  的多头均归 Taker、空头均归 Maker。仅从 Maker 侧计算，
+                  sCall=sPut=−1，Gnet=−Σ(CallOI+PutOI)×ΓBS×m×S²×0.01，
+                  数值与“全部 Short Gamma”相同；Taker
+                  侧为等量正值，不能把两侧重复加总。 非零 OI、到期前正 σ
+                  的本模型中，Maker 净 Gamma 不会由负转正， 因而没有 Gamma
+                  Flip；无 OI 则不是唯一零点。 Maker/Taker
+                  指提供/获取流动性，而不是固定买方/卖方。
+                  主动买入还可能是在平空仓，OI
+                  及成交角色都不足以证明存量持仓归属；
+                  此情景不包含真实做市商其他仓位或动态对冲。
+                  <a
+                    className="ml-1 text-sky-400 underline"
+                    href="https://support.deribit.com/hc/en-us/articles/25944746248989-Fees"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Deribit Maker/Taker 定义
+                  </a>
+                </p>
                 <p className="mt-2 leading-relaxed">
                   默认 Call 正、Put 负仅为可切换的情景。普通买入 Call/Put 都是正
                   Gamma，卖出才是负 Gamma；OI

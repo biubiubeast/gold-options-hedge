@@ -29,6 +29,35 @@ const book: GammaStrikeBook = {
 };
 
 describe("Gamma historical scenarios", () => {
+  it("models taker longs / maker shorts from the maker inventory without counting both sides", () => {
+    for (const product of ["inverse", "linear"] as const) {
+      const input = { ...book, product };
+      const maker = calculateSignedGamma(
+        date,
+        input,
+        one,
+        "taker-long-maker-short"
+      )!;
+      const allShort = calculateSignedGamma(date, input, one, "all-short")!;
+      const taker = calculateSignedGamma(date, input, one, "all-long")!;
+      expect(maker).toEqual({ ...allShort, model: "taker-long-maker-short" });
+      expect(maker.positiveGamma).toBe(0);
+      expect(maker.negativeGamma).toBeLessThan(0);
+      expect(maker.netGamma).toBeCloseTo(-taker.netGamma, 9);
+      expect(maker.positiveBand).toBeUndefined();
+      expect(maker.negativeBand).toEqual(taker.positiveBand);
+      expect(maker.flips).toEqual([]);
+      expect(maker.flipStatus).toBe("none-in-range");
+    }
+    const emptyOi = calculateSignedGamma(
+      date,
+      { ...book, strikes: [{ strike: 100, callOi: 0, putOi: 0 }] },
+      one,
+      "taker-long-maker-short"
+    )!;
+    expect(emptyOi.netGamma).toBe(0);
+    expect(emptyOi.flipStatus).toBe("balanced");
+  });
   it("finds a repriced zero crossing, not the spot or an OI-interpolated strike", () => {
     const s = calculateSignedGamma(date, book, one, "call-long-put-short")!;
     const years = (Date.parse("2026-09-18T08:00:00Z") - t) / (365 * 86400000);

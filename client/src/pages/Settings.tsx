@@ -207,6 +207,11 @@ const maxPainSectionLabels: Array<
     "统一显示汇总卡、表格和图表弹窗中的 OI Notional；默认隐藏，BTC 参考价始终显示",
   ],
   ["details", "六时点明细", "各时点 Max Pain、Call/Put OI 与 BTC 参考价"],
+  [
+    "aggregateMinimum",
+    "全部到期日汇总 Minimum Intrinsic Value",
+    "默认显示；关闭后隐藏汇总的最低内在价值、对应价位、标线和表格/弹窗内在价值。保留 OI、BTC 参考价及各单一期限 Max Pain",
+  ],
   ["backtest", "吸引力回测", "前后 24 小时命中率、收敛度与相关系数；默认隐藏"],
   [
     "gammaZone",

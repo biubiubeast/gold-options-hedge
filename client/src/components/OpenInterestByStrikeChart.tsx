@@ -1,5 +1,6 @@
 import type { StrikeOi } from "@shared/maxPainResearch";
 import {
+  useEffect,
   useMemo,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -7,7 +8,9 @@ import {
 
 interface Props {
   strikes: StrikeOi[];
-  maxPain?: number;
+  minimumStrike?: number;
+  minimumLabel?: string;
+  isAggregate?: boolean;
   maturityLabel: string;
   spot?: number;
   showOiNotional?: boolean;
@@ -20,7 +23,6 @@ interface TooltipState {
   strike: number;
   callOi: number;
   putOi: number;
-  totalIntrinsicValue?: number;
 }
 
 function price(value: number) {
@@ -38,21 +40,35 @@ function compact(value: number) {
   }).format(value);
 }
 
-/** Deribit-style stacked Call/Put OI distribution with a Max Pain marker. */
+/** Call/Put OI with a single-expiry Max Pain or synthetic cross-expiry minimum. */
 export function OpenInterestByStrikeChart({
   strikes,
-  maxPain,
+  minimumStrike,
+  minimumLabel = "Max Pain",
+  isAggregate = false,
   maturityLabel,
   spot,
   showOiNotional = false,
   totalIntrinsicValueByStrike,
 }: Props) {
   const [tooltip, setTooltip] = useState<TooltipState>();
+  useEffect(
+    () => setTooltip(undefined),
+    [strikes, minimumStrike, totalIntrinsicValueByStrike]
+  );
+  const tooltipIntrinsicValue = tooltip
+    ? totalIntrinsicValueByStrike?.get(tooltip.strike)
+    : undefined;
   const geometry = useMemo(() => {
     if (!strikes.length) return null;
     const width = Math.max(1000, Math.min(9000, strikes.length * 22));
     const height = 430;
-    const margin = { top: 30, right: 86, bottom: 58, left: 20 };
+    const margin = {
+      top: isAggregate && minimumStrike !== undefined ? 48 : 30,
+      right: 86,
+      bottom: 58,
+      left: 20,
+    };
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
     const maximumOi = Math.max(
@@ -74,7 +90,7 @@ export function OpenInterestByStrikeChart({
       x,
       y,
     };
-  }, [strikes]);
+  }, [strikes, isAggregate, minimumStrike]);
 
   const showTooltip = (
     event: ReactPointerEvent<SVGGElement>,
@@ -84,7 +100,6 @@ export function OpenInterestByStrikeChart({
       left: Math.max(8, Math.min(event.clientX + 14, window.innerWidth - 292)),
       top: Math.max(8, Math.min(event.clientY + 14, window.innerHeight - 272)),
       ...row,
-      totalIntrinsicValue: totalIntrinsicValueByStrike?.get(row.strike),
     });
   };
 
@@ -112,7 +127,12 @@ export function OpenInterestByStrikeChart({
     Math.round((maximumOi * (4 - index)) / 4)
   );
   const labelEvery = Math.max(1, Math.ceil(strikes.length / 12));
-  const maxPainIndex = strikes.findIndex(row => row.strike === maxPain);
+  const minimumIndex = strikes.findIndex(row => row.strike === minimumStrike);
+  const markerWidth = isAggregate ? 192 : 108;
+  const markerCenter = Math.max(
+    markerWidth / 2 + 8,
+    Math.min(width - markerWidth / 2 - 8, x(minimumIndex))
+  );
 
   return (
     <div className="relative">
@@ -121,7 +141,7 @@ export function OpenInterestByStrikeChart({
           width={width}
           height={height}
           role="img"
-          aria-label={`${maturityLabel} Open Interest By Strike Price 与 Max Pain`}
+          aria-label={`${maturityLabel} Open Interest By Strike Price${minimumIndex >= 0 ? ` 与 ${minimumLabel}` : ""}`}
           onPointerLeave={() => setTooltip(undefined)}
         >
           <rect width={width} height={height} fill="#071018" />
@@ -191,11 +211,14 @@ export function OpenInterestByStrikeChart({
             );
           })}
 
-          {maxPainIndex >= 0 ? (
-            <g pointerEvents="none">
+          {minimumIndex >= 0 ? (
+            <g
+              pointerEvents="none"
+              data-intrinsic-minimum-marker={minimumLabel}
+            >
               <line
-                x1={x(maxPainIndex)}
-                x2={x(maxPainIndex)}
+                x1={x(minimumIndex)}
+                x2={x(minimumIndex)}
                 y1={margin.top}
                 y2={margin.top + innerHeight}
                 stroke="#38bdf8"
@@ -203,22 +226,31 @@ export function OpenInterestByStrikeChart({
                 strokeDasharray="6 4"
               />
               <rect
-                x={x(maxPainIndex) - 54}
+                x={markerCenter - markerWidth / 2}
                 y={7}
-                width="108"
-                height="19"
+                width={markerWidth}
+                height={isAggregate ? 34 : 19}
                 rx="5"
                 fill="#0c4a6e"
               />
               <text
-                x={x(maxPainIndex)}
+                x={markerCenter}
                 y={20}
                 fill="#e0f2fe"
                 fontSize="10"
                 fontWeight="600"
                 textAnchor="middle"
               >
-                Max Pain {price(maxPain!)}
+                {isAggregate ? (
+                  <>
+                    <tspan x={markerCenter}>{minimumLabel}</tspan>
+                    <tspan x={markerCenter} dy="13">
+                      对应价位 {price(minimumStrike!)}
+                    </tspan>
+                  </>
+                ) : (
+                  `${minimumLabel} ${price(minimumStrike!)}`
+                )}
               </text>
             </g>
           ) : null}
@@ -253,13 +285,14 @@ export function OpenInterestByStrikeChart({
           style={{ left: tooltip.left, top: tooltip.top }}
           role="tooltip"
         >
-          <div className="mb-2 flex items-center justify-between gap-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="font-semibold text-primary">
               Strike {price(tooltip.strike)}
             </span>
-            {tooltip.strike === maxPain ? (
+            {tooltip.strike === minimumStrike ? (
               <span className="rounded bg-sky-500/15 px-2 py-0.5 text-sky-300">
-                Max Pain
+                {minimumLabel}
+                {isAggregate ? " 对应价位" : ""}
               </span>
             ) : null}
           </div>
@@ -290,22 +323,23 @@ export function OpenInterestByStrikeChart({
                   : "∞"}
               </span>
             </div>
-            {tooltip.totalIntrinsicValue !== undefined ? (
+            {tooltipIntrinsicValue !== undefined ? (
               <div className="flex justify-between gap-4 border-t border-border/60 pt-1.5">
                 <span className="text-slate-400">
                   <span className="block">Total Intrinsic Value (USD)</span>
                   <span className="block text-[10px]">
-                    假设结算价 = 该 Strike
+                    {isAggregate ? "跨期限共同假设参考价" : "假设结算价"} = 该
+                    Strike
                   </span>
                 </span>
                 <span
                   className={`font-mono ${
-                    tooltip.strike === maxPain
+                    tooltip.strike === minimumStrike
                       ? "font-semibold text-sky-300"
                       : ""
                   }`}
                 >
-                  {price(tooltip.totalIntrinsicValue)}
+                  {price(tooltipIntrinsicValue)}
                 </span>
               </div>
             ) : null}

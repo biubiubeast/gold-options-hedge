@@ -100,6 +100,16 @@ export function MaxPainGammaPanel({
         青色为正集中带，橙色为负集中带，黄色虚线为检测到的 Flip。集中带是
         20%–80% 加权分位带，不是支撑/阻力预测。
       </p>
+      {model === "taker-long-maker-short" && (
+        <p role="status" className="text-xs leading-relaxed text-amber-300">
+          本情景额外假设：全部存续 Call/Put 的多头由 Taker 持有，空头由 Maker
+          持有；图表和数值只显示 Maker 侧。Maker 的 Call/Put 均取负号， Gnet =
+          −Σ(CallOI+PutOI)×ΓBS×S²×1%，与“全部 Short Gamma”数值相同； Taker
+          侧符号相反，两侧不能重复计入。单边负 Gamma 不产生正负变号的 Flip。
+          Maker/Taker 只是成交流动性角色，不等于固定买卖方向；历史 OI
+          无法验证开平仓、持仓归属或这一假设。
+        </p>
+      )}
       {latest ? (
         <>
           <p className="text-xs text-muted-foreground">
