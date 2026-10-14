@@ -6,7 +6,24 @@ import {
   normalizeMarketDataOption,
   normalizeTradierOption,
   parseCboeTimestamp,
+  parseMarketCsv,
 } from "./marketData";
+
+describe("Databento CSV normalization", () => {
+  it("preserves quoted CME symbols and embedded commas", () => {
+    expect(
+      parseMarketCsv(
+        'instrument_id,raw_symbol,description\n42,"6SZ6 C1.2500","Swiss franc, call"\n'
+      )
+    ).toEqual([
+      {
+        instrument_id: "42",
+        raw_symbol: "6SZ6 C1.2500",
+        description: "Swiss franc, call",
+      },
+    ]);
+  });
+});
 
 describe("Cboe timestamp normalization", () => {
   it("treats timezone-less Cboe timestamps as UTC", () => {

@@ -130,7 +130,13 @@ type StatisticalSampleRangeStore = Record<string, StatisticalSampleRange>;
 
 const RANGE_STORAGE_KEY = "heatmap-metric-custom-ranges-v1";
 const STAT_SAMPLE_STORAGE_KEY = "heatmap-statistical-sample-ranges-v1";
-const RISK_UNDERLYINGS: RiskUnderlying[] = ["GLD", "XAUT", "BTC", "ETH"];
+const RISK_UNDERLYINGS: RiskUnderlying[] = [
+  "GLD",
+  "XAUT",
+  "BTC",
+  "ETH",
+  "6Smain",
+];
 const MARKET_LABELS: Record<HeatmapUnderlyingSelection, string> = {
   GLD: "GLD/USD-OPRA",
   XAUT: "XAUT/USDT - Bybit",
@@ -138,6 +144,7 @@ const MARKET_LABELS: Record<HeatmapUnderlyingSelection, string> = {
   BTC_DERIBIT: "BTC/USD - Deribit",
   ETH_BYBIT: "ETH/USDT - Bybit",
   ETH_DERIBIT: "ETH/USD - Deribit",
+  SIX_S_CME: "6Smain/USD - CME",
   all: "ALL MARKETS",
 };
 const percentageMetrics = new Set<HeatmapMetric>([
@@ -283,7 +290,12 @@ function cellKey(position: Pick<EnrichedRiskPosition, "expiry" | "strike">) {
   return `${position.expiry}|${canonicalStrike(position.strike)}`;
 }
 
-function normalizedVenue(venue: string): "OPRA" | "Bybit" | "Deribit" {
+function normalizedVenue(venue: string): "OPRA" | "Bybit" | "Deribit" | "CME" {
+  if (
+    venue.toLowerCase().includes("cme") ||
+    venue.toLowerCase().includes("databento")
+  )
+    return "CME";
   if (venue.toLowerCase().includes("deribit")) return "Deribit";
   if (
     venue.toLowerCase().includes("bybit") ||
@@ -307,6 +319,7 @@ function selectedRiskUnderlying(
 ): RiskUnderlying | "all" {
   if (selection === "BTC_DERIBIT") return "BTC";
   if (selection === "ETH_BYBIT" || selection === "ETH_DERIBIT") return "ETH";
+  if (selection === "SIX_S_CME") return "6Smain";
   return selection;
 }
 
@@ -321,6 +334,8 @@ function marketMatchesSelection(
     return normalizedVenue(position.venue) === "Deribit";
   if (selection === "BTC" || selection === "ETH_BYBIT" || selection === "XAUT")
     return normalizedVenue(position.venue) === "Bybit";
+  if (selection === "SIX_S_CME")
+    return normalizedVenue(position.venue) === "CME";
   return normalizedVenue(position.venue) === "OPRA";
 }
 
@@ -987,7 +1002,7 @@ export default function Matrix() {
 
   const [dataset, setDataset] = useState<DatasetMode>(initialDataset);
   const [underlying, setUnderlying] = useState<HeatmapUnderlyingSelection>(
-    DEFAULT_HEATMAP_VIEW.underlying
+    settings.heatmapDefaultUnderlying ?? DEFAULT_HEATMAP_VIEW.underlying
   );
   const [venue, setVenue] = useState("all");
   const [broker, setBroker] = useState("all");
@@ -1109,6 +1124,14 @@ export default function Matrix() {
       staleTime: 8_000,
       refetchOnWindowFocus: false,
     });
+  const { data: sixSChain, isFetching: sixSChainFetching } =
+    trpc.market.sixSOptionChain.useQuery(undefined, {
+      enabled:
+        dataset === "chain" &&
+        (underlying === "SIX_S_CME" || underlying === "all"),
+      staleTime: 4 * 60_000,
+      refetchOnWindowFocus: false,
+    });
 
   const gldExpiries = useMemo(
     () => [
@@ -1173,6 +1196,7 @@ export default function Matrix() {
         gld: dataset === "chain" ? gldChain?.spot : null,
         btc: dataset === "chain" ? btcChain?.spot : null,
         eth: dataset === "chain" ? ethChain?.spot : null,
+        sixS: dataset === "chain" ? sixSChain?.spot : null,
       }),
     [
       btcChain?.spot,
@@ -1180,6 +1204,7 @@ export default function Matrix() {
       ethChain?.spot,
       gldChain?.spot,
       spotPrices,
+      sixSChain?.spot,
       xautChain?.spot,
     ]
   );
@@ -1205,9 +1230,17 @@ export default function Matrix() {
             XAUT: liveSpots.xaut,
             BTC: liveSpots.btc,
             ETH: liveSpots.eth,
+            "6Smain": liveSpots.sixS,
             XAU: liveSpots.xau,
           }
-        : { GLD: 247.3, XAUT: 3358, BTC: 95_000, ETH: 3_300, XAU: 3358 },
+        : {
+            GLD: 247.3,
+            XAUT: 3358,
+            BTC: 95_000,
+            ETH: 3_300,
+            "6Smain": 1.25,
+            XAU: 3358,
+          },
     [dataset, liveSpots]
   );
   const asOf = useMemo(
@@ -1220,6 +1253,7 @@ export default function Matrix() {
       ethChain?.timestamp,
       gldQuotes,
       positions,
+      sixSChain?.timestamp,
       spotPrices,
       xautTickers,
     ]
@@ -1252,6 +1286,10 @@ export default function Matrix() {
     const ethPerUnit =
       liveSpots.xau > 0 && liveSpots.eth > 0
         ? liveSpots.eth / liveSpots.xau
+        : null;
+    const sixSPerUnit =
+      liveSpots.xau > 0 && liveSpots.sixS > 0
+        ? liveSpots.sixS / liveSpots.xau
         : null;
     const gldContractMultiplier = resolveGldContractMultiplier(
       formulas?.length ? formulas : [],
@@ -1307,6 +1345,17 @@ export default function Matrix() {
             "Deribit public/get_instruments live contract_size",
         }
       ),
+      ...buildChainRiskPositions(
+        sixSChain?.quotes ?? [],
+        "6Smain",
+        sixSPerUnit,
+        125_000,
+        {
+          venue: "CME / Databento",
+          deliverableSource:
+            "CME Swiss Franc futures options contract specification · 125,000 CHF",
+        }
+      ),
     ].filter(position => !heldKeys.has(contractKey(position)));
     return [...held, ...listed];
   }, [
@@ -1321,6 +1370,7 @@ export default function Matrix() {
     liveSpots,
     liveViews,
     settings,
+    sixSChain?.quotes,
     xautChain?.quotes,
   ]);
   const enriched = useMemo(
@@ -1370,7 +1420,11 @@ export default function Matrix() {
     if (riskUnderlying !== "all") setSpotUnderlying(riskUnderlying);
   }, [underlying]);
   useEffect(() => {
-    if (underlying === "GLD" && ivSource !== "model") setIvSource("model");
+    if (
+      (underlying === "GLD" || underlying === "SIX_S_CME") &&
+      ivSource !== "model"
+    )
+      setIvSource("model");
   }, [ivSource, underlying]);
   useEffect(() => {
     const fallback = <T extends string>(
@@ -1926,7 +1980,10 @@ export default function Matrix() {
         !deribitBtcChain) ||
       ((underlying === "ETH_DERIBIT" || underlying === "all") &&
         deribitEthChainFetching &&
-        !deribitEthChain));
+        !deribitEthChain) ||
+      ((underlying === "SIX_S_CME" || underlying === "all") &&
+        sixSChainFetching &&
+        !sixSChain));
   const selectedChainCount =
     dataset !== "chain"
       ? null
@@ -1942,12 +1999,15 @@ export default function Matrix() {
                 ? (deribitBtcChain?.contractCount ?? null)
                 : underlying === "ETH_DERIBIT"
                   ? (deribitEthChain?.contractCount ?? null)
-                  : (gldChain?.contractCount ?? 0) +
-                    (xautChain?.contractCount ?? 0) +
-                    (btcChain?.contractCount ?? 0) +
-                    (ethChain?.contractCount ?? 0) +
-                    (deribitBtcChain?.contractCount ?? 0) +
-                    (deribitEthChain?.contractCount ?? 0);
+                  : underlying === "SIX_S_CME"
+                    ? (sixSChain?.contractCount ?? null)
+                    : (gldChain?.contractCount ?? 0) +
+                      (xautChain?.contractCount ?? 0) +
+                      (btcChain?.contractCount ?? 0) +
+                      (ethChain?.contractCount ?? 0) +
+                      (deribitBtcChain?.contractCount ?? 0) +
+                      (deribitEthChain?.contractCount ?? 0) +
+                      (sixSChain?.contractCount ?? 0);
   const selectedChainTimestamp =
     dataset !== "chain"
       ? asOf
@@ -1963,22 +2023,27 @@ export default function Matrix() {
                 ? (deribitBtcChain?.timestamp ?? asOf)
                 : underlying === "ETH_DERIBIT"
                   ? (deribitEthChain?.timestamp ?? asOf)
-                  : [
-                      gldChain?.timestamp,
-                      xautChain?.timestamp,
-                      btcChain?.timestamp,
-                      ethChain?.timestamp,
-                      deribitBtcChain?.timestamp,
-                      deribitEthChain?.timestamp,
-                    ]
-                      .map(value =>
-                        value === undefined
-                          ? Number.NaN
-                          : new Date(value).getTime()
-                      )
-                      .filter(Number.isFinite)
-                      .reduce((latest, value) => Math.max(latest, value), 0) ||
-                    asOf.getTime();
+                  : underlying === "SIX_S_CME"
+                    ? (sixSChain?.timestamp ?? asOf)
+                    : [
+                        gldChain?.timestamp,
+                        xautChain?.timestamp,
+                        btcChain?.timestamp,
+                        ethChain?.timestamp,
+                        deribitBtcChain?.timestamp,
+                        deribitEthChain?.timestamp,
+                        sixSChain?.timestamp,
+                      ]
+                        .map(value =>
+                          value === undefined
+                            ? Number.NaN
+                            : new Date(value).getTime()
+                        )
+                        .filter(Number.isFinite)
+                        .reduce(
+                          (latest, value) => Math.max(latest, value),
+                          0
+                        ) || asOf.getTime();
   const chainCountLabel =
     settings.heatmapChainContractCountLabel.trim() ||
     "完整期权链合约数（Call + Put，筛选前）";
@@ -2337,7 +2402,7 @@ export default function Matrix() {
             value={ivSource}
             onChange={value => setIvSource(value as IvValueSource)}
             options={
-              underlying === "GLD"
+              underlying === "GLD" || underlying === "SIX_S_CME"
                 ? [{ value: "model", label: "MODEL" }]
                 : [
                     { value: "market", label: "MARKET" },
@@ -2768,6 +2833,22 @@ export default function Matrix() {
             · observed age {Math.round(deribitEthChain.delaySeconds)}s
           </div>
         )}
+      {visibleSections.chainStatusBanner &&
+        dataset === "chain" &&
+        (underlying === "SIX_S_CME" || underlying === "all") &&
+        sixSChain && (
+          <div className="shrink-0 border border-teal-400/30 bg-teal-500/5 px-2 py-0.5 font-mono text-[8px] text-teal-100">
+            6Smain CME FULL CHAIN · {sixSChain.contractCount} listed contracts ·{" "}
+            {sixSChain.expiryCount} expiries · {sixSChain.strikeCount} strikes ·{" "}
+            {sixSChain.source} · updated{" "}
+            {formatDisplayDateTime(sixSChain.timestamp, timeZone, {
+              seconds: true,
+              includeZone: true,
+            })}{" "}
+            · observed age {Math.round(sixSChain.delaySeconds / 60)}m · Model IV
+            uses the synchronized 6S main-futures reference
+          </div>
+        )}
       {visibleSections.positionOnlyMetricBanner &&
         HELD_ONLY_HEATMAP_METRICS.has(effectiveMetric) && (
           <div className="shrink-0 border border-amber-300/25 bg-amber-300/5 px-2 py-0.5 font-mono text-[8px] text-amber-100">
@@ -2789,6 +2870,11 @@ export default function Matrix() {
       ) : filtered.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center border border-dashed border-border text-sm text-muted-foreground">
           <p>当前筛选没有有效 position。</p>
+          {dataset === "chain" && underlying === "SIX_S_CME" && sixSChain && (
+            <p className="mt-2 max-w-2xl px-6 text-center text-xs leading-relaxed">
+              {sixSChain.source}
+            </p>
+          )}
           {dataset === "live" && (
             <button
               type="button"

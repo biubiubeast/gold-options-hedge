@@ -7,7 +7,7 @@ import {
   type ModelIvStatus,
 } from "./impliedVolatility";
 
-export type RiskUnderlying = "GLD" | "XAUT" | "BTC" | "ETH";
+export type RiskUnderlying = "GLD" | "XAUT" | "BTC" | "ETH" | "6Smain";
 export type CallPut = "call" | "put";
 export type DataStatus = "LIVE" | "STALE" | "WARN" | "MISSING" | "FAIL";
 export type PlannedAction =
@@ -304,7 +304,8 @@ export function metricSelectorLabel(
   underlying: RiskUnderlying | "all"
 ): string {
   if (metric !== "volume") return METRIC_LABELS[metric];
-  if (underlying === "GLD") return "Volume (Session)";
+  if (underlying === "GLD" || underlying === "6Smain")
+    return "Volume (Session)";
   if (underlying === "XAUT" || underlying === "BTC" || underlying === "ETH")
     return "Volume (24h)";
   return "Volume";
@@ -1467,6 +1468,12 @@ export function calculateScenario(
   let stressedDeltaXAU = 0;
   let missingCount = 0;
   for (const position of positions) {
+    // The scenario below is explicitly an XAU shock. FX futures options stay
+    // available in the heatmap, but must not be shocked as though CHF were gold.
+    if (position.underlying === "6Smain") {
+      missingCount += 1;
+      continue;
+    }
     const spot = input.spots[position.underlying];
     const multiplier = position.contractMultiplier;
     const ounces = riskOunces(position);

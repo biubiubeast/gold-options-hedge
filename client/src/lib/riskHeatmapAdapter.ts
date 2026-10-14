@@ -199,7 +199,7 @@ type ChainQuote = {
 
 export function buildChainRiskPositions(
   quotes: ChainQuote[],
-  underlying: "GLD" | "XAUT" | "BTC" | "ETH",
+  underlying: "GLD" | "XAUT" | "BTC" | "ETH" | "6Smain",
   xauPerUnit: number | null,
   standardContractMultiplier?: number,
   market?: { venue?: string; deliverableSource?: string }
@@ -232,7 +232,8 @@ export function buildChainRiskPositions(
       markPrice:
         marketAvailable && quote.markPrice > 0 ? quote.markPrice : null,
       premiumCurrency:
-        quote.premiumCurrency ?? (underlying === "GLD" ? "USD" : "USDT"),
+        quote.premiumCurrency ??
+        (underlying === "GLD" || underlying === "6Smain" ? "USD" : "USDT"),
       bid: quote.bid1Price > 0 ? quote.bid1Price : 0,
       ask: quote.ask1Price > 0 ? quote.ask1Price : 0,
       bidSize: quote.bid1Size ?? null,

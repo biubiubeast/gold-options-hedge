@@ -117,8 +117,10 @@ describe("operator display defaults", () => {
       BTC_DERIBIT: true,
       ETH_BYBIT: true,
       ETH_DERIBIT: true,
+      SIX_S_CME: true,
       all: false,
     });
+    expect(DEFAULT_PORTFOLIO_SETTINGS.heatmapDefaultUnderlying).toBe("GLD");
   });
 
   it("shows the ITM/OTM filter with all three choices enabled by default", () => {

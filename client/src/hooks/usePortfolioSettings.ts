@@ -4,8 +4,9 @@ import {
 } from "@/lib/portfolio";
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY = "gold-options-portfolio-settings-v11";
+const STORAGE_KEY = "gold-options-portfolio-settings-v12";
 const LEGACY_STORAGE_KEYS = [
+  "gold-options-portfolio-settings-v11",
   "gold-options-portfolio-settings-v10",
   "gold-options-portfolio-settings-v9",
   "gold-options-portfolio-settings-v8",
@@ -22,7 +23,7 @@ function loadSettings(): PortfolioSettings {
   try {
     const current = localStorage.getItem(STORAGE_KEY);
     const previousVersion = localStorage.getItem(
-      "gold-options-portfolio-settings-v10"
+      "gold-options-portfolio-settings-v11"
     );
     const legacy = LEGACY_STORAGE_KEYS.map(key =>
       localStorage.getItem(key)
@@ -33,6 +34,9 @@ function loadSettings(): PortfolioSettings {
     const migrated = {
       ...DEFAULT_PORTFOLIO_SETTINGS,
       ...saved,
+      heatmapDefaultUnderlying:
+        saved.heatmapDefaultUnderlying ??
+        DEFAULT_PORTFOLIO_SETTINGS.heatmapDefaultUnderlying,
       adminPasswordPages: {
         ...DEFAULT_PORTFOLIO_SETTINGS.adminPasswordPages,
         ...saved.adminPasswordPages,

@@ -47,6 +47,7 @@ export type HeatmapUnderlyingSelection =
   | "BTC_DERIBIT"
   | "ETH_BYBIT"
   | "ETH_DERIBIT"
+  | "SIX_S_CME"
   | "all";
 
 export type HeatmapHoverField =
@@ -225,6 +226,8 @@ export type PortfolioSettings = {
     cellDetail: boolean;
     expiryDetail: boolean;
   };
+  /** Underlying selected when the market heatmap is opened or reloaded. */
+  heatmapDefaultUnderlying: HeatmapUnderlyingSelection;
   heatmapVisibleFilters: {
     dataset: boolean;
     underlying: boolean;
@@ -260,7 +263,7 @@ export type PortfolioSettings = {
     status: Record<DataStatus | "all", boolean>;
     metric: Record<HeatmapMetric, boolean>;
     scale: Record<"quantile" | "log" | "symmetric", boolean>;
-    spot: Record<"GLD" | "XAUT" | "BTC" | "ETH" | "XAU", boolean>;
+    spot: Record<"GLD" | "XAUT" | "BTC" | "ETH" | "6Smain" | "XAU", boolean>;
     label: Record<"none" | "held" | "top" | "bottom" | "all", boolean>;
     hover: Record<"risk" | "market" | "pnl" | "all", boolean>;
   };
@@ -337,6 +340,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     cellDetail: false,
     expiryDetail: false,
   },
+  heatmapDefaultUnderlying: "GLD",
   heatmapVisibleFilters: {
     dataset: false,
     underlying: true,
@@ -369,6 +373,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
       BTC_DERIBIT: true,
       ETH_BYBIT: true,
       ETH_DERIBIT: true,
+      SIX_S_CME: true,
       all: false,
     },
     callPut: { call: true, put: true, combined: true },
@@ -416,7 +421,14 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
       rollPriority: false,
     },
     scale: { quantile: true, log: true, symmetric: true },
-    spot: { GLD: true, XAUT: true, BTC: true, ETH: true, XAU: true },
+    spot: {
+      GLD: true,
+      XAUT: true,
+      BTC: true,
+      ETH: true,
+      "6Smain": true,
+      XAU: true,
+    },
     label: { none: true, held: true, top: false, bottom: false, all: true },
     hover: { risk: true, market: true, pnl: true, all: true },
   },

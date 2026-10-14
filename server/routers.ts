@@ -27,6 +27,8 @@ import {
   getEthSpotPrice,
   getDeribitBtcOptionChain,
   getDeribitEthOptionChain,
+  getSixSMainPrice,
+  getSixSOptionChain,
 } from "./marketData";
 import { DEFAULT_FORMULAS } from "@shared/marketTypes";
 import {
@@ -471,15 +473,17 @@ export const appRouter = router({
     ethOptionChain: protectedProcedure.query(getEthOptionChain),
     deribitBtcOptionChain: protectedProcedure.query(getDeribitBtcOptionChain),
     deribitEthOptionChain: protectedProcedure.query(getDeribitEthOptionChain),
+    sixSOptionChain: protectedProcedure.query(getSixSOptionChain),
     spotPrices: protectedProcedure.query(async () => {
-      const [xaut, gld, gold, btc, eth] = await Promise.all([
+      const [xaut, gld, gold, btc, eth, sixS] = await Promise.all([
         getXautSpotPrice(),
         getGldPrice(),
         getGoldPrice(),
         getBtcSpotPrice(),
         getEthSpotPrice(),
+        getSixSMainPrice(),
       ]);
-      return { xaut, gld, gold, btc, eth };
+      return { xaut, gld, gold, btc, eth, sixS };
     }),
     sources: protectedProcedure.query(getMarketSources),
   }),

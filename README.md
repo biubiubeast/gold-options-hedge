@@ -280,7 +280,7 @@ K线页支持 GLD、XAU/USD、XAUT/USDT、Bybit BTC/ETH 和 Deribit BTC/ETH，�
 - xauwhales 可访问页面，以及管理员左侧导航入口。
 - 持仓行情自动更新开关和分钟间隔。
 - 仓位页/热力图页内部更新按钮、仓位顶部状态卡和底部说明。
-- 热力图显示哪些筛选器，以及每个筛选器允许选择哪些选项。
+- 热力图默认打开哪个 Underlying、显示哪些筛选器，以及每个筛选器允许选择哪些选项。
 - 持仓格识别码、Hover、Expiry Hover 和完整详情字段。
 - 点击方格/Expiry 是否打开详情。
 - 决策卡、Largest Data Error、Expiry Control、Scenario 和提示条显示状态。
@@ -300,9 +300,13 @@ K线页支持 GLD、XAU/USD、XAUT/USDT、Bybit BTC/ETH 和 Deribit BTC/ETH，�
 | XAUT/BTC/ETH Spot         | Bybit `/v5/market/tickers?category=spot`                                   |                        否 |
 | BTC/ETH Deribit 完整链    | `public/get_instruments` + `public/get_book_summary_by_currency`           |                        否 |
 | BTC/ETH Deribit ticker    | WebSocket `ticker.{instrument}.100ms`，REST ticker 降级                    |                        否 |
+| 6Smain CME 完整期权链     | Databento `GLBX.MDP3`：`6S.OPT` + `6S.c.0`                                 |       `DATABENTO_API_KEY` |
+| 6Smain 企业网关（优先）   | `SIX_S_OPTION_CHAIN_URL`；可接 CME 官方 Market Data APIs                   |                  网关令牌 |
 | XAU/USD 代理              | Yahoo `GC=F`；失败时使用 XAUT/USDT proxy                                   |                        否 |
 
 Deribit WebSocket 会处理 heartbeat、断线重连、增量订阅和有限 REST fallback。服务器刚从休眠恢复时需要重建订阅，最初数秒可能出现部分 `MISSING`。
+
+6Smain 指 CME Swiss Franc/USD 主力期货；标准期货及其期权合约单位为 125,000 CHF。Databento 路径读取 CME 合约定义和一档盘口，市场源没有发布 IV/Greeks 时，网站以同一数据链路的 `6S.c.0` 主力期货为参考，按 Black-76 计算并明确标记为 Model IV/Greeks。没有配置授权时只显示 Yahoo `6S=F` 延迟主力价格，期权链保持 `MISSING`，不会伪造报价。CME 官方实时 Futures & Options、Greeks & Implied Volatility API 可通过 `SIX_S_OPTION_CHAIN_URL` 企业网关接入。
 
 详细字段审计见 [`docs/market-data-field-audit.md`](docs/market-data-field-audit.md)，实时链使用说明见 [`docs/live-market-chain-guide.md`](docs/live-market-chain-guide.md)。
 
@@ -356,6 +360,9 @@ APP_PASSWORD=...
 VIEWER_PASSWORD=...
 MARKETDATA_TOKEN=...       # 可选
 TRADIER_API_TOKEN=...      # 可选
+DATABENTO_API_KEY=...      # 可选；6Smain CME 期权链
+# SIX_S_OPTION_CHAIN_URL=...  # 可选；企业/CME 快照网关，优先于 Databento
+# SIX_S_OPTION_CHAIN_TOKEN=...
 ```
 
 Render 免费实例会因空闲休眠，唤醒时可能出现约几十秒冷启动；免费服务没有持久磁盘，重新部署或实例重建可能丢失运行期写入的仓位。正式使用应升级持久磁盘、迁移 PostgreSQL/对象存储，或至少在每次重要修改后导出 Excel/JSON。

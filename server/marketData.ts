@@ -8,6 +8,8 @@ const YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart";
 const TRADIER_BASE_URL =
   process.env.TRADIER_BASE_URL || "https://api.tradier.com/v1";
 const MARKETDATA_BASE_URL = "https://api.marketdata.app/v1";
+const DATABENTO_HISTORICAL_URL =
+  process.env.DATABENTO_HISTORICAL_URL || "https://hist.databento.com/v0";
 const CBOE_GLD_CHAIN_URL =
   "https://cdn.cboe.com/api/global/delayed_quotes/options/GLD.json";
 const CBOE_GLD_QUOTE_URL =
@@ -19,6 +21,9 @@ const DERIBIT_CHANNEL_BATCH_SIZE = 400;
 const DERIBIT_INITIAL_SNAPSHOT_COVERAGE = 0.95;
 const DERIBIT_INITIAL_SNAPSHOT_TIMEOUT_MS = 3_500;
 const DERIBIT_REST_FALLBACK_LIMIT = 60;
+const SIX_S_CHAIN_CACHE_MS = 5 * 60_000;
+const SIX_S_DEFINITION_CACHE_MS = 6 * 60 * 60_000;
+const SIX_S_CONTRACT_MULTIPLIER = 125_000;
 
 type CacheEntry<T> = { value: T; expiresAt: number };
 const cache = new Map<string, CacheEntry<unknown>>();
@@ -128,6 +133,8 @@ export type BtcOptionQuote = XautOptionQuote;
 export type BtcOptionChain = XautOptionChain;
 export type EthOptionQuote = XautOptionQuote;
 export type EthOptionChain = XautOptionChain;
+export type SixSOptionQuote = XautOptionQuote;
+export type SixSOptionChain = XautOptionChain;
 type BybitOptionBaseCoin = "XAUT" | "BTC" | "ETH";
 type DeribitOptionCurrency = "BTC" | "ETH";
 
@@ -218,6 +225,67 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchText(url: string, init?: RequestInit): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      ...init,
+      headers: {
+        Accept: "text/csv, application/json",
+        "User-Agent": "GoldOptionsHedge/2.0",
+        ...(init?.headers || {}),
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 240);
+      throw new Error(`HTTP ${response.status}${detail ? ` · ${detail}` : ""}`);
+    }
+    return await response.text();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/** Minimal RFC-4180 parser for Databento's streamed CSV responses. */
+export function parseMarketCsv(text: string): Array<Record<string, string>> {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quoted) {
+      if (character === '"' && text[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else if (character === '"') quoted = false;
+      else field += character;
+      continue;
+    }
+    if (character === '"') quoted = true;
+    else if (character === ",") {
+      row.push(field);
+      field = "";
+    } else if (character === "\n") {
+      row.push(field.replace(/\r$/, ""));
+      if (row.some(value => value.length > 0)) rows.push(row);
+      row = [];
+      field = "";
+    } else field += character;
+  }
+  if (field.length || row.length) {
+    row.push(field.replace(/\r$/, ""));
+    rows.push(row);
+  }
+  const [header, ...data] = rows;
+  if (!header?.length) return [];
+  return data.map(values =>
+    Object.fromEntries(header.map((key, index) => [key, values[index] ?? ""]))
+  );
 }
 
 async function cached<T>(
@@ -431,6 +499,633 @@ function modelIvSet(args: {
     ivReferenceTimestamp: args.asOf > 0 ? args.asOf : null,
     ivReferenceSource: args.referenceSpot > 0 ? args.referenceSource : null,
   };
+}
+
+function parseExternalTimestamp(value: unknown): number {
+  if (typeof value === "string" && /[-T:]/.test(value)) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  if (numeric >= 1e18) return Math.round(numeric / 1e6); // nanoseconds
+  if (numeric >= 1e15) return Math.round(numeric / 1e3); // microseconds
+  if (numeric >= 1e12) return Math.round(numeric); // milliseconds
+  return Math.round(numeric * 1000); // seconds
+}
+
+function normalPdfValue(value: number): number {
+  return Math.exp(-0.5 * value * value) / Math.sqrt(2 * Math.PI);
+}
+
+function black76Price(args: {
+  futures: number;
+  strike: number;
+  years: number;
+  rate: number;
+  volatility: number;
+  optionType: "call" | "put";
+}): number {
+  const { futures, strike, years, rate, volatility, optionType } = args;
+  if (years <= 0)
+    return Math.max(
+      optionType === "call" ? futures - strike : strike - futures,
+      0
+    );
+  const sqrtTime = Math.sqrt(years);
+  const d1 =
+    (Math.log(futures / strike) + 0.5 * volatility * volatility * years) /
+    (volatility * sqrtTime);
+  const d2 = d1 - volatility * sqrtTime;
+  const discount = Math.exp(-rate * years);
+  return (
+    discount *
+    (optionType === "call"
+      ? futures * normalCdf(d1) - strike * normalCdf(d2)
+      : strike * normalCdf(-d2) - futures * normalCdf(-d1))
+  );
+}
+
+function black76Iv(args: {
+  price: number;
+  futures: number;
+  strike: number;
+  expiryTimestamp: number;
+  asOf: number;
+  rate?: number;
+  optionType: "call" | "put";
+}): ModelIvResult {
+  if (
+    ![
+      args.price,
+      args.futures,
+      args.strike,
+      args.expiryTimestamp,
+      args.asOf,
+    ].every(value => Number.isFinite(value) && value > 0)
+  )
+    return { value: null, status: "INVALID_INPUT" };
+  if (args.expiryTimestamp <= args.asOf)
+    return { value: null, status: "INVALID_EXPIRY" };
+  const years = Math.max(
+    (args.expiryTimestamp - args.asOf) / (365.25 * 86_400_000),
+    1 / (365.25 * 24)
+  );
+  const rate = Number.isFinite(args.rate) ? Number(args.rate) : 0.045;
+  const discount = Math.exp(-rate * years);
+  const intrinsic =
+    discount *
+    Math.max(
+      args.optionType === "call"
+        ? args.futures - args.strike
+        : args.strike - args.futures,
+      0
+    );
+  const maximum =
+    discount * (args.optionType === "call" ? args.futures : args.strike);
+  const tolerance = Math.max(1e-8, args.futures * 1e-7);
+  if (args.price < intrinsic - tolerance)
+    return { value: null, status: "PRICE_BELOW_INTRINSIC" };
+  if (args.price > maximum + tolerance)
+    return { value: null, status: "PRICE_ABOVE_MAXIMUM" };
+  let low = 0.0001;
+  let high = 5;
+  const model = (volatility: number) =>
+    black76Price({
+      futures: args.futures,
+      strike: args.strike,
+      years,
+      rate,
+      volatility,
+      optionType: args.optionType,
+    });
+  if (
+    args.price < model(low) - tolerance ||
+    args.price > model(high) + tolerance
+  )
+    return { value: null, status: "SOLVER_UNBRACKETED" };
+  for (let iteration = 0; iteration < 48; iteration += 1) {
+    const middle = (low + high) / 2;
+    if (model(middle) < args.price) low = middle;
+    else high = middle;
+  }
+  const value = (low + high) / 2;
+  return Number.isFinite(value) && value > 0
+    ? { value, status: "MODEL" }
+    : { value: null, status: "MODEL_ERROR" };
+}
+
+function black76Greeks(args: {
+  futures: number;
+  strike: number;
+  expiryTimestamp: number;
+  asOf: number;
+  volatility: number | null;
+  rate?: number;
+  optionType: "call" | "put";
+}) {
+  if (
+    args.volatility === null ||
+    ![args.futures, args.strike, args.expiryTimestamp, args.asOf].every(
+      value => Number.isFinite(value) && value > 0
+    ) ||
+    args.expiryTimestamp <= args.asOf
+  )
+    return { delta: 0, gamma: 0, theta: 0, vega: 0 };
+  const years = Math.max(
+    (args.expiryTimestamp - args.asOf) / (365.25 * 86_400_000),
+    1 / (365.25 * 24)
+  );
+  const rate = Number.isFinite(args.rate) ? Number(args.rate) : 0.045;
+  const sqrtTime = Math.sqrt(years);
+  const discount = Math.exp(-rate * years);
+  const d1 =
+    (Math.log(args.futures / args.strike) +
+      0.5 * args.volatility * args.volatility * years) /
+    (args.volatility * sqrtTime);
+  const delta =
+    discount * (args.optionType === "call" ? normalCdf(d1) : normalCdf(d1) - 1);
+  const gamma =
+    (discount * normalPdfValue(d1)) /
+    (args.futures * args.volatility * sqrtTime);
+  const current = black76Price({
+    ...args,
+    years,
+    rate,
+    volatility: args.volatility,
+  });
+  const nextDay = black76Price({
+    ...args,
+    years: Math.max(years - 1 / 365.25, 1 / (365.25 * 24)),
+    rate,
+    volatility: args.volatility,
+  });
+  const oneVolHigher = black76Price({
+    ...args,
+    years,
+    rate,
+    volatility: args.volatility + 0.01,
+  });
+  return {
+    delta,
+    gamma,
+    theta: nextDay - current,
+    vega: oneVolHigher - current,
+  };
+}
+
+async function fetchDatabentoCsv(
+  parameters: Record<string, string>
+): Promise<Array<Record<string, string>>> {
+  const apiKey = process.env.DATABENTO_API_KEY?.trim();
+  if (!apiKey) throw new Error("DATABENTO_API_KEY is not configured");
+  const body = new URLSearchParams({
+    dataset: "GLBX.MDP3",
+    encoding: "csv",
+    compression: "none",
+    pretty_px: "true",
+    pretty_ts: "true",
+    map_symbols: "true",
+    ...parameters,
+  });
+  const text = await fetchText(
+    `${DATABENTO_HISTORICAL_URL}/timeseries.get_range`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${apiKey}:`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+    }
+  );
+  return parseMarketCsv(text);
+}
+
+type SixSDefinition = {
+  instrumentId: string;
+  symbol: string;
+  expiry: string;
+  expiryTimestamp: number;
+  strike: number;
+  optionType: "call" | "put";
+  timestamp: number;
+};
+
+type SixSBook = {
+  bid: number;
+  ask: number;
+  bidSize: number | null;
+  askSize: number | null;
+  timestamp: number;
+};
+
+function latestRowsByInstrument(
+  rows: Array<Record<string, string>>
+): Map<string, Record<string, string>> {
+  const latest = new Map<string, Record<string, string>>();
+  for (const row of rows) {
+    const key = String(row.instrument_id || row.symbol || row.raw_symbol || "");
+    if (!key) continue;
+    const timestamp = parseExternalTimestamp(row.ts_recv || row.ts_event);
+    const current = latest.get(key);
+    const currentTimestamp = current
+      ? parseExternalTimestamp(current.ts_recv || current.ts_event)
+      : 0;
+    if (!current || timestamp >= currentTimestamp) latest.set(key, row);
+  }
+  return latest;
+}
+
+async function getSixSDatabentoDefinitions(): Promise<SixSDefinition[]> {
+  return cached(
+    "databento-6s-option-definitions",
+    SIX_S_DEFINITION_CACHE_MS,
+    async () => {
+      const end = new Date();
+      const start = new Date(end.getTime() - 7 * 86_400_000);
+      const rows = await fetchDatabentoCsv({
+        schema: "definition",
+        symbols: "6S.OPT",
+        stype_in: "parent",
+        start: start.toISOString(),
+        end: end.toISOString(),
+        limit: "100000",
+      });
+      const latest = latestRowsByInstrument(rows);
+      return [...latest.values()].flatMap(row => {
+        const instrumentClass = String(
+          row.instrument_class || ""
+        ).toUpperCase();
+        const optionType =
+          instrumentClass === "C" || instrumentClass === "CALL"
+            ? "call"
+            : instrumentClass === "P" || instrumentClass === "PUT"
+              ? "put"
+              : null;
+        const expiryTimestamp = parseExternalTimestamp(
+          row.expiration || row.expiry
+        );
+        const strike = toNumber(row.strike_price || row.strike);
+        const instrumentId = String(row.instrument_id || "");
+        const symbol = String(
+          row.raw_symbol || row.symbol || instrumentId
+        ).trim();
+        if (
+          !optionType ||
+          !instrumentId ||
+          !symbol ||
+          strike <= 0 ||
+          expiryTimestamp <= Date.now() - 86_400_000
+        )
+          return [];
+        return [
+          {
+            instrumentId,
+            symbol,
+            expiry: new Date(expiryTimestamp).toISOString().slice(0, 10),
+            expiryTimestamp,
+            strike,
+            optionType,
+            timestamp: parseExternalTimestamp(row.ts_recv || row.ts_event),
+          } satisfies SixSDefinition,
+        ];
+      });
+    }
+  );
+}
+
+async function getSixSDatabentoBooks(): Promise<Map<string, SixSBook>> {
+  const lookback = Math.min(
+    60,
+    Math.max(1, toNumber(process.env.SIX_S_DATABENTO_LOOKBACK_MINUTES) || 10)
+  );
+  const end = new Date();
+  const start = new Date(end.getTime() - lookback * 60_000);
+  const rows = await fetchDatabentoCsv({
+    schema: "mbp-1",
+    symbols: "6S.OPT",
+    stype_in: "parent",
+    start: start.toISOString(),
+    end: end.toISOString(),
+    limit: "250000",
+  });
+  const latest = latestRowsByInstrument(rows);
+  return new Map(
+    [...latest.entries()].map(([instrumentId, row]) => [
+      instrumentId,
+      {
+        bid: toNumber(row.bid_px_00 || row.bid_price || row.bid),
+        ask: toNumber(row.ask_px_00 || row.ask_price || row.ask),
+        bidSize: optionalNumber(row.bid_sz_00 || row.bid_size),
+        askSize: optionalNumber(row.ask_sz_00 || row.ask_size),
+        timestamp: parseExternalTimestamp(row.ts_recv || row.ts_event),
+      },
+    ])
+  );
+}
+
+async function getSixSDatabentoMainFuture(): Promise<SpotPrice | null> {
+  return cached("databento-6s-main-future", SIX_S_CHAIN_CACHE_MS, async () => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 4 * 86_400_000);
+    const rows = await fetchDatabentoCsv({
+      schema: "bbo-1m",
+      symbols: "6S.c.0",
+      stype_in: "continuous",
+      start: start.toISOString(),
+      end: end.toISOString(),
+      limit: "10000",
+    });
+    const row = [...rows].sort(
+      (left, right) =>
+        parseExternalTimestamp(right.ts_recv || right.ts_event) -
+        parseExternalTimestamp(left.ts_recv || left.ts_event)
+    )[0];
+    if (!row) throw new Error("Databento returned no 6S.c.0 BBO");
+    const bid = toNumber(row.bid_px_00 || row.bid_price || row.bid);
+    const ask = toNumber(row.ask_px_00 || row.ask_price || row.ask);
+    const price = bid > 0 && ask > 0 ? (bid + ask) / 2 : Math.max(bid, ask);
+    if (price <= 0) throw new Error("Databento 6S.c.0 BBO has no price");
+    return spotPrice(
+      price,
+      parseExternalTimestamp(row.ts_recv || row.ts_event),
+      "Databento GLBX.MDP3 · 6S.c.0 main futures BBO"
+    );
+  });
+}
+
+function normalizeSixSGatewayChain(raw: any): SixSOptionChain {
+  const timestamp = parseExternalTimestamp(raw?.timestamp) || Date.now();
+  const spot = toNumber(raw?.spot ?? raw?.underlyingPrice);
+  const quotes: SixSOptionQuote[] = (
+    Array.isArray(raw?.quotes) ? raw.quotes : []
+  ).flatMap((item: any): SixSOptionQuote[] => {
+    const expiryTimestamp =
+      parseExternalTimestamp(item.expiryTimestamp) ||
+      Date.parse(`${String(item.expiry)}T20:00:00Z`);
+    const expiry = Number.isFinite(expiryTimestamp)
+      ? new Date(expiryTimestamp).toISOString().slice(0, 10)
+      : "";
+    const strike = toNumber(item.strike);
+    const optionType =
+      String(item.optionType || item.callPut).toLowerCase() === "put"
+        ? "put"
+        : String(item.optionType || item.callPut).toLowerCase() === "call"
+          ? "call"
+          : null;
+    if (!expiry || strike <= 0 || !optionType) return [];
+    const quoteTimestamp = parseExternalTimestamp(item.timestamp) || timestamp;
+    const bid = toNumber(item.bid1Price ?? item.bid);
+    const ask = toNumber(item.ask1Price ?? item.ask);
+    const mark =
+      toNumber(item.markPrice) ||
+      (bid > 0 && ask > 0 ? (bid + ask) / 2 : Math.max(bid, ask));
+    const reference = toNumber(item.ivReferenceSpot) || spot;
+    const model = black76Iv({
+      price: mark,
+      futures: reference,
+      strike,
+      expiryTimestamp,
+      asOf: quoteTimestamp,
+      optionType,
+    });
+    const greeks = black76Greeks({
+      futures: reference,
+      strike,
+      expiryTimestamp,
+      asOf: quoteTimestamp,
+      volatility: model.value,
+      optionType,
+    });
+    const solve = (price: number) =>
+      black76Iv({
+        price,
+        futures: reference,
+        strike,
+        expiryTimestamp,
+        asOf: quoteTimestamp,
+        optionType,
+      });
+    const modelBid = solve(bid);
+    const modelAsk = solve(ask);
+    return [
+      {
+        symbol: String(item.symbol || item.instrument || ""),
+        expiry,
+        expiryTimestamp,
+        strike,
+        optionType,
+        contractMultiplier:
+          toNumber(item.contractMultiplier) || SIX_S_CONTRACT_MULTIPLIER,
+        premiumCurrency: "USD",
+        markPrice: mark,
+        markIv: toNumber(item.markIv),
+        bidIv: optionalNumber(item.bidIv),
+        askIv: optionalNumber(item.askIv),
+        ivSpread:
+          optionalNumber(item.bidIv) !== null &&
+          optionalNumber(item.askIv) !== null
+            ? Number(item.askIv) - Number(item.bidIv)
+            : null,
+        modelMarkIv: model.value,
+        modelBidIv: modelBid.value,
+        modelAskIv: modelAsk.value,
+        modelIvSpread:
+          modelBid.value !== null && modelAsk.value !== null
+            ? modelAsk.value - modelBid.value
+            : null,
+        modelMarkIvStatus: model.status,
+        modelBidIvStatus: modelBid.status,
+        modelAskIvStatus: modelAsk.status,
+        ivReferenceSpot: reference > 0 ? reference : null,
+        ivReferenceTimestamp: quoteTimestamp,
+        ivReferenceSource: "6S main futures synchronized quote",
+        bid1Price: bid,
+        ask1Price: ask,
+        bid1Size: optionalNumber(item.bid1Size ?? item.bidSize),
+        ask1Size: optionalNumber(item.ask1Size ?? item.askSize),
+        delta: optionalNumber(item.delta) ?? greeks.delta,
+        gamma: optionalNumber(item.gamma) ?? greeks.gamma,
+        theta: optionalNumber(item.theta) ?? greeks.theta,
+        vega: optionalNumber(item.vega) ?? greeks.vega,
+        timestamp: quoteTimestamp,
+        source: String(item.source || raw.source || "6S option-chain gateway"),
+        openInterest: optionalNumber(item.openInterest),
+        volume: optionalNumber(item.volume),
+        tradeable: item.tradeable !== false,
+        marketAvailable: mark > 0,
+      },
+    ];
+  });
+  const delaySeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  return {
+    quotes,
+    spot,
+    ivReferenceSpot: spot > 0 ? spot : null,
+    ivReferenceTimestamp: timestamp,
+    ivReferenceSource: spot > 0 ? "6S main futures synchronized quote" : null,
+    timestamp,
+    source: String(raw?.source || "Configured 6S option-chain gateway"),
+    status: delaySeconds > 15 * 60 ? "stale" : "realtime",
+    delaySeconds,
+    contractCount: quotes.length,
+    expiryCount: new Set(quotes.map(quote => quote.expiry)).size,
+    strikeCount: new Set(quotes.map(quote => quote.strike)).size,
+  };
+}
+
+async function getSixSConfiguredGatewayChain(): Promise<SixSOptionChain | null> {
+  const url = process.env.SIX_S_OPTION_CHAIN_URL?.trim();
+  if (!url) return null;
+  const token = process.env.SIX_S_OPTION_CHAIN_TOKEN?.trim();
+  const raw = await fetchJson<any>(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  return normalizeSixSGatewayChain(raw);
+}
+
+async function getSixSDatabentoChain(): Promise<SixSOptionChain> {
+  const [definitions, books, mainFuture] = await Promise.all([
+    getSixSDatabentoDefinitions(),
+    getSixSDatabentoBooks(),
+    getSixSDatabentoMainFuture(),
+  ]);
+  const futuresReference = mainFuture?.price ?? 0;
+  const quotes = definitions.map(definition => {
+    const book = books.get(definition.instrumentId);
+    const timestamp = book?.timestamp || definition.timestamp || Date.now();
+    const bid = book?.bid ?? 0;
+    const ask = book?.ask ?? 0;
+    const mark = bid > 0 && ask > 0 ? (bid + ask) / 2 : Math.max(bid, ask);
+    const solve = (price: number) =>
+      black76Iv({
+        price,
+        futures: futuresReference,
+        strike: definition.strike,
+        expiryTimestamp: definition.expiryTimestamp,
+        asOf: timestamp,
+        optionType: definition.optionType,
+      });
+    const modelMark = solve(mark);
+    const modelBid = solve(bid);
+    const modelAsk = solve(ask);
+    const greeks = black76Greeks({
+      futures: futuresReference,
+      strike: definition.strike,
+      expiryTimestamp: definition.expiryTimestamp,
+      asOf: timestamp,
+      volatility: modelMark.value,
+      optionType: definition.optionType,
+    });
+    return {
+      symbol: definition.symbol,
+      expiry: definition.expiry,
+      expiryTimestamp: definition.expiryTimestamp,
+      strike: definition.strike,
+      optionType: definition.optionType,
+      contractMultiplier: SIX_S_CONTRACT_MULTIPLIER,
+      premiumCurrency: "USD",
+      markPrice: mark,
+      // CME MDP3 contains raw book data, not publisher-computed IV.
+      markIv: 0,
+      bidIv: null,
+      askIv: null,
+      ivSpread: null,
+      modelMarkIv: modelMark.value,
+      modelBidIv: modelBid.value,
+      modelAskIv: modelAsk.value,
+      modelIvSpread:
+        modelBid.value !== null && modelAsk.value !== null
+          ? modelAsk.value - modelBid.value
+          : null,
+      modelMarkIvStatus: modelMark.status,
+      modelBidIvStatus: modelBid.status,
+      modelAskIvStatus: modelAsk.status,
+      ivReferenceSpot: futuresReference > 0 ? futuresReference : null,
+      ivReferenceTimestamp: mainFuture?.timestamp ?? null,
+      ivReferenceSource: mainFuture?.source ?? "Databento GLBX.MDP3 · 6S.c.0",
+      bid1Price: bid,
+      ask1Price: ask,
+      bid1Size: book?.bidSize ?? null,
+      ask1Size: book?.askSize ?? null,
+      delta: greeks.delta,
+      gamma: greeks.gamma,
+      theta: greeks.theta,
+      vega: greeks.vega,
+      timestamp,
+      source: "Databento GLBX.MDP3 · CME 6S options",
+      openInterest: null,
+      volume: null,
+      tradeable: true,
+      marketAvailable: mark > 0,
+    } satisfies SixSOptionQuote;
+  });
+  const timestamp = Math.max(
+    mainFuture?.timestamp ?? 0,
+    ...quotes
+      .filter(quote => quote.marketAvailable)
+      .map(quote => quote.timestamp),
+    ...definitions.map(definition => definition.timestamp)
+  );
+  const delaySeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  return {
+    quotes,
+    spot: futuresReference,
+    ivReferenceSpot: futuresReference > 0 ? futuresReference : null,
+    ivReferenceTimestamp: mainFuture?.timestamp ?? null,
+    ivReferenceSource: mainFuture?.source ?? null,
+    timestamp: timestamp || Date.now(),
+    source:
+      "Databento GLBX.MDP3 · CME 6S.OPT definitions + MBP-1; Model IV/Greeks use Black-76 and 6S.c.0",
+    status: delaySeconds > 15 * 60 ? "stale" : "realtime",
+    delaySeconds,
+    contractCount: quotes.length,
+    expiryCount: new Set(quotes.map(quote => quote.expiry)).size,
+    strikeCount: new Set(quotes.map(quote => quote.strike)).size,
+  };
+}
+
+export async function getSixSMainPrice(): Promise<SpotPrice | null> {
+  if (process.env.DATABENTO_API_KEY) {
+    try {
+      return await getSixSDatabentoMainFuture();
+    } catch (error) {
+      console.error("[MarketData] Failed to fetch Databento 6S.c.0:", error);
+    }
+  }
+  return getYahooPrice("6S=F", "yahoo-6s-main");
+}
+
+export async function getSixSOptionChain(): Promise<SixSOptionChain> {
+  return cached("six-s-main-option-chain", SIX_S_CHAIN_CACHE_MS, async () => {
+    const gateway = await getSixSConfiguredGatewayChain().catch(error => {
+      console.error(
+        "[MarketData] Failed to fetch configured 6S gateway:",
+        error
+      );
+      return null;
+    });
+    if (gateway?.quotes.length) return gateway;
+    if (process.env.DATABENTO_API_KEY) return getSixSDatabentoChain();
+    const spot = await getSixSMainPrice();
+    const timestamp = spot?.timestamp ?? Date.now();
+    return {
+      quotes: [],
+      spot: spot?.price ?? 0,
+      ivReferenceSpot: null,
+      ivReferenceTimestamp: null,
+      ivReferenceSource: null,
+      timestamp,
+      source:
+        "6Smain option chain is not configured · set SIX_S_OPTION_CHAIN_URL or DATABENTO_API_KEY; public CME website quotes are delayed/reference-only and are not scraped",
+      status: "stale",
+      delaySeconds: Math.max(0, Math.round((Date.now() - timestamp) / 1000)),
+      contractCount: 0,
+      expiryCount: 0,
+      strikeCount: 0,
+    };
+  });
 }
 
 function timestampSeconds(value: unknown): number {
@@ -1853,12 +2548,44 @@ export function getMarketSources() {
   return {
     marketDataConfigured: Boolean(process.env.MARKETDATA_TOKEN),
     tradierConfigured: Boolean(process.env.TRADIER_API_TOKEN),
+    sixSConfigured: Boolean(
+      process.env.SIX_S_OPTION_CHAIN_URL || process.env.DATABENTO_API_KEY
+    ),
     gldPriority: process.env.MARKETDATA_TOKEN
       ? "MarketData.app OPRA 实时期权 / SmartMid 实时现价"
       : process.env.TRADIER_API_TOKEN
         ? "Tradier 实时报价；ORATS Greeks 约每小时更新"
         : "Yahoo Finance 兼容接口；可能延迟，Greeks 使用模型估算",
     sources: [
+      {
+        product:
+          "6Smain（CHF/USD 主力期货）完整期权链 / Bid-Ask / Model IV / Model Greeks",
+        provider: process.env.SIX_S_OPTION_CHAIN_URL
+          ? "Configured company/CME snapshot gateway"
+          : "Databento GLBX.MDP3 (CME Globex)",
+        endpoint: process.env.SIX_S_OPTION_CHAIN_URL
+          ? "SIX_S_OPTION_CHAIN_URL（服务器端）"
+          : "/v0/timeseries.get_range · 6S.OPT + 6S.c.0",
+        authentication: process.env.SIX_S_OPTION_CHAIN_URL
+          ? "SIX_S_OPTION_CHAIN_TOKEN（如网关要求）"
+          : "DATABENTO_API_KEY + CME/Databento 相应数据权限",
+        mode:
+          process.env.SIX_S_OPTION_CHAIN_URL || process.env.DATABENTO_API_KEY
+            ? "已配置；CME 合约定义与盘口。市场源不发布 IV 时，使用同快照 6S 主力期货按 Black-76 计算 Model IV/Greeks"
+            : "未配置；仅显示 Yahoo 6S=F 延迟主力价格，期权链保持 MISSING，不生成假数据",
+        documentationUrl:
+          "https://databento.com/docs/examples/options/options-on-futures-introduction",
+      },
+      {
+        product: "6Smain 企业级实时期权 / Greeks / IV（可替代数据源）",
+        provider: "CME Group Market Data APIs",
+        endpoint:
+          "CME Futures & Options WebSocket + Greeks & Implied Volatility REST + Reference Data API",
+        authentication: "CME OAuth/API ID、订阅与再分发授权",
+        mode: "企业生产选项；网站公开报价至少延迟且仅供参考，不作为服务器抓取接口",
+        documentationUrl:
+          "https://www.cmegroup.com/market-data/market-data-api.html",
+      },
       {
         product: "XAUT 期权 / Greeks / Bid-Ask",
         provider: "Bybit V5 REST",

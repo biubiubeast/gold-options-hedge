@@ -50,6 +50,7 @@ export default function DataSources() {
           { label: "XAUT/USDT", value: spots?.xaut },
           { label: "BTC/USDT", value: spots?.btc },
           { label: "ETH/USDT", value: spots?.eth },
+          { label: "6Smain/USD", value: spots?.sixS },
           { label: "GLD/USD", value: spots?.gld },
           { label: "XAU/USD 代理", value: spots?.gold },
         ].map(({ label, value }) => {

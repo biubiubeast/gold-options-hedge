@@ -13,6 +13,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
+  type HeatmapUnderlyingSelection,
   type PortfolioSettings,
 } from "@/lib/portfolio";
 import {
@@ -60,7 +61,11 @@ const heatmapFilterLabels: Array<
   [keyof PortfolioSettings["heatmapVisibleFilters"], string, string]
 > = [
   ["dataset", "Data / 数据集", "真实仓位、完整期权链或压力测试数据"],
-  ["underlying", "Underlying / Venue", "GLD、XAUT、BTC、ETH 及对应行情场所"],
+  [
+    "underlying",
+    "Underlying / Venue",
+    "GLD、XAUT、BTC、ETH、6Smain 及对应行情场所",
+  ],
   ["venue", "Venue", "交易场所或行情场所"],
   ["broker", "Broker", "经纪商维度"],
   ["account", "Account", "账户维度"],
@@ -74,7 +79,7 @@ const heatmapFilterLabels: Array<
   ["status", "Data Status", "LIVE、STALE、WARN、MISSING、FAIL"],
   ["metric", "Metric", "热力图颜色所代表的指标"],
   ["scale", "Color Scale", "Quantile、Log、Zero-centered"],
-  ["spot", "Spot 标记", "GLD、XAUT、BTC、ETH 或 XAU Spot"],
+  ["spot", "Spot 标记", "GLD、XAUT、BTC、ETH、6Smain 或 XAU Spot"],
   ["label", "Label", "方格内数值标签模式"],
   ["hover", "Hover", "Hover 弹窗的数据预设"],
   [
@@ -178,7 +183,7 @@ const heatmapSectionLabels: Array<
   [
     "chainStatusBanner",
     "期权链状态提示",
-    "显示筛选区下方 GLD / XAUT / BTC / ETH 多 Venue 完整期权链来源与更新时间；默认隐藏",
+    "显示筛选区下方 GLD / XAUT / BTC / ETH / 6Smain 多 Venue 完整期权链来源与更新时间；默认隐藏",
   ],
   [
     "positionOnlyMetricBanner",
@@ -231,6 +236,19 @@ const maxPainSectionLabels: Array<
   ],
 ];
 
+const heatmapUnderlyingOptions: ReadonlyArray<
+  readonly [HeatmapUnderlyingSelection, string]
+> = [
+  ["GLD", "GLD/USD-OPRA"],
+  ["XAUT", "XAUT/USDT - Bybit"],
+  ["BTC", "BTC/USDT - Bybit"],
+  ["BTC_DERIBIT", "BTC/USD - Deribit"],
+  ["ETH_BYBIT", "ETH/USDT - Bybit"],
+  ["ETH_DERIBIT", "ETH/USD - Deribit"],
+  ["SIX_S_CME", "6Smain/USD - CME"],
+  ["all", "ALL MARKETS"],
+];
+
 const fixedOptionGroups = [
   [
     "dataset",
@@ -242,19 +260,7 @@ const fixedOptionGroups = [
       ["mock200", "Mock 200"],
     ],
   ],
-  [
-    "underlying",
-    "Underlying / Venue",
-    [
-      ["GLD", "GLD/USD-OPRA"],
-      ["XAUT", "XAUT/USDT - Bybit"],
-      ["BTC", "BTC/USDT - Bybit"],
-      ["BTC_DERIBIT", "BTC/USD - Deribit"],
-      ["ETH_BYBIT", "ETH/USDT - Bybit"],
-      ["ETH_DERIBIT", "ETH/USD - Deribit"],
-      ["all", "ALL MARKETS"],
-    ],
-  ],
+  ["underlying", "Underlying / Venue", heatmapUnderlyingOptions],
   [
     "callPut",
     "C/P",
@@ -314,6 +320,7 @@ const fixedOptionGroups = [
       ["XAUT", "XAUT"],
       ["BTC", "BTC"],
       ["ETH", "ETH"],
+      ["6Smain", "6Smain"],
       ["XAU", "XAU"],
     ],
   ],
@@ -489,6 +496,7 @@ export default function Settings() {
       ...new Set([
         "Bybit",
         "Cboe / OPRA",
+        "CME / Databento",
         "OPRA",
         ...(positions ?? [])
           .map(position => position.venue)
@@ -565,8 +573,16 @@ export default function Settings() {
       toast.error(`${invalidGroup?.[1] ?? "Metric"} 至少保留一个可选项`);
       return;
     }
+    const firstVisibleUnderlying = heatmapUnderlyingOptions.find(
+      ([key]) => draft.heatmapFilterOptions.underlying[key]
+    )?.[0];
     const validated: PortfolioSettings = {
       ...draft,
+      heatmapDefaultUnderlying: draft.heatmapFilterOptions.underlying[
+        draft.heatmapDefaultUnderlying
+      ]
+        ? draft.heatmapDefaultUnderlying
+        : (firstVisibleUnderlying ?? "GLD"),
       heatmapChainContractCountLabel:
         draft.heatmapChainContractCountLabel.trim().slice(0, 80) ||
         DEFAULT_PORTFOLIO_SETTINGS.heatmapChainContractCountLabel,
@@ -1279,6 +1295,35 @@ export default function Settings() {
           <p className="text-xs leading-relaxed text-muted-foreground">
             决定每个下拉框里可以选择什么。当前已选择项若被隐藏，市场热力图会自动切换到该组第一个可用项。每组至少保留一个选项。
           </p>
+          <div className="rounded-md border border-primary/25 bg-primary/[0.03] p-3">
+            <Label htmlFor="heatmap-default-underlying" className="text-xs">
+              热力图默认 Underlying
+            </Label>
+            <select
+              id="heatmap-default-underlying"
+              value={draft.heatmapDefaultUnderlying}
+              onChange={event =>
+                setDraft(current => ({
+                  ...current,
+                  heatmapDefaultUnderlying: event.target
+                    .value as HeatmapUnderlyingSelection,
+                }))
+              }
+              className="mt-2 h-9 w-full max-w-md rounded-md border border-input bg-background px-3 text-xs"
+            >
+              {heatmapUnderlyingOptions
+                .filter(([key]) => draft.heatmapFilterOptions.underlying[key])
+                .map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+            </select>
+            <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+              每次重新打开或刷新市场热力图时使用；下方 Underlying / Venue
+              开关控制哪些标的出现在筛选器中。若隐藏当前默认项，保存时会自动改为第一个可见标的。
+            </p>
+          </div>
           <div>
             <p className="mb-2 text-xs font-semibold">Metric</p>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">

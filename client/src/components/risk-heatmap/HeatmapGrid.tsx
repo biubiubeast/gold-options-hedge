@@ -457,6 +457,7 @@ function HeatmapScopeTooltip({
       ...new Set(
         positions.map(position => {
           if (position.underlying === "GLD") return "GLD/USD-OPRA";
+          if (position.underlying === "6Smain") return "6Smain/USD - CME";
           const deribit = position.venue.toLowerCase().includes("deribit");
           return `${position.underlying}/${deribit ? "USD" : "USDT"} - ${deribit ? "Deribit" : "Bybit"}`;
         })
