@@ -290,23 +290,28 @@ K线页支持 GLD、XAU/USD、XAUT/USDT、Bybit BTC/ETH 和 Deribit BTC/ETH，�
 
 ## API 与数据来源
 
-| 数据                      | Provider / Endpoint                                                        |                      密钥 |
-| ------------------------- | -------------------------------------------------------------------------- | ------------------------: |
-| GLD 完整链                | Cboe `/api/global/delayed_quotes/options/GLD.json`                         |                        否 |
-| GLD Spot                  | MarketData.app → Tradier → Cboe delayed → Yahoo fallback                   |                      可选 |
-| GLD 持仓低延迟期权        | MarketData.app `/v1/options/quotes/{OCC_SYMBOL}/?mode=live`                | `MARKETDATA_TOKEN` + OPRA |
-| GLD Tradier 兼容链        | Tradier `/v1/markets/options/chains?greeks=true`                           |       `TRADIER_API_TOKEN` |
-| XAUT/BTC/ETH Bybit 完整链 | Bybit `/v5/market/instruments-info` + `/v5/market/tickers?category=option` |                        否 |
-| XAUT/BTC/ETH Spot         | Bybit `/v5/market/tickers?category=spot`                                   |                        否 |
-| BTC/ETH Deribit 完整链    | `public/get_instruments` + `public/get_book_summary_by_currency`           |                        否 |
-| BTC/ETH Deribit ticker    | WebSocket `ticker.{instrument}.100ms`，REST ticker 降级                    |                        否 |
-| 6Smain CME 完整期权链     | Databento `GLBX.MDP3`：`6S.OPT` + `6S.c.0`                                 |       `DATABENTO_API_KEY` |
-| 6Smain 企业网关（优先）   | `SIX_S_OPTION_CHAIN_URL`；可接 CME 官方 Market Data APIs                   |                  网关令牌 |
-| XAU/USD 代理              | Yahoo `GC=F`；失败时使用 XAUT/USDT proxy                                   |                        否 |
+| 数据                      | Provider / Endpoint                                                            |                      密钥 |
+| ------------------------- | ------------------------------------------------------------------------------ | ------------------------: |
+| GLD 完整链                | Cboe `/api/global/delayed_quotes/options/GLD.json`                             |                        否 |
+| GLD Spot                  | MarketData.app → Tradier → Cboe delayed → Yahoo fallback                       |                      可选 |
+| GLD 持仓低延迟期权        | MarketData.app `/v1/options/quotes/{OCC_SYMBOL}/?mode=live`                    | `MARKETDATA_TOKEN` + OPRA |
+| GLD Tradier 兼容链        | Tradier `/v1/markets/options/chains?greeks=true`                               |       `TRADIER_API_TOKEN` |
+| XAUT/BTC/ETH Bybit 完整链 | Bybit `/v5/market/instruments-info` + `/v5/market/tickers?category=option`     |                        否 |
+| XAUT/BTC/ETH Spot         | Bybit `/v5/market/tickers?category=spot`                                       |                        否 |
+| BTC/ETH Deribit 完整链    | `public/get_instruments` + `public/get_book_summary_by_currency`               |                        否 |
+| BTC/ETH Deribit ticker    | WebSocket `ticker.{instrument}.100ms`，REST ticker 降级                        |                        否 |
+| 6Smain CME 延迟参考链     | CME `ProductCalendar/Options/86` + `atm/strike-prices/{id}/{year}/{month}/ALL` |                        否 |
+| 6Smain CME 授权期权链     | Databento `GLBX.MDP3`：`CHU/1SF…5SF.OPT` + `6S.FUT`                            |       `DATABENTO_API_KEY` |
+| 6Smain 企业网关（优先）   | `SIX_S_OPTION_CHAIN_URL`；可接 CME 官方 Market Data APIs                       |                  网关令牌 |
+| XAU/USD 代理              | Yahoo `GC=F`；失败时使用 XAUT/USDT proxy                                       |                        否 |
 
 Deribit WebSocket 会处理 heartbeat、断线重连、增量订阅和有限 REST fallback。服务器刚从休眠恢复时需要重建订阅，最初数秒可能出现部分 `MISSING`。
 
-6Smain 指 CME Swiss Franc/USD 主力期货；标准期货及其期权合约单位为 125,000 CHF。Databento 路径读取 CME 合约定义和一档盘口，市场源没有发布 IV/Greeks 时，网站以同一数据链路的 `6S.c.0` 主力期货为参考，按 Black-76 计算并明确标记为 Model IV/Greeks。没有配置授权时只显示 Yahoo `6S=F` 延迟主力价格，期权链保持 `MISSING`，不会伪造报价。CME 官方实时 Futures & Options、Greeks & Implied Volatility API 可通过 `SIX_S_OPTION_CHAIN_URL` 企业网关接入。
+6Smain 指 CME Swiss Franc/USD 主力期货；标准合约单位为 125,000 CHF。默认免密钥读取CME公开的月度（CHU）和周五周度（1SF–5SF）参考期权链，期限以官方 `lastTrade` 和芝加哥09:00终止时刻为准，已到期/尚未上市合约会被排除。全链请求最多4个并行，每5分钟缓存；刷新市场数据会清除缓存重新读取。首次进入6S公共链时，缺少Bid/Ask IV的默认指标会切换到可用的Mark IV，用户仍可自行选择其它Metric。
+
+公开报价至少延迟10分钟，`priorSettle`是日度结算参考价，不能被其最新 `updated` 字段改写成实时Mark。Model Mark IV/Greeks按Black-76使用对应期货的同日结算价；日期粒度的模型时点统一约定为12:00 UTC并在Source中披露。Bid/Ask、Size、OI与IV Spread源字段缺失时保持MISSING，不合成盘口。数据来源页提供“测试6S期权链”按钮，显示真实合约数、有效期限、Strike、Model IV数量与缺失字段。
+
+可配置Databento或公司/CME网关作为优先授权源；Databento按合约定义的 `underlying_id` 匹配实际期货，`6S.c.0`仅用于主力显示和ATM，不给所有期限反解IV。CME官方实时API可经 `SIX_S_OPTION_CHAIN_URL` 接入。公共参考源不提供生产行情SLA；请求失败时保留上次真实链并标记STALE，首轮无链时明确显示数据不可用。
 
 详细字段审计见 [`docs/market-data-field-audit.md`](docs/market-data-field-audit.md)，实时链使用说明见 [`docs/live-market-chain-guide.md`](docs/live-market-chain-guide.md)。
 

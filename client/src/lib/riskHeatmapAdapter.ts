@@ -184,10 +184,10 @@ type ChainQuote = {
   ask1Price: number;
   bid1Size?: number | null;
   ask1Size?: number | null;
-  delta: number;
-  gamma: number;
-  theta: number;
-  vega: number;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
   timestamp: number;
   source: string;
   openInterest?: number | null;
@@ -195,6 +195,8 @@ type ChainQuote = {
   marketAvailable?: boolean;
   contractMultiplier?: number;
   premiumCurrency?: string;
+  underlyingFuture?: string;
+  markPriceKind?: string;
 };
 
 export function buildChainRiskPositions(
@@ -234,8 +236,8 @@ export function buildChainRiskPositions(
       premiumCurrency:
         quote.premiumCurrency ??
         (underlying === "GLD" || underlying === "6Smain" ? "USD" : "USDT"),
-      bid: quote.bid1Price > 0 ? quote.bid1Price : 0,
-      ask: quote.ask1Price > 0 ? quote.ask1Price : 0,
+      bid: quote.bid1Price > 0 ? quote.bid1Price : null,
+      ask: quote.ask1Price > 0 ? quote.ask1Price : null,
       bidSize: quote.bid1Size ?? null,
       askSize: quote.ask1Size ?? null,
       markIV: marketAvailable && quote.markIv > 0 ? quote.markIv : null,
@@ -255,6 +257,8 @@ export function buildChainRiskPositions(
         : null,
       ivReferenceSource: quote.ivReferenceSource ?? null,
       expiryTimestamp: quote.expiryTimestamp ?? null,
+      underlyingFuture: quote.underlyingFuture ?? null,
+      markPriceKind: quote.markPriceKind ?? null,
       unitDelta:
         marketAvailable && Number.isFinite(quote.delta) ? quote.delta : null,
       unitGamma:

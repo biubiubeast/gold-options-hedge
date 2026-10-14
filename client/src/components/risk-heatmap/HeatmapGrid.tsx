@@ -8,7 +8,7 @@ import {
   HELD_ONLY_HEATMAP_METRICS,
   METRIC_LABELS,
   formatCompact,
-  formatPrice,
+  formatInstrumentPrice,
   formatSpotPrice,
   formatStrike,
   formatStrikeDistanceFromSpot,
@@ -154,6 +154,8 @@ function TooltipPosition({
   timeZone: DisplayTimeZone;
 }) {
   const rows: Array<[string, string]> = [];
+  const price = (value: number | null) =>
+    formatInstrumentPrice(value, position.underlying);
   if (content.selectedMetric)
     rows.push([
       "Selected metric",
@@ -196,12 +198,16 @@ function TooltipPosition({
       ]);
   }
   if (preset === "market" || preset === "all") {
+    if (position.underlying === "6Smain" && position.underlyingFuture)
+      rows.push(["Underlying Future", position.underlyingFuture]);
     if (content.qtyNotional && preset === "market")
       rows.push(["Qty", formatCompact(position.netQty)]);
     if (content.markIv) {
       rows.push([
-        "Mark / Mark IV",
-        `${formatPrice(position.markPrice)} ${position.premiumCurrency ?? ""} / ${
+        position.markPriceKind === "settlement"
+          ? "Settlement / Mark IV"
+          : "Mark / Mark IV",
+        `${price(position.markPrice)} ${position.premiumCurrency ?? ""} / ${
           ivSource === "model"
             ? modelIvLabel(position.modelMarkIV, "modelMarkIV")
             : formatCompact(position.markIV, "markIV")
@@ -211,7 +217,7 @@ function TooltipPosition({
     if (content.bidAsk) {
       rows.push([
         "Bid / Ask",
-        `${formatPrice(position.bid)} / ${formatPrice(position.ask)} ${position.premiumCurrency ?? ""}`.trim(),
+        `${price(position.bid)} / ${price(position.ask)} ${position.premiumCurrency ?? ""}`.trim(),
       ]);
       rows.push([
         "Bid / Ask Size",
@@ -223,7 +229,10 @@ function TooltipPosition({
       ]);
     }
     if (content.volume && position.volumeNotionalUSD !== null) {
-      const windowLabel = position.underlying === "GLD" ? "Session" : "24h";
+      const windowLabel =
+        position.underlying === "GLD" || position.underlying === "6Smain"
+          ? "Session"
+          : "24h";
       rows.push([
         `Volume Notional USD (${windowLabel})`,
         `$${formatCompact(position.volumeNotionalUSD, "volume")}`,
@@ -238,7 +247,7 @@ function TooltipPosition({
         if (content.ivReferenceSpot) {
           rows.push([
             "IV Reference Spot / As-of",
-            `${formatPrice(position.ivReferenceSpot)} / ${position.ivReferenceTime ? formatDisplayDateTime(position.ivReferenceTime, timeZone, { seconds: true, includeZone: true }) : "MISSING"}`,
+            `${price(position.ivReferenceSpot)} / ${position.ivReferenceTime ? formatDisplayDateTime(position.ivReferenceTime, timeZone, { seconds: true, includeZone: true }) : "MISSING"}`,
           ]);
         }
         if (content.modelIvStatus) {
@@ -316,7 +325,7 @@ function SpotPriceTooltip({
       >
         <span className="text-muted-foreground">Spot price </span>
         <strong className="font-mono text-amber-300">
-          {formatSpotPrice(spot)}
+          {formatSpotPrice(spot, spot > 0 && spot < 10 ? 5 : 2)}
         </strong>
       </TooltipContent>
     </Tooltip>

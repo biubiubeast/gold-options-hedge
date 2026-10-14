@@ -124,6 +124,8 @@ export interface RiskPosition {
   ivReferenceTime: string | null;
   ivReferenceSource: string | null;
   expiryTimestamp?: number | null;
+  underlyingFuture?: string | null;
+  markPriceKind?: string | null;
   unitDelta: number | null;
   unitGamma: number | null;
   unitTheta: number | null;
@@ -1041,6 +1043,10 @@ export function enrichRiskPositions(
       priceValue: number | null
     ) => {
       if (!inversionEnabled) return disabledResult;
+      // CME futures options arrive with Black-76 values and a maturity-specific
+      // futures reference. Never retry a missing Black-76 IV using spot BS.
+      if (position.underlying === "6Smain")
+        return { value: upstreamValue, status: upstreamStatus };
       if (
         !customModelFormula &&
         upstreamValue !== null &&
@@ -1347,6 +1353,16 @@ export function formatPrice(value: number | null): string {
   });
 }
 
+export function formatInstrumentPrice(
+  value: number | null,
+  underlying: RiskUnderlying
+): string {
+  if (underlying !== "6Smain") return formatPrice(value);
+  return value === null || !Number.isFinite(value)
+    ? "MISSING"
+    : value.toFixed(5);
+}
+
 /**
  * Remove binary floating-point noise without collapsing distinct listed
  * contracts. Eight decimals is substantially finer than supported exchange
@@ -1368,11 +1384,11 @@ export function formatStrike(value: number | null): string {
   });
 }
 
-export function formatSpotPrice(value: number | null): string {
+export function formatSpotPrice(value: number | null, decimals = 2): string {
   if (value === null || !Number.isFinite(value)) return "MISSING";
   return value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   });
 }
 

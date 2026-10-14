@@ -11,6 +11,10 @@ export default function DataSources() {
   const { timeZone } = useDisplayTimezone();
   const { data, isLoading } = trpc.market.sources.useQuery();
   const { data: maxPainCoverage } = trpc.maxPainResearch.coverage.useQuery();
+  const sixS = trpc.market.sixSOptionChain.useQuery(undefined, {
+    enabled: false,
+    refetchOnWindowFocus: false,
+  });
   const {
     data: spots,
     refetch,
@@ -83,7 +87,9 @@ export default function DataSources() {
                   </Badge>
                 </div>
                 <p className="text-xl font-semibold mt-2">
-                  {price ? `$${price.toFixed(2)}` : "不可用"}
+                  {price
+                    ? `$${price.toFixed(label === "6Smain/USD" ? 5 : 2)}`
+                    : "不可用"}
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-1">
                   {source || "请检查网络"}
@@ -96,6 +102,69 @@ export default function DataSources() {
           );
         })}
       </div>
+
+      <Card className="glass-card border-teal-400/25">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-base">6Smain期权链连接测试</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => sixS.refetch()}
+              disabled={sixS.isFetching}
+            >
+              {sixS.isFetching && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              测试6S期权链
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2 text-xs">
+          <p className="text-muted-foreground">
+            默认读取CME免密钥延迟参考数据，包含月度和周五周度期权；首轮完整链查询约需数秒。公开源没有的盘口字段保持MISSING。
+          </p>
+          {sixS.error && (
+            <p className="text-amber-300">读取失败：{sixS.error.message}</p>
+          )}
+          {sixS.data && (
+            <>
+              <p className="font-mono">
+                {sixS.data.contractCount} contracts · {sixS.data.expiryCount}{" "}
+                expiries · {sixS.data.strikeCount} strikes
+              </p>
+              <p>
+                有效Model Mark IV：
+                {
+                  sixS.data.quotes.filter(quote => quote.modelMarkIv !== null)
+                    .length
+                }
+                ；Bid/Ask IV Spread：
+                {
+                  sixS.data.quotes.filter(quote => quote.modelIvSpread !== null)
+                    .length
+                }
+              </p>
+              <p>
+                As-of：
+                {formatDisplayDateTime(sixS.data.timestamp, timeZone, {
+                  seconds: true,
+                  includeZone: true,
+                })}{" "}
+                · {sixS.data.status}
+              </p>
+              <p className="break-words text-muted-foreground">
+                {sixS.data.source}
+              </p>
+              {!!sixS.data.warnings?.length && (
+                <p className="text-amber-300">
+                  部分期限读取失败：{sixS.data.warnings.join("；")}
+                </p>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="space-y-3">
         {data?.sources.map(source => (

@@ -78,7 +78,7 @@ import {
   enrichRiskPositions,
   expiryBucketMatchesDte,
   formatCompact,
-  formatPrice,
+  formatInstrumentPrice,
   formatSpotPrice,
   formatStrike,
   generateMockPositions,
@@ -485,6 +485,8 @@ function PositionDetailDialog({
   onClose: () => void;
 }) {
   if (!position) return null;
+  const price = (value: number | null) =>
+    formatInstrumentPrice(value, position.underlying);
   const candidates: Array<[keyof typeof content, string, unknown]> = [
     ["instrument", "Instrument", position.instrument],
     [
@@ -511,7 +513,7 @@ function PositionDetailDialog({
     [
       "markBidAsk",
       "Mark / Bid / Ask · Size · $ Notional",
-      `${formatPrice(position.markPrice)} / ${formatPrice(position.bid)} / ${formatPrice(position.ask)} ${position.premiumCurrency ?? ""} · ${formatCompact(position.bidSize)} / ${formatCompact(position.askSize)} · $${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`,
+      `${price(position.markPrice)} / ${price(position.bid)} / ${price(position.ask)} ${position.premiumCurrency ?? ""} · ${formatCompact(position.bidSize)} / ${formatCompact(position.askSize)} · $${formatCompact(position.bidDollarNotional)} / $${formatCompact(position.askDollarNotional)}`,
     ],
     ["markIv", "Market Mark IV", formatCompact(position.markIV, "markIV")],
     [
@@ -527,7 +529,7 @@ function PositionDetailDialog({
     [
       "bidAskIv",
       "IV Reference Spot / As-of",
-      `${formatPrice(position.ivReferenceSpot)} / ${position.ivReferenceTime ? formatDisplayDateTime(position.ivReferenceTime, timeZone, { seconds: true, includeZone: true }) : "MISSING"}`,
+      `${price(position.ivReferenceSpot)} / ${position.ivReferenceTime ? formatDisplayDateTime(position.ivReferenceTime, timeZone, { seconds: true, includeZone: true }) : "MISSING"}`,
     ],
     [
       "bidAskIv",
@@ -714,12 +716,18 @@ function ExpiryDetailDialog({
     );
     const sessionVolumeNotional = sum(
       positions
-        .filter(position => position.underlying === "GLD")
+        .filter(
+          position =>
+            position.underlying === "GLD" || position.underlying === "6Smain"
+        )
         .map(position => position.volumeNotionalUSD)
     );
     const rolling24hVolumeNotional = sum(
       positions
-        .filter(position => position.underlying !== "GLD")
+        .filter(
+          position =>
+            position.underlying !== "GLD" && position.underlying !== "6Smain"
+        )
         .map(position => position.volumeNotionalUSD)
     );
     if (openInterest !== null)
@@ -912,7 +920,7 @@ function ExpiryDetailDialog({
                       {position.instrument}
                     </td>
                     <td className="p-1 text-right">
-                      {formatPrice(position.strike)}
+                      {formatStrike(position.strike)}
                     </td>
                     <td className="p-1 text-center">
                       {position.callPut === "call" ? "C" : "P"}
@@ -926,10 +934,15 @@ function ExpiryDetailDialog({
                       {formatCompact(metricValue(position, metric), metric)}
                     </td>
                     <td className="p-1 text-right">
-                      {formatPrice(position.markPrice)}
+                      {formatInstrumentPrice(
+                        position.markPrice,
+                        position.underlying
+                      )}
                     </td>
                     <td className="p-1 text-right">
-                      {formatPrice(position.bid)} / {formatPrice(position.ask)}
+                      {formatInstrumentPrice(position.bid, position.underlying)}{" "}
+                      /{" "}
+                      {formatInstrumentPrice(position.ask, position.underlying)}
                     </td>
                     <td className="p-1 text-right">
                       {formatCompact(position.markIV, "markIV")}
@@ -1129,8 +1142,8 @@ export default function Matrix() {
       enabled:
         dataset === "chain" &&
         (underlying === "SIX_S_CME" || underlying === "all"),
+      ...MARKET_QUERY_OPTIONS,
       staleTime: 4 * 60_000,
-      refetchOnWindowFocus: false,
     });
 
   const gldExpiries = useMemo(
@@ -1426,6 +1439,18 @@ export default function Matrix() {
     )
       setIvSource("model");
   }, [ivSource, underlying]);
+  const [publicSixSDefaultApplied, setPublicSixSDefaultApplied] =
+    useState(false);
+  useEffect(() => {
+    if (underlying !== "SIX_S_CME") {
+      setPublicSixSDefaultApplied(false);
+      return;
+    }
+    if (sixSChain?.feedKind !== "delayed-reference" || publicSixSDefaultApplied)
+      return;
+    if (["bidIV", "askIV", "ivSpread"].includes(metric)) setMetric("markIV");
+    setPublicSixSDefaultApplied(true);
+  }, [metric, publicSixSDefaultApplied, sixSChain?.feedKind, underlying]);
   useEffect(() => {
     const fallback = <T extends string>(
       current: T,
@@ -2725,7 +2750,9 @@ export default function Matrix() {
                 {spotUnderlying} Spot price{" "}
               </span>
               <strong className="font-mono text-amber-300">
-                {formatSpotPrice(spot)}
+                {spotUnderlying === "6Smain"
+                  ? formatStrike(spot)
+                  : formatSpotPrice(spot)}
               </strong>
               <span className="ml-2 text-muted-foreground">
                 Nearest Strike{" "}
@@ -2855,6 +2882,22 @@ export default function Matrix() {
             POSITION-ONLY METRIC · only held cells are colored and included in
             the default min/max · listed contracts remain hoverable but
             uncolored
+          </div>
+        )}
+      {dataset === "chain" &&
+        underlying === "SIX_S_CME" &&
+        sixSChain?.feedKind === "delayed-reference" && (
+          <div
+            data-testid="six-s-reference-notice"
+            className="shrink-0 border border-teal-400/25 bg-teal-500/5 px-2 py-1 text-[9px] text-teal-100"
+          >
+            CME延迟参考链 · {sixSChain.loadedExpiryCount}/
+            {sixSChain.requestedExpiryCount} 个有效期限 · Model Mark IV /
+            Delta按对应期货结算参考价计算；公开源未提供的Bid/Ask、Size及IV
+            Spread保留MISSING。
+            {sixSChain.warnings?.length
+              ? ` ${sixSChain.warnings.length} 个接口读取失败，当前为部分链。`
+              : ""}
           </div>
         )}
       {heatmapLoading ? (

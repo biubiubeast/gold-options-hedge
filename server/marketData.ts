@@ -1,5 +1,6 @@
 import type { SpotPrice } from "@shared/marketTypes";
 import type { ModelIvResult, ModelIvStatus } from "@shared/impliedVolatility";
+import { clearCmeSixSCache, getCmePublicSixSChain } from "./cmeSwissFranc";
 
 const BYBIT_BASE_URL = "https://api.bybit.com";
 const DERIBIT_BASE_URL = "https://www.deribit.com/api/v2";
@@ -133,8 +134,25 @@ export type BtcOptionQuote = XautOptionQuote;
 export type BtcOptionChain = XautOptionChain;
 export type EthOptionQuote = XautOptionQuote;
 export type EthOptionChain = XautOptionChain;
-export type SixSOptionQuote = XautOptionQuote;
-export type SixSOptionChain = XautOptionChain;
+export type SixSOptionQuote = Omit<
+  XautOptionQuote,
+  "delta" | "gamma" | "theta" | "vega"
+> & {
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  underlyingFuture?: string;
+  markPriceKind?: string;
+};
+export type SixSOptionChain = Omit<XautOptionChain, "quotes" | "status"> & {
+  quotes: SixSOptionQuote[];
+  status: "realtime" | "delayed" | "stale";
+  feedKind?: "delayed-reference" | "licensed";
+  warnings?: string[];
+  requestedExpiryCount?: number;
+  loadedExpiryCount?: number;
+};
 type BybitOptionBaseCoin = "XAUT" | "BTC" | "ETH";
 type DeribitOptionCurrency = "BTC" | "ETH";
 
@@ -323,6 +341,7 @@ async function cached<T>(
 
 export function clearMarketDataCache(): void {
   cache.clear();
+  clearCmeSixSCache();
 }
 
 function toNumber(value: unknown): number {
@@ -631,7 +650,7 @@ function black76Greeks(args: {
     ) ||
     args.expiryTimestamp <= args.asOf
   )
-    return { delta: 0, gamma: 0, theta: 0, vega: 0 };
+    return { delta: null, gamma: null, theta: null, vega: null };
   const years = Math.max(
     (args.expiryTimestamp - args.asOf) / (365.25 * 86_400_000),
     1 / (365.25 * 24)
@@ -704,6 +723,7 @@ async function fetchDatabentoCsv(
 
 type SixSDefinition = {
   instrumentId: string;
+  underlyingId: string;
   symbol: string;
   expiry: string;
   expiryTimestamp: number;
@@ -718,7 +738,15 @@ type SixSBook = {
   bidSize: number | null;
   askSize: number | null;
   timestamp: number;
+  symbol?: string;
 };
+
+function sixSOptionParents(): string {
+  return (
+    process.env.SIX_S_DATABENTO_PARENT_SYMBOLS ||
+    "CHU.OPT,1SF.OPT,2SF.OPT,3SF.OPT,4SF.OPT,5SF.OPT"
+  );
+}
 
 function latestRowsByInstrument(
   rows: Array<Record<string, string>>
@@ -746,7 +774,7 @@ async function getSixSDatabentoDefinitions(): Promise<SixSDefinition[]> {
       const start = new Date(end.getTime() - 7 * 86_400_000);
       const rows = await fetchDatabentoCsv({
         schema: "definition",
-        symbols: "6S.OPT",
+        symbols: sixSOptionParents(),
         stype_in: "parent",
         start: start.toISOString(),
         end: end.toISOString(),
@@ -782,6 +810,7 @@ async function getSixSDatabentoDefinitions(): Promise<SixSDefinition[]> {
         return [
           {
             instrumentId,
+            underlyingId: String(row.underlying_id || ""),
             symbol,
             expiry: new Date(expiryTimestamp).toISOString().slice(0, 10),
             expiryTimestamp,
@@ -795,7 +824,9 @@ async function getSixSDatabentoDefinitions(): Promise<SixSDefinition[]> {
   );
 }
 
-async function getSixSDatabentoBooks(): Promise<Map<string, SixSBook>> {
+async function getSixSDatabentoBooks(
+  symbols = sixSOptionParents()
+): Promise<Map<string, SixSBook>> {
   const lookback = Math.min(
     60,
     Math.max(1, toNumber(process.env.SIX_S_DATABENTO_LOOKBACK_MINUTES) || 10)
@@ -804,7 +835,7 @@ async function getSixSDatabentoBooks(): Promise<Map<string, SixSBook>> {
   const start = new Date(end.getTime() - lookback * 60_000);
   const rows = await fetchDatabentoCsv({
     schema: "mbp-1",
-    symbols: "6S.OPT",
+    symbols,
     stype_in: "parent",
     start: start.toISOString(),
     end: end.toISOString(),
@@ -820,6 +851,7 @@ async function getSixSDatabentoBooks(): Promise<Map<string, SixSBook>> {
         bidSize: optionalNumber(row.bid_sz_00 || row.bid_size),
         askSize: optionalNumber(row.ask_sz_00 || row.ask_size),
         timestamp: parseExternalTimestamp(row.ts_recv || row.ts_event),
+        symbol: row.symbol || row.raw_symbol,
       },
     ])
   );
@@ -855,7 +887,7 @@ async function getSixSDatabentoMainFuture(): Promise<SpotPrice | null> {
   });
 }
 
-function normalizeSixSGatewayChain(raw: any): SixSOptionChain {
+export function normalizeSixSGatewayChain(raw: any): SixSOptionChain {
   const timestamp = parseExternalTimestamp(raw?.timestamp) || Date.now();
   const spot = toNumber(raw?.spot ?? raw?.underlyingPrice);
   const quotes: SixSOptionQuote[] = (
@@ -881,7 +913,9 @@ function normalizeSixSGatewayChain(raw: any): SixSOptionChain {
     const mark =
       toNumber(item.markPrice) ||
       (bid > 0 && ask > 0 ? (bid + ask) / 2 : Math.max(bid, ask));
-    const reference = toNumber(item.ivReferenceSpot) || spot;
+    // The display/main future is different from the future deliverable for a
+    // deferred option. Missing per-contract model references must stay missing.
+    const reference = toNumber(item.ivReferenceSpot ?? raw?.ivReferenceSpot);
     const model = black76Iv({
       price: mark,
       futures: reference,
@@ -939,8 +973,18 @@ function normalizeSixSGatewayChain(raw: any): SixSOptionChain {
         modelBidIvStatus: modelBid.status,
         modelAskIvStatus: modelAsk.status,
         ivReferenceSpot: reference > 0 ? reference : null,
-        ivReferenceTimestamp: quoteTimestamp,
-        ivReferenceSource: "6S main futures synchronized quote",
+        ivReferenceTimestamp:
+          reference > 0
+            ? parseExternalTimestamp(item.ivReferenceTimestamp) ||
+              quoteTimestamp
+            : null,
+        ivReferenceSource:
+          reference > 0
+            ? String(
+                item.ivReferenceSource ||
+                  `CME ${item.underlyingFuture || "option underlying future"} synchronized quote`
+              )
+            : null,
         bid1Price: bid,
         ask1Price: ask,
         bid1Size: optionalNumber(item.bid1Size ?? item.bidSize),
@@ -951,6 +995,8 @@ function normalizeSixSGatewayChain(raw: any): SixSOptionChain {
         vega: optionalNumber(item.vega) ?? greeks.vega,
         timestamp: quoteTimestamp,
         source: String(item.source || raw.source || "6S option-chain gateway"),
+        underlyingFuture: item.underlyingFuture,
+        markPriceKind: item.markPriceKind,
         openInterest: optionalNumber(item.openInterest),
         volume: optionalNumber(item.volume),
         tradeable: item.tradeable !== false,
@@ -967,7 +1013,17 @@ function normalizeSixSGatewayChain(raw: any): SixSOptionChain {
     ivReferenceSource: spot > 0 ? "6S main futures synchronized quote" : null,
     timestamp,
     source: String(raw?.source || "Configured 6S option-chain gateway"),
-    status: delaySeconds > 15 * 60 ? "stale" : "realtime",
+    status:
+      raw?.feedKind === "delayed-reference"
+        ? "delayed"
+        : delaySeconds > 15 * 60
+          ? "stale"
+          : "realtime",
+    feedKind:
+      raw?.feedKind === "delayed-reference" ? "delayed-reference" : "licensed",
+    warnings: Array.isArray(raw?.warnings) ? raw.warnings : [],
+    requestedExpiryCount: raw?.requestedExpiryCount,
+    loadedExpiryCount: raw?.loadedExpiryCount,
     delaySeconds,
     contractCount: quotes.length,
     expiryCount: new Set(quotes.map(quote => quote.expiry)).size,
@@ -986,10 +1042,11 @@ async function getSixSConfiguredGatewayChain(): Promise<SixSOptionChain | null> 
 }
 
 async function getSixSDatabentoChain(): Promise<SixSOptionChain> {
-  const [definitions, books, mainFuture] = await Promise.all([
+  const [definitions, books, mainFuture, futuresBooks] = await Promise.all([
     getSixSDatabentoDefinitions(),
     getSixSDatabentoBooks(),
     getSixSDatabentoMainFuture(),
+    getSixSDatabentoBooks("6S.FUT"),
   ]);
   const futuresReference = mainFuture?.price ?? 0;
   const quotes = definitions.map(definition => {
@@ -998,10 +1055,20 @@ async function getSixSDatabentoChain(): Promise<SixSOptionChain> {
     const bid = book?.bid ?? 0;
     const ask = book?.ask ?? 0;
     const mark = bid > 0 && ask > 0 ? (bid + ask) / 2 : Math.max(bid, ask);
+    const futureBook = futuresBooks.get(definition.underlyingId);
+    const alignedFuture =
+      futureBook && Math.abs(futureBook.timestamp - timestamp) <= 15 * 60_000
+        ? futureBook
+        : null;
+    const quoteReference = alignedFuture
+      ? alignedFuture.bid > 0 && alignedFuture.ask > 0
+        ? (alignedFuture.bid + alignedFuture.ask) / 2
+        : Math.max(alignedFuture.bid, alignedFuture.ask)
+      : 0;
     const solve = (price: number) =>
       black76Iv({
         price,
-        futures: futuresReference,
+        futures: quoteReference,
         strike: definition.strike,
         expiryTimestamp: definition.expiryTimestamp,
         asOf: timestamp,
@@ -1011,7 +1078,7 @@ async function getSixSDatabentoChain(): Promise<SixSOptionChain> {
     const modelBid = solve(bid);
     const modelAsk = solve(ask);
     const greeks = black76Greeks({
-      futures: futuresReference,
+      futures: quoteReference,
       strike: definition.strike,
       expiryTimestamp: definition.expiryTimestamp,
       asOf: timestamp,
@@ -1042,9 +1109,12 @@ async function getSixSDatabentoChain(): Promise<SixSOptionChain> {
       modelMarkIvStatus: modelMark.status,
       modelBidIvStatus: modelBid.status,
       modelAskIvStatus: modelAsk.status,
-      ivReferenceSpot: futuresReference > 0 ? futuresReference : null,
-      ivReferenceTimestamp: mainFuture?.timestamp ?? null,
-      ivReferenceSource: mainFuture?.source ?? "Databento GLBX.MDP3 · 6S.c.0",
+      ivReferenceSpot: quoteReference > 0 ? quoteReference : null,
+      ivReferenceTimestamp: alignedFuture?.timestamp ?? null,
+      ivReferenceSource: alignedFuture
+        ? `Databento CME actual underlying future · ${alignedFuture.symbol || definition.underlyingId}`
+        : null,
+      underlyingFuture: alignedFuture?.symbol,
       bid1Price: bid,
       ask1Price: ask,
       bid1Size: book?.bidSize ?? null,
@@ -1077,7 +1147,8 @@ async function getSixSDatabentoChain(): Promise<SixSOptionChain> {
     ivReferenceSource: mainFuture?.source ?? null,
     timestamp: timestamp || Date.now(),
     source:
-      "Databento GLBX.MDP3 · CME 6S.OPT definitions + MBP-1; Model IV/Greeks use Black-76 and 6S.c.0",
+      "Databento GLBX.MDP3 · CME CHU + Friday weekly definitions/MBP-1; Model IV uses Black-76 and each option's actual underlying future; 6S.c.0 is display-only",
+    feedKind: "licensed",
     status: delaySeconds > 15 * 60 ? "stale" : "realtime",
     delaySeconds,
     contractCount: quotes.length,
@@ -1107,7 +1178,32 @@ export async function getSixSOptionChain(): Promise<SixSOptionChain> {
       return null;
     });
     if (gateway?.quotes.length) return gateway;
-    if (process.env.DATABENTO_API_KEY) return getSixSDatabentoChain();
+    if (process.env.DATABENTO_API_KEY) {
+      try {
+        return await getSixSDatabentoChain();
+      } catch (error) {
+        console.warn(
+          "[MarketData] Licensed 6S feed unavailable, trying CME public reference:",
+          error
+        );
+      }
+    }
+    try {
+      const raw = await getCmePublicSixSChain();
+      const chain = normalizeSixSGatewayChain(raw);
+      // Yahoo is only the newer display future. Settlement model references
+      // above retain the exact maturity and settlement date supplied by CME.
+      const displaySpot = await getSixSMainPrice();
+      if (displaySpot?.price) chain.spot = displaySpot.price;
+      return chain;
+    } catch (error) {
+      // Let cached() preserve a last good chain after temporary outages.
+      if (lastGood.has("six-s-main-option-chain")) throw error;
+      console.warn(
+        "[MarketData] CME 6S public reference is unavailable:",
+        error
+      );
+    }
     const spot = await getSixSMainPrice();
     const timestamp = spot?.timestamp ?? Date.now();
     return {
@@ -1118,7 +1214,7 @@ export async function getSixSOptionChain(): Promise<SixSOptionChain> {
       ivReferenceSource: null,
       timestamp,
       source:
-        "6Smain option chain is not configured · set SIX_S_OPTION_CHAIN_URL or DATABENTO_API_KEY; public CME website quotes are delayed/reference-only and are not scraped",
+        "CME 6S delayed/reference API is temporarily unavailable. A configured company gateway or Databento feed can be used as an alternative.",
       status: "stale",
       delaySeconds: Math.max(0, Math.round((Date.now() - timestamp) / 1000)),
       contractCount: 0,
@@ -2548,7 +2644,8 @@ export function getMarketSources() {
   return {
     marketDataConfigured: Boolean(process.env.MARKETDATA_TOKEN),
     tradierConfigured: Boolean(process.env.TRADIER_API_TOKEN),
-    sixSConfigured: Boolean(
+    sixSConfigured: true,
+    sixSLicensedConfigured: Boolean(
       process.env.SIX_S_OPTION_CHAIN_URL || process.env.DATABENTO_API_KEY
     ),
     gldPriority: process.env.MARKETDATA_TOKEN
@@ -2562,19 +2659,26 @@ export function getMarketSources() {
           "6Smain（CHF/USD 主力期货）完整期权链 / Bid-Ask / Model IV / Model Greeks",
         provider: process.env.SIX_S_OPTION_CHAIN_URL
           ? "Configured company/CME snapshot gateway"
-          : "Databento GLBX.MDP3 (CME Globex)",
+          : process.env.DATABENTO_API_KEY
+            ? "Databento GLBX.MDP3 (CME Globex)"
+            : "CME Group Public Delayed / Reference",
         endpoint: process.env.SIX_S_OPTION_CHAIN_URL
           ? "SIX_S_OPTION_CHAIN_URL（服务器端）"
-          : "/v0/timeseries.get_range · 6S.OPT + 6S.c.0",
+          : process.env.DATABENTO_API_KEY
+            ? "/v0/timeseries.get_range · CHU/1SF…5SF.OPT + 6S.FUT"
+            : "/CmeWS/mvc/ProductCalendar/Options/86 + /atm/strike-prices/{productId}/{year}/{month}/ALL + /Settlements/Futures/Settlements/86/FUT",
         authentication: process.env.SIX_S_OPTION_CHAIN_URL
           ? "SIX_S_OPTION_CHAIN_TOKEN（如网关要求）"
-          : "DATABENTO_API_KEY + CME/Databento 相应数据权限",
+          : process.env.DATABENTO_API_KEY
+            ? "DATABENTO_API_KEY + CME/Databento 相应数据权限"
+            : "无需密钥（公共延迟/结算参考数据）",
         mode:
           process.env.SIX_S_OPTION_CHAIN_URL || process.env.DATABENTO_API_KEY
-            ? "已配置；CME 合约定义与盘口。市场源不发布 IV 时，使用同快照 6S 主力期货按 Black-76 计算 Model IV/Greeks"
-            : "未配置；仅显示 Yahoo 6S=F 延迟主力价格，期权链保持 MISSING，不生成假数据",
-        documentationUrl:
-          "https://databento.com/docs/examples/options/options-on-futures-introduction",
+            ? "已配置授权源；按期权实际对应的期货合约使用 Black-76 计算 Model IV/Greeks"
+            : "已启用免密钥公共参考链：真实 Monthly/Friday Weekly 期限与 Strike。Model Mark IV/Greeks使用同日、同到期期货结算参考价；Bid/Ask、Size、OI、IV Spread没有源字段时保持MISSING。公开报价至少延迟10分钟，结算价是日度参考",
+        documentationUrl: process.env.DATABENTO_API_KEY
+          ? "https://databento.com/docs/examples/options/options-on-futures-introduction"
+          : "https://www.cmegroup.com/markets/fx/g10/swiss-franc/quotes/options",
       },
       {
         product: "6Smain 企业级实时期权 / Greeks / IV（可替代数据源）",
